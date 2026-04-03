@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "### Block Design in the Electrical Schematic  \nThe schematic uses **rectangular blocks** with rounded corners, each representing a component (e.g., source, breaker, junction, busbar, load). Blocks are organized in a hierarchical, interconnected layout (via dashed blue lines) to show electrical flow.  \n\n\n### Elements Inside Blocks  \nEach block contains:  \n- **Icon**: A symbol indicating the component type (e.g., lightning bolt for “SOURCE,” power button for “BREAKER,” junction symbol for “JUNCTION,” busbar icon for “BUSBAR,” load icon for “LOAD”).  \n- **Label**: A descriptive name (e.g., “T2 ТП21,” “QF11 С.Ш. ГРЩ1,” “ТОЧКА ГРЩ1 Q511 С.Ш. П...”).  \n- **Identifier**: A technical code (e.g., `src_tp21_0_2`, `brk_tp21_1_1`, `jnc_grsch1_1_1`).  \n- **Voltage Rating**: A value (e.g., “0.4 kV”) indicating the electrical system’s voltage.  \n- **Status Indicator**: A colored dot (or text) showing operational status (e.g., “ON”/“OFF”).  \n\n\n### Status Display  \nStatus is shown via:  \n- A **colored dot** (blue for “ON,” red for “OFF”) next to the component type label.  \n- Text labels (e.g., “ON”/“OFF”) to explicitly state the status.  \n\n\n### Colors Used  \n- **Background**: Dark (near-black) for contrast.  \n- **Block Borders/Headers**: Teal (for “BREAKER,” “SOURCE,” “LOAD”) or dark gray (for “JUNCTION,” “BUSBAR”) to distinguish component types.  \n- **Status Dots**: Blue (for “ON,” active) or red (for “OFF,” inactive).  \n- **Text/Icons**: White (for labels, identifiers, voltage) for readability against the dark background.  \n\n\nThis design prioritizes clarity, with color-coding and structured elements to communicate component type, status, and electrical connections.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1774955446,
+  "id": "20260331191024200d596b56c3432d",
+  "model": "glm-4.6v",
+  "object": "chat.completion",
+  "request_id": "20260331191024200d596b56c3432d",
+  "usage": {
+    "completion_tokens": 451,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 713,
+    "prompt_tokens_details": {
+      "cached_tokens": 5
+    },
+    "total_tokens": 1164
+  }
+}

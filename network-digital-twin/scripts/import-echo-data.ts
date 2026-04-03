@@ -28,7 +28,7 @@ function detectElementType(name: string): string {
   
   const n = name.toLowerCase();
   
-  // Источник питания
+  // Источник питания (проверяем первым)
   if (n.includes('тп') && (n.includes('т1') || n.includes('т2') || n.includes('трансформатор'))) {
     return 'source';
   }
@@ -36,13 +36,13 @@ function detectElementType(name: string): string {
     return 'source';
   }
   
-  // Шина
-  if (n.includes('шина') || n.includes('с.ш.') || n.includes('сб.ш.') || n.includes('шинопровод')) {
-    return 'bus';
+  // Автомат/выключатель (QF - проверяем ДО шины!)
+  if (n.includes('qf') || n.includes('автомат') || n.includes('выключатель')) {
+    return 'breaker';
   }
   
-  // Автомат/выключатель
-  if (n.includes('qf') || n.includes('автомат') || n.includes('выключатель')) {
+  // Разъединитель (QS)
+  if (n.includes('qs') || n.includes('разъединитель')) {
     return 'breaker';
   }
   
@@ -51,13 +51,18 @@ function detectElementType(name: string): string {
     return 'meter';
   }
   
+  // Шина (проверяем ПОСЛЕ QF/QS!)
+  if (n.includes('шина') || n.includes('с.ш.') || n.includes('сб.ш.') || n.includes('шинопровод')) {
+    return 'bus';
+  }
+  
   // Нагрузка
   if (n.includes('щр') || n.includes('вру') || n.includes('щита') || n.includes('щит') || n.includes('нагрузк')) {
     return 'load';
   }
   
   // Точка распределения - junction
-  if (n.includes('точрасп') || n.includes('qs') || n.includes('узел')) {
+  if (n.includes('точрасп') || n.includes('узел')) {
     return 'junction';
   }
   

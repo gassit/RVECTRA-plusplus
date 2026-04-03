@@ -303,7 +303,6 @@ export default function NetworkGraph({ data, onNodeClick }: NetworkGraphProps) {
         },
         minZoom: 0.1,
         maxZoom: 4,
-        wheelSensitivity: 0.3,
       });
 
       // Обработка кликов

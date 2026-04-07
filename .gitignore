@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-node_modules
+/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -39,13 +39,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-local-*
-.claude
-.z-ai-config
-dev.log
-test
-prompt
 
-server.log
-# Skills directory
-/skills/
+/app/generated/prisma
+
+# Project specific
+.accesslog
+.stats
+dev.log
+*.log
+backup_*.tar.gz
+bun.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

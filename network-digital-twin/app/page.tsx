@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import NetworkGraph from '@/components/network/NetworkGraph';
 import { useTheme } from '@/components/providers/ThemeProvider';
 
@@ -36,6 +36,7 @@ interface Stats {
     total: number;
     consumed: number;
     free: number;
+    reserve: number;
   };
   connections: number;
 }
@@ -70,102 +71,139 @@ export default function Home() {
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [showStats, setShowStats] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const { theme, toggleTheme } = useTheme();
+  const dataLoadedRef = useRef(false);
 
-  const fetchData = useCallback(async () => {
+  // Load data once on mount
+  useEffect(() => {
+    if (dataLoadedRef.current) return;
+    dataLoadedRef.current = true;
+    
+    const load = async () => {
+      try {
+        setLoading(true);
+        const [networkRes, statsRes, validationRes] = await Promise.all([
+          fetch('/api/network'),
+          fetch('/api/stats'),
+          fetch('/api/validation'),
+        ]);
+        if (networkRes.ok) setNetworkData(await networkRes.json());
+        if (statsRes.ok) setStats(await statsRes.json());
+        if (validationRes.ok) setValidation(await validationRes.json());
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Error');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const refreshData = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      setError(null);
-
       const [networkRes, statsRes, validationRes] = await Promise.all([
         fetch('/api/network'),
         fetch('/api/stats'),
         fetch('/api/validation'),
       ]);
-
-      if (!networkRes.ok) {
-        throw new Error(`Network API error: ${networkRes.status}`);
-      }
-
-      const networkData = await networkRes.json();
-      setNetworkData(networkData);
-
-      if (statsRes.ok) {
-        setStats(await statsRes.json());
-      }
-
-      if (validationRes.ok) {
-        setValidation(await validationRes.json());
-      }
+      if (networkRes.ok) setNetworkData(await networkRes.json());
+      if (statsRes.ok) setStats(await statsRes.json());
+      if (validationRes.ok) setValidation(await validationRes.json());
     } catch (err) {
-      console.error('Failed to fetch data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      setError(err instanceof Error ? err.message : 'Error');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleNodeClick = useCallback((nodeId: string) => {
+    setSelectedNode(nodeId);
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  // Filter data based on search
+  const filteredData = useMemo(() => {
+    if (!networkData || !searchQuery.trim()) return networkData;
 
-  const handleNodeClick = (nodeId: string) => {
-    setSelectedNode(nodeId);
-  };
+    const query = searchQuery.toLowerCase();
+    const matchedElementIds = new Set(
+      networkData.elements
+        .filter(el => el.name.toLowerCase().includes(query))
+        .map(el => el.id)
+    );
+
+    const filteredElements = networkData.elements.filter(el =>
+      el.name.toLowerCase().includes(query)
+    );
+
+    const filteredConnections = networkData.connections.filter(conn =>
+      matchedElementIds.has(conn.sourceId) || matchedElementIds.has(conn.targetId)
+    );
+
+    return {
+      elements: filteredElements,
+      connections: filteredConnections,
+    };
+  }, [networkData, searchQuery]);
 
   const errorCount = validation?.stats.errors || 0;
   const warningCount = validation?.stats.warnings || 0;
 
   return (
     <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-900 transition-colors overflow-hidden">
-      {/* Minimal Top Toolbar */}
+      {/* Header */}
       <header className="flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
-        <div className="px-4 py-2 flex items-center justify-between">
-          {/* Left: Title */}
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white">
-              Цифровой двойник электросети
-            </h1>
-            <div className="hidden md:flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-              <span className="flex items-center gap-1">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                </svg>
-                {stats?.elements.total || 0} элементов
-              </span>
-              <span className="text-gray-300 dark:text-gray-600">|</span>
-              <span className="flex items-center gap-1">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                </svg>
-                {stats?.connections || 0} связей
-              </span>
+        <div className="px-4 py-2 flex items-center gap-4">
+          {/* Logo */}
+          <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">
+            RVectrA
+          </h1>
+
+          {/* Search */}
+          <div className="flex-1 max-w-md">
+            <div className="relative">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Поиск по элементам..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Center: Power Stats */}
-          <div className="hidden lg:flex items-center gap-6 text-sm">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg">
-              <span className="text-gray-500 dark:text-gray-400">Мощность:</span>
-              <span className="font-semibold text-gray-700 dark:text-gray-300">
-                {stats?.power.total?.toFixed(1) || '0'} кВА
-              </span>
+          {/* Power Stats - Compact */}
+          {(stats?.power.total || stats?.power.consumed || stats?.power.free || stats?.power.reserve) ? (
+            <div className="flex items-center gap-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg text-xs">
+              <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+              </svg>
+              <span className="font-semibold text-gray-700 dark:text-gray-300">{stats?.power.total?.toFixed(0) || '0'}</span>
+              <span className="text-gray-400">/</span>
+              <span className="text-blue-600 dark:text-blue-400">{stats?.power.consumed?.toFixed(0) || '0'}</span>
+              <span className="text-gray-400">/</span>
+              <span className="text-green-600 dark:text-green-400">{stats?.power.free?.toFixed(0) || '0'}</span>
+              <span className="text-gray-400">/</span>
+              <span className="text-purple-600 dark:text-purple-400">{stats?.power.reserve?.toFixed(0) || '0'}</span>
+              <span className="text-gray-400 ml-1">кВА</span>
             </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-              <span className="text-blue-600 dark:text-blue-400">Потребляемая:</span>
-              <span className="font-semibold text-blue-700 dark:text-blue-300">
-                {stats?.power.consumed?.toFixed(1) || '0'} кВА
-              </span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 dark:bg-green-900/30 rounded-lg">
-              <span className="text-green-600 dark:text-green-400">Свободная:</span>
-              <span className="font-semibold text-green-700 dark:text-green-300">
-                {stats?.power.free?.toFixed(1) || '0'} кВА
-              </span>
-            </div>
-          </div>
+          ) : null}
 
-          {/* Right: Actions */}
+          {/* Actions */}
           <div className="flex items-center gap-2">
             {/* Validation Status */}
             <button
@@ -183,21 +221,21 @@ export default function Home() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
-                  {errorCount} ошибок
+                  {errorCount}
                 </>
               ) : warningCount > 0 ? (
                 <>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
-                  {warningCount} предупреждений
+                  {warningCount}
                 </>
               ) : (
                 <>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  Норма
+                  OK
                 </>
               )}
             </button>
@@ -215,7 +253,7 @@ export default function Home() {
 
             {/* Refresh */}
             <button
-              onClick={fetchData}
+              onClick={refreshData}
               className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               title="Обновить"
             >
@@ -242,6 +280,31 @@ export default function Home() {
             </button>
           </div>
         </div>
+
+        {/* Status Bar */}
+        <div className="px-4 py-1 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700">
+          <span className="flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            {filteredData?.elements.length || 0} / {stats?.elements.total || 0} элементов
+          </span>
+          <span className="text-gray-300 dark:text-gray-600">|</span>
+          <span className="flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            {filteredData?.connections.length || 0} связей
+          </span>
+          {searchQuery && (
+            <>
+              <span className="text-gray-300 dark:text-gray-600">|</span>
+              <span className="text-blue-500 dark:text-blue-400">
+                Фильтр: "{searchQuery}"
+              </span>
+            </>
+          )}
+        </div>
       </header>
 
       {/* Main Content - Graph takes priority */}
@@ -264,7 +327,7 @@ export default function Home() {
                 <span className="text-lg font-medium text-gray-700 dark:text-gray-300">Ошибка загрузки</span>
                 <span className="text-sm text-gray-500 dark:text-gray-400">{error}</span>
                 <button
-                  onClick={fetchData}
+                  onClick={refreshData}
                   className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
                 >
                   Попробовать снова
@@ -273,7 +336,7 @@ export default function Home() {
             </div>
           ) : (
             <NetworkGraph
-              data={networkData}
+              data={filteredData}
               onNodeClick={handleNodeClick}
             />
           )}
@@ -327,7 +390,7 @@ export default function Home() {
                 <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Мощность</h4>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <span className="text-sm text-gray-500 dark:text-gray-400">Установленная</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Полная</span>
                     <span className="font-semibold text-gray-700 dark:text-gray-300">{stats.power.total?.toFixed(1) || '0'} кВА</span>
                   </div>
                   <div className="flex justify-between items-center p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
@@ -335,8 +398,12 @@ export default function Home() {
                     <span className="font-semibold text-blue-700 dark:text-blue-300">{stats.power.consumed?.toFixed(1) || '0'} кВА</span>
                   </div>
                   <div className="flex justify-between items-center p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                    <span className="text-sm text-green-600 dark:text-green-400">Свободная</span>
+                    <span className="text-sm text-green-600 dark:text-green-400">Свободна</span>
                     <span className="font-semibold text-green-700 dark:text-green-300">{stats.power.free?.toFixed(1) || '0'} кВА</span>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                    <span className="text-sm text-purple-600 dark:text-purple-400">Резерв</span>
+                    <span className="font-semibold text-purple-700 dark:text-purple-300">{stats.power.reserve?.toFixed(1) || '0'} кВА</span>
                   </div>
                 </div>
               </div>

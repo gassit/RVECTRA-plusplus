@@ -40,7 +40,7 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
 
     // Cleanup
     if (graphRef.current) {
-      try { graphRef.current.destroy(); } catch (e) {}
+      try { graphRef.current.destroy(); } catch { /* ignore */ }
       graphRef.current = null;
     }
 
@@ -77,11 +77,11 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
           type: 'rect',
           style: {
             size: [75, 24],
-            fill: (d: any) => d.style?.fill || '#e5e7eb',
+            fill: (d: { style?: { fill?: string } }) => d.style?.fill || '#e5e7eb',
             stroke: '#6b7280',
             lineWidth: 1,
             radius: 3,
-            labelText: (d: any) => d.style?.labelText || '',
+            labelText: (d: { style?: { labelText?: string } }) => d.style?.labelText || '',
             labelFontSize: 9,
           },
         },
@@ -93,7 +93,7 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
 
       graphRef.current = graph;
 
-      graph.on('node:click', (evt: any) => {
+      graph.on('node:click', (evt: { itemId?: string }) => {
         if (onNodeClick && evt.itemId) onNodeClick(evt.itemId);
       });
 
@@ -102,12 +102,12 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
           setReady(true);
           setTimeout(() => graph.fitView(10), 50);
         })
-        .catch((err: any) => {
-          setError('Render: ' + (err.message || err));
+        .catch((err: unknown) => {
+          setError('Render: ' + (err instanceof Error ? err.message : String(err)));
         });
 
-    } catch (err: any) {
-      setError('Init: ' + (err.message || err));
+    } catch (err: unknown) {
+      setError('Init: ' + (err instanceof Error ? err.message : String(err)));
     }
 
     const onResize = () => {
@@ -123,7 +123,7 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
     return () => {
       window.removeEventListener('resize', onResize);
       if (graphRef.current) {
-        try { graphRef.current.destroy(); } catch (e) {}
+        try { graphRef.current.destroy(); } catch { /* ignore */ }
         graphRef.current = null;
       }
     };

@@ -47,14 +47,17 @@ export async function POST(request: Request) {
           await prisma.element.upsert({
             where: { elementId },
             create: {
+              id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               elementId,
               name,
               type,
-              voltageLevel: parseFloat(String(row['Напряжение'] || row['U'] || '0.4')) || 0.4
+              voltageLevel: parseFloat(String(row['Напряжение'] || row['U'] || '0.4')) || 0.4,
+              updatedAt: new Date()
             },
             update: {
               name,
-              type
+              type,
+              updatedAt: new Date()
             }
           });
 

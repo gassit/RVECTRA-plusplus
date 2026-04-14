@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Graph } from '@antv/g6';
 
 interface NetworkData {
@@ -14,24 +14,18 @@ interface Props {
 }
 
 // Цвета согласно правилам PROJECT_CONTEXT.md
-const NODE_STYLES: Record<string, { fill: string; stroke: string; shape: string; size: number[] }> = {
-  source: { fill: '#fef3c7', stroke: '#f59e0b', shape: 'hexagon', size: [70, 70] },      // Октагон (приближение hexagon), жёлтый
-  breaker: { fill: '#ffffff', stroke: '#1f2937', shape: 'rect', size: [60, 24] },        // Белый, RoundRectangle
-  load: { fill: '#374151', stroke: '#1f2937', shape: 'rect', size: [60, 24] },           // Чёрный, Rectangle
-  meter: { fill: '#dbeafe', stroke: '#3b82f6', shape: 'diamond', size: [40, 40] },       // Синий, Diamond
-  bus: { fill: '#fcd34d', stroke: '#d97706', shape: 'rect', size: [120, 20] },           // Медный/янтарный, удлинённый
-  junction: { fill: '#d1d5db', stroke: '#6b7280', shape: 'circle', size: [24, 24] },     // Серый, Ellipse
-  cabinet: { fill: '#e9d5ff', stroke: '#7c3aed', shape: 'rect', size: [60, 30] },        // Фиолетовый (дополнительный)
+const NODE_STYLES: Record<string, { fill: string; stroke: string; shape: string; size: number }> = {
+  source: { fill: '#fef3c7', stroke: '#f59e0b', shape: 'hexagon', size: 50 },
+  breaker: { fill: '#ffffff', stroke: '#1f2937', shape: 'rect', size: 30 },
+  load: { fill: '#374151', stroke: '#1f2937', shape: 'rect', size: 30 },
+  meter: { fill: '#dbeafe', stroke: '#3b82f6', shape: 'diamond', size: 35 },
+  bus: { fill: '#fcd34d', stroke: '#d97706', shape: 'rect', size: 60 },
+  junction: { fill: '#d1d5db', stroke: '#6b7280', shape: 'circle', size: 15 },
+  cabinet: { fill: '#e9d5ff', stroke: '#7c3aed', shape: 'rect', size: 40 },
 };
 
 /**
  * BFS алгоритм для размещения узлов по уровням
- * Правила:
- * 1. source - вверху схемы (уровень 0)
- * 2. load - внизу схемы (максимальный уровень)
- * 3. Элементы "to" от Bus - на одном уровне под Bus
- * 4. Элементы "from" питающие Bus - над Bus
- * 5. load под breaker при связи breaker→load
  */
 function calculateNodePositions(
   elements: NetworkData['elements'],
@@ -40,16 +34,14 @@ function calculateNodePositions(
   height: number
 ): Map<string, { x: number; y: number; level: number }> {
   const positions = new Map<string, { x: number; y: number; level: number }>();
-  
+
   if (!elements.length) return positions;
 
-  // Создаём карты для быстрого доступа
   const elementMap = new Map(elements.map(e => [e.id, e]));
   const elementIds = new Set(elements.map(e => e.id));
 
-  // Строим граф связей (направленный: source -> target)
-  const outgoing = new Map<string, string[]>();  // Куда идут связи от узла
-  const incoming = new Map<string, string[]>();  // Откуда приходят связи к узлу
+  const outgoing = new Map<string, string[]>();
+  const incoming = new Map<string, string[]>();
 
   elements.forEach(e => {
     outgoing.set(e.id, []);
@@ -63,11 +55,9 @@ function calculateNodePositions(
     }
   });
 
-  // Определяем уровень каждого узла через BFS от источников
   const levels = new Map<string, number>();
   const queue: string[] = [];
 
-  // Находим все источники (source) - они на уровне 0
   elements.forEach(e => {
     if (e.type === 'source') {
       levels.set(e.id, 0);
@@ -75,7 +65,6 @@ function calculateNodePositions(
     }
   });
 
-  // Если нет source, начинаем с узлов без входящих связей
   if (queue.length === 0) {
     elements.forEach(e => {
       const inc = incoming.get(e.id) || [];
@@ -86,18 +75,15 @@ function calculateNodePositions(
     });
   }
 
-  // BFS для определения уровней
   let maxLevel = 0;
   while (queue.length > 0) {
     const current = queue.shift()!;
     const currentLevel = levels.get(current) || 0;
     const nextLevel = currentLevel + 1;
 
-    // Обходим все исходящие связи
     const targets = outgoing.get(current) || [];
     targets.forEach(target => {
       const existingLevel = levels.get(target);
-      // Устанавливаем уровень, если узел ещё не посещён или нашли более длинный путь
       if (existingLevel === undefined || existingLevel < nextLevel) {
         levels.set(target, nextLevel);
         maxLevel = Math.max(maxLevel, nextLevel);
@@ -106,11 +92,9 @@ function calculateNodePositions(
     });
   }
 
-  // Для узлов без уровня (изолированные) ставим средний уровень
   const defaultLevel = Math.ceil(maxLevel / 2);
   elements.forEach(e => {
     if (!levels.has(e.id)) {
-      // Изолированные узлы размещаем по типу
       if (e.type === 'load') {
         levels.set(e.id, maxLevel + 1);
       } else if (e.type === 'source') {
@@ -121,25 +105,21 @@ function calculateNodePositions(
     }
   });
 
-  // Обновляем maxLevel
   maxLevel = Math.max(...Array.from(levels.values()), 0);
 
-  // Группируем узлы по уровням
   const levelGroups = new Map<number, string[]>();
   levels.forEach((level, id) => {
     if (!levelGroups.has(level)) levelGroups.set(level, []);
     levelGroups.get(level)!.push(id);
   });
 
-  // Параметры размещения
-  const levelHeight = Math.max(60, height / (maxLevel + 2));
-  const startY = 80;  // Отступ сверху
+  const levelHeight = Math.max(80, height / (maxLevel + 2));
+  const startY = 100;
 
-  // Размещаем узлы по уровням
   levelGroups.forEach((nodeIds, level) => {
     const y = startY + level * levelHeight;
     const count = nodeIds.length;
-    const groupWidth = Math.min(width - 100, count * 100);
+    const groupWidth = Math.min(width - 200, count * 120);
     const startX = (width - groupWidth) / 2;
     const spacing = count > 1 ? groupWidth / (count - 1) : 0;
 
@@ -153,10 +133,8 @@ function calculateNodePositions(
         x = startX + index * spacing;
       }
 
-      // Специальная обработка для bus - центрируем по горизонтали
       if (element?.type === 'bus') {
-        // Bus шире, корректируем позицию
-        x = Math.max(70, Math.min(width - 70, x));
+        x = Math.max(80, Math.min(width - 80, x));
       }
 
       positions.set(id, { x, y, level });
@@ -172,16 +150,19 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
   const [status, setStatus] = useState('init');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    console.log('NetworkGraphInner data:', data ? `${data.elements?.length} elements, ${data.connections?.length} connections` : 'null');
-  }, [data]);
+  const handleNodeClick = useCallback((nodeId: string) => {
+    if (onNodeClick) {
+      onNodeClick(nodeId);
+    }
+  }, [onNodeClick]);
 
   useEffect(() => {
+    if (!data?.elements?.length) {
+      setStatus('no-data');
+      return;
+    }
+
     const timer = setTimeout(() => {
-      if (!data?.elements?.length) {
-        setStatus('no-data');
-        return;
-      }
       if (!containerRef.current) {
         setError('Контейнер не найден');
         return;
@@ -204,7 +185,6 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
         graphRef.current = null;
       }
 
-      // Вычисляем позиции узлов по правилам
       const positions = calculateNodePositions(
         data.elements,
         data.connections,
@@ -212,40 +192,41 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
         rect.height
       );
 
-      // Создаём узлы с правильными стилями
       const ids = new Set(data.elements.map(e => e.id));
+
+      // G6 v5 формат данных
       const nodes = data.elements.map(e => {
         const style = NODE_STYLES[e.type] || NODE_STYLES.junction;
         const pos = positions.get(e.id) || { x: 100, y: 100 };
-        const label = (e.name || e.elementId || e.id).substring(0, 15);
+        const label = (e.name || e.elementId || e.id).substring(0, 12);
 
         return {
           id: e.id,
           data: {
-            type: e.type,
             label,
+            nodeType: e.type,
+            fill: style.fill,
+            stroke: style.stroke,
+            size: style.size,
+            shape: style.shape,
           },
           style: {
             x: pos.x,
             y: pos.y,
-            fill: style.fill,
-            stroke: style.stroke,
-            size: style.size,
-            labelText: label,
           },
         };
       });
 
-      // Создаём рёбра
       const edges = data.connections
         .filter(c => ids.has(c.sourceId) && ids.has(c.targetId))
         .map((c, i) => ({
           id: `edge-${i}`,
           source: c.sourceId,
           target: c.targetId,
+          data: {},
         }));
 
-      console.log(`Creating graph: ${nodes.length} nodes, ${edges.length} edges (BFS layout)`);
+      console.log(`Creating G6 v5 graph: ${nodes.length} nodes, ${edges.length} edges`);
 
       try {
         const graph = new Graph({
@@ -257,53 +238,55 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
           padding: 40,
           behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
           node: {
-            type: (d: { data?: { type?: string } }) => {
-              const nodeType = d.data?.type || 'junction';
-              const shape = NODE_STYLES[nodeType]?.shape || 'rect';
-              return shape;
+            type: (model: { data?: { shape?: string } }) => {
+              return model.data?.shape || 'circle';
             },
             style: {
-              fill: (d: { style?: { fill?: string } }) => d.style?.fill || '#d1d5db',
-              stroke: (d: { style?: { stroke?: string } }) => d.style?.stroke || '#6b7280',
+              size: (model: { data?: { size?: number } }) => model.data?.size || 20,
+              fill: (model: { data?: { fill?: string } }) => model.data?.fill || '#d1d5db',
+              stroke: (model: { data?: { stroke?: string } }) => model.data?.stroke || '#6b7280',
               lineWidth: 2,
-              radius: (d: { data?: { type?: string } }) => {
-                const nodeType = d.data?.type;
-                // breaker имеет скруглённые углы
-                return nodeType === 'breaker' ? 6 : 2;
-              },
-              size: (d: { style?: { size?: number[] } }) => d.style?.size || [60, 24],
-              labelText: (d: { style?: { labelText?: string } }) => d.style?.labelText || '',
-              labelFontSize: 9,
-              labelFill: (d: { data?: { type?: string } }) => {
-                const nodeType = d.data?.type;
-                // load имеет белый текст на чёрном фоне
-                return nodeType === 'load' ? '#f3f4f6' : '#374151';
-              },
+              radius: 4,
+              labelText: (model: { data?: { label?: string } }) => model.data?.label || '',
+              labelFontSize: 10,
+              labelFill: '#374151',
               labelPlacement: 'bottom',
-              labelOffsetY: 4,
+              labelOffsetY: 8,
+            },
+            state: {
+              selected: {
+                stroke: '#3b82f6',
+                lineWidth: 3,
+              },
+              hover: {
+                stroke: '#60a5fa',
+                lineWidth: 2,
+              },
             },
           },
           edge: {
             type: 'line',
             style: {
               stroke: '#9ca3af',
-              lineWidth: 1.5,
+              lineWidth: 2,
               endArrow: true,
-              arrowSize: 4,
             },
           },
         });
 
         graphRef.current = graph;
 
-        graph.on('node:click', (evt: { itemId?: string }) => {
-          console.log('Node click:', evt.itemId);
-          if (onNodeClick && evt.itemId) onNodeClick(evt.itemId);
+        graph.on('node:click', (evt: { target: { id?: string }; itemId?: string }) => {
+          const nodeId = evt.itemId || evt.target?.id;
+          console.log('Node click:', nodeId);
+          if (nodeId) {
+            handleNodeClick(nodeId);
+          }
         });
 
         graph.render()
           .then(() => {
-            console.log('Graph rendered successfully with BFS layout');
+            console.log('G6 v5 graph rendered successfully');
             setStatus('ready');
             setTimeout(() => {
               try {
@@ -324,7 +307,7 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
         setError('Ошибка инициализации: ' + msg);
         setStatus('error');
       }
-    }, 100);
+    }, 150);
 
     return () => {
       clearTimeout(timer);
@@ -333,7 +316,7 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
         graphRef.current = null;
       }
     };
-  }, [data, onNodeClick]);
+  }, [data, handleNodeClick]);
 
   // Resize handler
   useEffect(() => {
@@ -343,6 +326,7 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
         if (rect.width > 10 && rect.height > 10) {
           try {
             graphRef.current.resize(rect.width, rect.height);
+            graphRef.current.fitView(40);
           } catch { /* ignore */ }
         }
       }
@@ -354,8 +338,12 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
 
   if (!data?.elements?.length) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-500">
-        Нет данных для отображения
+      <div className="h-full flex items-center justify-center text-gray-500 bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="text-4xl mb-4">📊</div>
+          <div className="text-lg">Нет данных для отображения</div>
+          <div className="text-sm text-gray-400 mt-2">База данных пуста</div>
+        </div>
       </div>
     );
   }
@@ -363,21 +351,25 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
   return (
     <div className="h-full w-full relative" style={{ background: '#f8fafc' }}>
       {/* Status indicator */}
-      <div className="absolute top-2 left-2 z-10 px-3 py-1.5 bg-white/90 rounded-lg shadow text-xs font-medium">
+      <div className="absolute top-2 left-2 z-10 px-3 py-1.5 bg-white/90 dark:bg-gray-800/90 rounded-lg shadow text-xs font-medium">
         {status === 'ready' ? (
-          <span className="text-green-600">✓ {data.elements.length} узлов, {data.connections.length} связей (BFS layout)</span>
+          <span className="text-green-600 dark:text-green-400">✓ {data.elements.length} узлов, {data.connections.length} связей (G6 v5)</span>
         ) : status === 'error' ? (
-          <span className="text-red-600">✗ Ошибка</span>
+          <span className="text-red-600 dark:text-red-400">✗ Ошибка</span>
         ) : (
-          <span className="text-blue-600">⏳ {status}...</span>
+          <span className="text-blue-600 dark:text-blue-400">⏳ {status}...</span>
         )}
       </div>
 
       {/* Fit button */}
       {status === 'ready' && (
         <button
-          onClick={() => graphRef.current?.fitView(40)}
-          className="absolute top-2 right-2 z-10 px-3 py-1.5 bg-white/90 rounded-lg shadow text-xs font-medium hover:bg-white"
+          onClick={() => {
+            try {
+              graphRef.current?.fitView(40);
+            } catch { /* ignore */ }
+          }}
+          className="absolute top-2 right-2 z-10 px-3 py-1.5 bg-white/90 dark:bg-gray-800/90 rounded-lg shadow text-xs font-medium hover:bg-white dark:hover:bg-gray-700 transition-colors"
         >
           Fit View
         </button>
@@ -385,8 +377,8 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
 
       {/* Legend */}
       {status === 'ready' && (
-        <div className="absolute bottom-2 left-2 z-10 p-3 bg-white/90 rounded-lg shadow text-xs">
-          <div className="grid grid-cols-3 gap-2">
+        <div className="absolute bottom-2 left-2 z-10 p-3 bg-white/90 dark:bg-gray-800/90 rounded-lg shadow text-xs">
+          <div className="grid grid-cols-3 gap-2 text-gray-600 dark:text-gray-400">
             <div className="flex items-center gap-1">
               <div className="w-4 h-4 rounded-full" style={{ background: '#fef3c7', border: '2px solid #f59e0b' }}></div>
               <span>Source</span>
@@ -417,10 +409,10 @@ export default function NetworkGraphInner({ data, onNodeClick }: Props) {
 
       {/* Error display */}
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-red-50/90 z-20">
-          <div className="text-center p-6 bg-white rounded-xl shadow-lg max-w-md">
-            <div className="text-red-600 font-bold text-lg mb-2">Ошибка графа</div>
-            <div className="text-red-500 text-sm">{error}</div>
+        <div className="absolute inset-0 flex items-center justify-center bg-red-50/90 dark:bg-red-900/20 z-20">
+          <div className="text-center p-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md">
+            <div className="text-red-600 dark:text-red-400 font-bold text-lg mb-2">Ошибка графа</div>
+            <div className="text-red-500 dark:text-red-300 text-sm">{error}</div>
           </div>
         </div>
       )}

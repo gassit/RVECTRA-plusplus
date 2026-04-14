@@ -1,133 +1,309 @@
-const { Document, Packer, Paragraph, TextRun, Header, Footer, Table, TableRow, TableCell,
-        AlignmentType, HeadingLevel, PageNumber, WidthType, BorderStyle, ShadingType,
-        PageOrientation, LevelFormat } = require("docx");
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, 
+        Header, Footer, PageNumber, AlignmentType, HeadingLevel, BorderStyle, 
+        WidthType, ShadingType, PageBreak } = require("docx");
 const fs = require("fs");
 
-// Palette - Tech Blue theme
+// Palette - Tech theme
 const P = {
-  primary: "#0A1628",
-  body: "#1A2B40",
-  secondary: "#6878A0",
-  accent: "#5B8DB8",
-  surface: "#F4F8FC"
+  primary: "0A1628",
+  body: "1A2B40", 
+  secondary: "6878A0",
+  accent: "5B8DB8",
+  surface: "F4F8FC"
 };
 
 const c = (hex) => hex.replace("#", "");
 
-// Helper for heading
+// Helper functions
 function heading(text, level = HeadingLevel.HEADING_1) {
   return new Paragraph({
     heading: level,
-    spacing: { before: level === HeadingLevel.HEADING_1 ? 400 : 280, after: 120 },
-    children: [new TextRun({ text, bold: true, color: c(P.primary), font: { ascii: "Calibri", eastAsia: "SimHei" }, size: level === HeadingLevel.HEADING_1 ? 32 : 28 })]
+    spacing: { before: level === HeadingLevel.HEADING_1 ? 360 : 240, after: 120 },
+    children: [new TextRun({ text, bold: true, color: P.primary, font: { ascii: "Calibri", eastAsia: "SimHei" } })]
   });
 }
 
-// Helper for body text
 function body(text) {
   return new Paragraph({
     alignment: AlignmentType.JUSTIFIED,
     indent: { firstLine: 480 },
-    spacing: { line: 312, after: 100 },
-    children: [new TextRun({ text, size: 24, color: c(P.body), font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" } })]
+    spacing: { line: 312 },
+    children: [new TextRun({ text, size: 24, color: P.body, font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" } })],
   });
 }
 
-// Helper for code block
-function codeBlock(lines) {
-  return lines.map(line => new Paragraph({
-    spacing: { line: 276, after: 0 },
-    shading: { type: ShadingType.CLEAR, fill: "F5F5F5" },
-    children: [new TextRun({ text: line, font: { ascii: "Consolas", eastAsia: "Consolas" }, size: 20, color: "333333" })]
-  }));
+function bodyNoIndent(text) {
+  return new Paragraph({
+    alignment: AlignmentType.JUSTIFIED,
+    spacing: { line: 312 },
+    children: [new TextRun({ text, size: 24, color: P.body, font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" } })],
+  });
 }
 
-// Table helper
+function codeBlock(text) {
+  return new Paragraph({
+    spacing: { before: 120, after: 120, line: 276 },
+    shading: { type: ShadingType.CLEAR, fill: "F5F5F5" },
+    children: [new TextRun({ text, size: 20, font: { ascii: "Consolas", eastAsia: "Consolas" }, color: "333333" })]
+  });
+}
+
 function createTable(headers, rows) {
-  const NB = { style: BorderStyle.SINGLE, size: 1, color: "D0D0D0" };
-  const borders = { top: NB, bottom: NB, left: NB, right: NB, insideHorizontal: NB, insideVertical: NB };
-  
+  const tableBorder = { style: BorderStyle.SINGLE, size: 1, color: "D0D0D0" };
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    borders,
+    borders: {
+      top: tableBorder, bottom: tableBorder, left: tableBorder, right: tableBorder,
+      insideHorizontal: tableBorder, insideVertical: tableBorder
+    },
     rows: [
       new TableRow({
         children: headers.map(h => new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: h, bold: true, size: 22, color: "FFFFFF" })] })],
-          shading: { type: ShadingType.CLEAR, fill: c(P.accent) },
-          margins: { top: 60, bottom: 60, left: 120, right: 120 }
+          shading: { type: ShadingType.CLEAR, fill: P.accent },
+          margins: { top: 60, bottom: 60, left: 120, right: 120 },
+          children: [new Paragraph({ children: [new TextRun({ text: h, bold: true, color: "FFFFFF", size: 22 })] })]
         }))
       }),
-      ...rows.map(row => new TableRow({
+      ...rows.map((row, idx) => new TableRow({
         children: row.map(cell => new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: cell, size: 21 })] })],
-          margins: { top: 60, bottom: 60, left: 120, right: 120 }
+          shading: { type: ShadingType.CLEAR, fill: idx % 2 === 0 ? "FFFFFF" : P.surface },
+          margins: { top: 60, bottom: 60, left: 120, right: 120 },
+          children: [new Paragraph({ children: [new TextRun({ text: cell, size: 20, color: P.body })] })]
         }))
       }))
     ]
   });
 }
 
-// Document content
+// Cover builder - Simple clean cover
+function buildCover() {
+  return [
+    new Paragraph({ spacing: { before: 2000 } }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+      children: [new TextRun({ text: "RVectrA", bold: true, size: 72, color: P.accent, font: { ascii: "Calibri", eastAsia: "SimHei" } })]
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 400 },
+      children: [new TextRun({ text: "\u0426\u0418\u0424\u0420\u041e\u0412\u041e\u0419 \u0414\u0412\u041e\u0419\u041d\u0418\u041a \u042d\u041b\u0415\u041a\u0422\u0420\u0418\u0427\u0415\u0421\u041a\u041e\u0419 \u0421\u0415\u0422\u0418", size: 32, color: P.primary, font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" } })]
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+      children: [new TextRun({ text: "Digital Twin of Electrical Network", size: 28, color: P.secondary, font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" } })]
+    }),
+    new Paragraph({ spacing: { before: 1000 } }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 100 },
+      children: [new TextRun({ text: "\u0422\u0415\u0425\u041d\u0418\u0427\u0415\u0421\u041a\u0410\u042f \u0414\u041e\u041a\u0423\u041c\u0415\u041d\u0422\u0410\u0426\u0418\u042f", size: 28, bold: true, color: P.primary, font: { ascii: "Calibri", eastAsia: "SimHei" } })]
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 100 },
+      children: [new TextRun({ text: "Technical Documentation", size: 24, color: P.secondary, font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" } })]
+    }),
+    new Paragraph({ spacing: { before: 2000 } }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: "Version 1.0 | 2025", size: 22, color: P.secondary, font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" } })]
+    }),
+  ];
+}
+
+// Build content sections
+function buildContent() {
+  return [
+    // 1. Introduction
+    heading("1. \u0412\u0412\u0415\u0414\u0415\u041d\u0418\u0415"),
+    body("RVectrA \u2014 \u044d\u0442\u043e \u0446\u0438\u0444\u0440\u043e\u0432\u043e\u0439 \u0434\u0432\u043e\u0439\u043d\u0438\u043a \u044d\u043b\u0435\u043a\u0442\u0440\u0438\u0447\u0435\u0441\u043a\u043e\u0439 \u0441\u0435\u0442\u0438, \u043f\u0440\u0435\u0434\u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u043d\u044b\u0439 \u0434\u043b\u044f \u0432\u0438\u0437\u0443\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438, \u0430\u043d\u0430\u043b\u0438\u0437\u0430 \u0438 \u0432\u0430\u043b\u0438\u0434\u0430\u0446\u0438\u0438 \u0441\u0445\u0435\u043c \u044d\u043b\u0435\u043a\u0442\u0440\u043e\u0441\u043d\u0430\u0431\u0436\u0435\u043d\u0438\u044f. \u0421\u0438\u0441\u0442\u0435\u043c\u0430 \u043f\u043e\u0437\u0432\u043e\u043b\u044f\u0435\u0442 \u0438\u043c\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435 \u0438\u0437 Excel-\u0444\u0430\u0439\u043b\u043e\u0432, \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0430\u0442\u044c \u0442\u043e\u043f\u043e\u043b\u043e\u0433\u0438\u044e \u0441\u0435\u0442\u0438 \u0432 \u0432\u0438\u0434\u0435 \u0438\u043d\u0442\u0435\u0440\u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0433\u043e \u0433\u0440\u0430\u0444\u0430 \u0438 \u043f\u0440\u043e\u0432\u043e\u0434\u0438\u0442\u044c \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0443\u044e \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443 \u0441\u043e\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0438\u044f \u043d\u043e\u0440\u043c\u0430\u0442\u0438\u0432\u0430\u043c."),
+    body("\u041f\u0440\u043e\u0435\u043a\u0442 \u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0430\u043d \u0441 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u0435\u043c \u0441\u043e\u0432\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0445 \u0432\u0435\u0431-\u0442\u0435\u0445\u043d\u043e\u043b\u043e\u0433\u0438\u0439 \u0438 \u043f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u0442 \u0438\u043d\u0442\u0443\u0438\u0442\u0438\u0432\u043d\u043e \u043f\u043e\u043d\u044f\u0442\u043d\u044b\u0439 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441 \u0434\u043b\u044f \u0440\u0430\u0431\u043e\u0442\u044b \u0441 \u0441\u0435\u0442\u0435\u0432\u044b\u043c\u0438 \u0434\u0430\u043d\u043d\u044b\u043c\u0438. \u041e\u0441\u043d\u043e\u0432\u043d\u044b\u0435 \u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e\u0441\u0442\u0438 \u0441\u0438\u0441\u0442\u0435\u043c\u044b \u0432\u043a\u043b\u044e\u0447\u0430\u044e\u0442: \u0438\u043c\u043f\u043e\u0440\u0442 \u0434\u0430\u043d\u043d\u044b\u0445 \u0438\u0437 Excel, \u0432\u0438\u0437\u0443\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044e \u0441\u0445\u0435\u043c\u044b \u0441\u0435\u0442\u0438 \u0441 \u043f\u043e\u043c\u043e\u0449\u044c\u044e \u0431\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438 G6, \u0440\u0430\u0441\u0447\u0451\u0442 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0438 \u043c\u043e\u0449\u043d\u043e\u0441\u0442\u0438, \u0432\u0430\u043b\u0438\u0434\u0430\u0446\u0438\u044e \u0441\u0435\u0442\u0438 \u0438 \u043f\u043e\u0438\u0441\u043a \u043f\u0440\u043e\u0431\u043b\u0435\u043c."),
+    
+    // 2. Tech Stack
+    heading("2. \u0422\u0415\u0425\u041d\u041e\u041b\u041e\u0413\u0418\u0427\u0415\u0421\u041a\u0418\u0419 \u0421\u0422\u0415\u041a"),
+    body("\u041f\u0440\u043e\u0435\u043a\u0442 \u043f\u043e\u0441\u0442\u0440\u043e\u0435\u043d \u043d\u0430 \u0431\u0430\u0437\u0435 \u0441\u043e\u0432\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0445 \u0442\u0435\u0445\u043d\u043e\u043b\u043e\u0433\u0438\u0439, \u043e\u0431\u0435\u0441\u043f\u0435\u0447\u0438\u0432\u0430\u044e\u0449\u0438\u0445 \u0432\u044b\u0441\u043e\u043a\u0443\u044e \u043f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c \u0438 \u043c\u0430\u0441\u0448\u0442\u0430\u0431\u0438\u0440\u0443\u0435\u043c\u043e\u0441\u0442\u044c:"),
+    createTable(
+      ["\u041a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442", "\u0422\u0435\u0445\u043d\u043e\u043b\u043e\u0433\u0438\u044f", "\u0412\u0435\u0440\u0441\u0438\u044f", "\u041d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435"],
+      [
+        ["Framework", "Next.js", "16.1.1", "\u041f\u043e\u043b\u043d\u043e\u0441\u0442\u0430\u043a \u0432\u0435\u0431-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f"],
+        ["UI Library", "React", "19.0.0", "\u041a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u044b \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430"],
+        ["Database", "SQLite + Prisma", "6.11.1", "\u0425\u0440\u0430\u043d\u0435\u043d\u0438\u0435 \u0434\u0430\u043d\u043d\u044b\u0445 \u0441\u0435\u0442\u0438"],
+        ["Visualization", "@antv/g6", "5.1.0", "\u0412\u0438\u0437\u0443\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f \u0433\u0440\u0430\u0444\u043e\u0432"],
+        ["Styling", "Tailwind CSS", "4.x", "\u0421\u0442\u0438\u043b\u0438\u0437\u0430\u0446\u0438\u044f UI"],
+        ["Data Import", "xlsx", "0.18.5", "\u041f\u0430\u0440\u0441\u0438\u043d\u0433 Excel-\u0444\u0430\u0439\u043b\u043e\u0432"],
+        ["Language", "TypeScript", "5.x", "\u0422\u0438\u043f\u0438\u0437\u0430\u0446\u0438\u044f \u0434\u0430\u043d\u043d\u044b\u0445"]
+      ]
+    ),
+    
+    // 3. Installation
+    heading("3. \u0423\u0421\u0422\u0410\u041d\u041e\u0412\u041a\u0410"),
+    body("\u0414\u043b\u044f \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438 \u043f\u0440\u043e\u0435\u043a\u0442\u0430 \u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e \u0432\u044b\u043f\u043e\u043b\u043d\u0438\u0442\u044c \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0438\u0435 \u0448\u0430\u0433\u0438:"),
+    bodyNoIndent("3.1 \u041a\u043b\u043e\u043d\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435 \u0440\u0435\u043f\u043e\u0437\u0438\u0442\u043e\u0440\u0438\u044f:"),
+    codeBlock("git clone <repository-url>\ncd my-project"),
+    bodyNoIndent("3.2 \u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u0437\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u0435\u0439:"),
+    codeBlock("bun install  # \u0438\u043b\u0438 npm install"),
+    bodyNoIndent("3.3 \u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430 \u0431\u0430\u0437\u044b \u0434\u0430\u043d\u043d\u044b\u0445:"),
+    codeBlock("bunx prisma generate\nbunx prisma db push"),
+    bodyNoIndent("3.4 \u0417\u0430\u043f\u0443\u0441\u043a \u0432 \u0440\u0435\u0436\u0438\u043c\u0435 \u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u043a\u0438:"),
+    codeBlock("bun run dev  # \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u043e \u043d\u0430 http://localhost:3000"),
+    
+    // 4. Project Structure
+    heading("4. \u0421\u0422\u0420\u0423\u041a\u0422\u0423\u0420\u0410 \u041f\u0420\u041e\u0415\u041a\u0422\u0410"),
+    body("\u041f\u0440\u043e\u0435\u043a\u0442 \u0438\u043c\u0435\u0435\u0442 \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0443\u044e \u0441\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0443 \u0434\u0438\u0440\u0435\u043a\u0442\u043e\u0440\u0438\u0439:"),
+    codeBlock(`my-project/
+\u251c\u2500 app/                        # Next.js App Router
+\u2502   \u251c\u2500 api/                    # API \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u044b
+\u2502   \u2502   \u251c\u2500 network/route.ts     # \u043f\u043e\u043b\u0443\u0447\u0435\u043d\u0438\u0435 \u0434\u0430\u043d\u043d\u044b\u0445 \u0441\u0435\u0442\u0438
+\u2502   \u2502   \u251c\u2500 stats/route.ts       # \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0430
+\u2502   \u2502   \u251c\u2500 validation/route.ts  # \u0432\u0430\u043b\u0438\u0434\u0430\u0446\u0438\u044f
+\u2502   \u2502   \u2514\u2500 import/route.ts      # \u0438\u043c\u043f\u043e\u0440\u0442 Excel
+\u2502   \u251c\u2500 page.tsx                 # \u0433\u043b\u0430\u0432\u043d\u0430\u044f \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430
+\u2502   \u2514\u2500 layout.tsx               # \u043a\u043e\u0440\u043d\u0435\u0432\u043e\u0439 \u043b\u0435\u0439\u0430\u0443\u0442
+\u251c\u2500 components/
+\u2502   \u2514\u2500 network/
+\u2502       \u251c\u2500 NetworkGraph.tsx        # \u043e\u0431\u0451\u0440\u0442\u043a\u0430 G6 (\u0434\u0438\u043d\u0430\u043c\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u0438\u043c\u043f\u043e\u0440\u0442)
+\u2502       \u2514\u2500 NetworkGraphInner.tsx   # G6 \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442
+\u251c\u2500 lib/
+\u2502   \u2514\u2500 prisma.ts               # Prisma \u043a\u043b\u0438\u0435\u043d\u0442
+\u251c\u2500 prisma/
+\u2502   \u251c\u2500 schema.prisma           # \u0441\u0445\u0435\u043c\u0430 \u0411\u0414
+\u2502   \u2514\u2500 powergrid.db            # SQLite \u0431\u0430\u0437\u0430 \u0434\u0430\u043d\u043d\u044b\u0445
+\u2514\u2500 package.json`),
+    
+    // 5. Database
+    heading("5. \u0411\u0410\u0417\u0410 \u0414\u0410\u041d\u041d\u042b\u0425"),
+    body("\u0412 \u043f\u0440\u043e\u0435\u043a\u0442\u0435 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f SQLite \u0447\u0435\u0440\u0435\u0437 Prisma ORM. \u041e\u0441\u043d\u043e\u0432\u043d\u044b\u0435 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0438 \u0431\u0430\u0437\u044b \u0434\u0430\u043d\u043d\u044b\u0445:"),
+    
+    heading("5.1 \u0421\u0443\u0449\u043d\u043e\u0441\u0442\u044c Element", HeadingLevel.HEADING_2),
+    body("\u042d\u043b\u0435\u043c\u0435\u043d\u0442 \u0441\u0435\u0442\u0438 \u2014 \u043e\u0441\u043d\u043e\u0432\u043d\u0430\u044f \u0435\u0434\u0438\u043d\u0438\u0446\u0430 \u0434\u0430\u043d\u043d\u044b\u0445. \u0421\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044e \u043e \u0442\u0438\u043f\u0435, \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0438, \u043f\u043e\u0437\u0438\u0446\u0438\u0438 \u0438 \u0443\u0440\u043e\u0432\u043d\u0435 \u043d\u0430\u043f\u0440\u044f\u0436\u0435\u043d\u0438\u044f."),
+    createTable(
+      ["\u041f\u043e\u043b\u0435", "\u0422\u0438\u043f", "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435"],
+      [
+        ["id", "String", "\u0423\u043d\u0438\u043a\u0430\u043b\u044c\u043d\u044b\u0439 \u0438\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440"],
+        ["elementId", "String", "\u0412\u043d\u0435\u0448\u043d\u0438\u0439 ID (\u0438\u0437 Excel)"],
+        ["name", "String", "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u0430"],
+        ["type", "String", "\u0422\u0438\u043f: source, bus, breaker, meter, load, junction"],
+        ["posX, posY", "Float?", "\u041a\u043e\u043e\u0440\u0434\u0438\u043d\u0430\u0442\u044b \u043d\u0430 \u0441\u0445\u0435\u043c\u0435"],
+        ["voltageLevel", "Float?", "\u0423\u0440\u043e\u0432\u0435\u043d\u044c \u043d\u0430\u043f\u0440\u044f\u0436\u0435\u043d\u0438\u044f (kV)"]
+      ]
+    ),
+    
+    heading("5.2 \u0421\u0443\u0449\u043d\u043e\u0441\u0442\u044c Connection", HeadingLevel.HEADING_2),
+    body("\u0421\u0432\u044f\u0437\u044c \u043c\u0435\u0436\u0434\u0443 \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u0430\u043c\u0438 \u0441\u0435\u0442\u0438. \u041e\u043f\u0440\u0435\u0434\u0435\u043b\u044f\u0435\u0442 \u0442\u043e\u043f\u043e\u043b\u043e\u0433\u0438\u044e \u0441\u0435\u0442\u0438."),
+    createTable(
+      ["\u041f\u043e\u043b\u0435", "\u0422\u0438\u043f", "\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435"],
+      [
+        ["id", "String", "\u0423\u043d\u0438\u043a\u0430\u043b\u044c\u043d\u044b\u0439 \u0438\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440"],
+        ["sourceId", "String", "ID \u0438\u0441\u0445\u043e\u0434\u044f\u0449\u0435\u0433\u043e \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u0430"],
+        ["targetId", "String", "ID \u0432\u0445\u043e\u0434\u044f\u0449\u0435\u0433\u043e \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u0430"],
+        ["cableId", "String?", "\u0421\u0441\u044b\u043b\u043a\u0430 \u043d\u0430 \u043a\u0430\u0431\u0435\u043b\u044c (\u0435\u0441\u043b\u0438 \u0435\u0441\u0442\u044c)"]
+      ]
+    ),
+    
+    heading("5.3 \u0414\u0440\u0443\u0433\u0438\u0435 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0438", HeadingLevel.HEADING_2),
+    body("\u0411\u0430\u0437\u0430 \u0434\u0430\u043d\u043d\u044b\u0445 \u0442\u0430\u043a\u0436\u0435 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0438\u0435 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0438 \u0434\u043b\u044f \u043f\u043e\u043b\u043d\u043e\u0439 \u043c\u043e\u0434\u0435\u043b\u0438 \u0441\u0435\u0442\u0438: Device (\u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430), DeviceSlot (\u0441\u043b\u043e\u0442\u044b \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432), Load (\u043d\u0430\u0433\u0440\u0443\u0437\u043a\u0430), Breaker (\u0430\u0432\u0442\u043e\u043c\u0430\u0442\u044b), Meter (\u0441\u0447\u0451\u0442\u0447\u0438\u043a\u0438), Transformer (\u0442\u0440\u0430\u043d\u0441\u0444\u043e\u0440\u043c\u0430\u0442\u043e\u0440\u044b), Cable (\u043a\u0430\u0431\u0435\u043b\u0438), \u0430 \u0442\u0430\u043a\u0436\u0435 \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a\u0438 CableReference, BreakerReference \u0438 TransformerReference."),
+    
+    // 6. API Routes
+    heading("6. API \u041c\u0410\u0420\u0428\u0420\u0423\u0422\u042b"),
+    
+    heading("6.1 GET /api/network", HeadingLevel.HEADING_2),
+    body("\u0412\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u0432\u0441\u0435 \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u044b \u0438 \u0441\u0432\u044f\u0437\u0438 \u0441\u0435\u0442\u0438 \u0432 \u0444\u043e\u0440\u043c\u0430\u0442\u0435, \u043f\u0440\u0438\u0433\u043e\u0434\u043d\u043e\u043c \u0434\u043b\u044f \u0432\u0438\u0437\u0443\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438."),
+    codeBlock(`// Response
+{
+  "elements": [
+    { "id": "...", "elementId": "TP-1", "name": "\u0422\u041f-1", "type": "source", "posX": 100, "posY": 50 }
+  ],
+  "connections": [
+    { "id": "...", "sourceId": "...", "targetId": "...", "source": {...}, "target": {...} }
+  ]
+}`),
+    
+    heading("6.2 GET /api/stats", HeadingLevel.HEADING_2),
+    body("\u0412\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0443 \u0441\u0435\u0442\u0438: \u043a\u043e\u043b\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u043e\u0432 \u043f\u043e \u0442\u0438\u043f\u0430\u043c, \u043c\u043e\u0449\u043d\u043e\u0441\u0442\u044c \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u043e\u0432, \u043f\u043e\u0442\u0440\u0435\u0431\u043b\u0435\u043d\u0438\u0435 \u0438 \u0440\u0435\u0437\u0435\u0440\u0432."),
+    
+    heading("6.3 GET /api/validation", HeadingLevel.HEADING_2),
+    body("\u0412\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u044b \u0432\u0430\u043b\u0438\u0434\u0430\u0446\u0438\u0438 \u0441\u0435\u0442\u0438. \u041f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u043c\u044b\u0435 \u043f\u0440\u0430\u0432\u0438\u043b\u0430: \u043a\u043e\u043e\u0440\u0434\u0438\u043d\u0430\u0446\u0438\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442-\u043a\u0430\u0431\u0435\u043b\u044c, \u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043d\u0430\u043f\u0440\u044f\u0436\u0435\u043d\u0438\u044f, \u0442\u043e\u043a\u0438 \u041a\u0417, \u0441\u0435\u043b\u0435\u043a\u0442\u0438\u0432\u043d\u043e\u0441\u0442\u044c \u0437\u0430\u0449\u0438\u0442\u044b."),
+    
+    heading("6.4 POST /api/import", HeadingLevel.HEADING_2),
+    body("\u0418\u043c\u043f\u043e\u0440\u0442 \u0434\u0430\u043d\u043d\u044b\u0445 \u0438\u0437 Excel-\u0444\u0430\u0439\u043b\u0430. \u041f\u0440\u0438\u043d\u0438\u043c\u0430\u0435\u0442 multipart/form-data \u0441 \u0444\u0430\u0439\u043b\u043e\u043c. \u0410\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u044f\u0435\u0442 \u0442\u0438\u043f \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u0430 \u043f\u043e \u043a\u043b\u044e\u0447\u0435\u0432\u044b\u043c \u0441\u043b\u043e\u0432\u0430\u043c \u0432 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0438 \u0438\u043b\u0438 \u0442\u0438\u043f\u0435. \u041f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442 \u043a\u0430\u043a \u0440\u0443\u0441\u0441\u043a\u0438\u0435, \u0442\u0430\u043a \u0438 \u0430\u043d\u0433\u043b\u0438\u0439\u0441\u043a\u0438\u0435 \u043d\u0430\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u044f \u043f\u043e\u043b\u0435\u0439."),
+    
+    // 7. G6 Visualization
+    heading("7. \u0412\u0418\u0417\u0423\u0410\u041b\u0418\u0417\u0410\u0426\u0418\u042f G6"),
+    body("\u0414\u043b\u044f \u0432\u0438\u0437\u0443\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438 \u0441\u0445\u0435\u043c\u044b \u0441\u0435\u0442\u0438 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f \u0431\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0430 @antv/g6 \u0432\u0435\u0440\u0441\u0438\u0438 5.x. \u042d\u0442\u043e \u043c\u043e\u0449\u043d\u0430\u044f \u0431\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0430 \u0434\u043b\u044f \u0432\u0438\u0437\u0443\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438 \u0433\u0440\u0430\u0444\u043e\u0432 \u0441 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u043e\u0439 \u0438\u043d\u0442\u0435\u0440\u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u0444\u0443\u043d\u043a\u0446\u0438\u0439: \u043f\u0435\u0440\u0435\u0442\u0430\u0441\u043a\u0438\u0432\u0430\u043d\u0438\u0435 (drag-canvas), \u043c\u0430\u0441\u0448\u0442\u0430\u0431\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435 (zoom-canvas), \u043f\u0435\u0440\u0435\u0442\u0430\u0441\u043a\u0438\u0432\u0430\u043d\u0438\u0435 \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u043e\u0432 (drag-element)."),
+    
+    heading("7.1 \u0421\u0442\u0438\u043b\u0438 \u0443\u0437\u043b\u043e\u0432", HeadingLevel.HEADING_2),
+    body("\u041a\u0430\u0436\u0434\u044b\u0439 \u0442\u0438\u043f \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u0430 \u0438\u043c\u0435\u0435\u0442 \u0441\u0432\u043e\u0439 \u0441\u0442\u0438\u043b\u044c \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f:"),
+    createTable(
+      ["\u0422\u0438\u043f", "\u0424\u043e\u0440\u043c\u0430", "\u0426\u0432\u0435\u0442", "\u0420\u0430\u0437\u043c\u0435\u0440"],
+      [
+        ["SOURCE", "hexagon", "\u0436\u0451\u043b\u0442\u044b\u0439 (#fef3c7)", "70\u00d770"],
+        ["BREAKER", "rect", "\u0431\u0435\u043b\u044b\u0439 (#ffffff)", "60\u00d724"],
+        ["LOAD", "rect", "\u0447\u0451\u0440\u043d\u044b\u0439 (#374151)", "60\u00d724"],
+        ["METER", "diamond", "\u0441\u0438\u043d\u0438\u0439 (#dbeafe)", "40\u00d740"],
+        ["BUS", "rect", "\u043c\u0435\u0434\u043d\u044b\u0439 (#fcd34d)", "120\u00d720"],
+        ["JUNCTION", "circle", "\u0441\u0435\u0440\u044b\u0439 (#d1d5db)", "24\u00d724"]
+      ]
+    ),
+    
+    heading("7.2 \u0410\u043b\u0433\u043e\u0440\u0438\u0442\u043c \u0440\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u0438\u044f BFS", HeadingLevel.HEADING_2),
+    body("\u0414\u043b\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0433\u043e \u0440\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u0438\u044f \u0443\u0437\u043b\u043e\u0432 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f BFS (\u043f\u043e\u0438\u0441\u043a \u0432 \u0448\u0438\u0440\u0438\u043d\u0443). \u041f\u0440\u0430\u0432\u0438\u043b\u0430 \u0440\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u0438\u044f: SOURCE \u0440\u0430\u0441\u043f\u043e\u043b\u0430\u0433\u0430\u044e\u0442\u0441\u044f \u043d\u0430 \u0443\u0440\u043e\u0432\u043d\u0435 0 (\u0432\u0432\u0435\u0440\u0445\u0443 \u0441\u0445\u0435\u043c\u044b), LOAD \u2014 \u043d\u0430 \u043c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d\u043e\u043c \u0443\u0440\u043e\u0432\u043d\u0435 (\u0432\u043d\u0438\u0437\u0443). \u042d\u043b\u0435\u043c\u0435\u043d\u0442\u044b, \u043f\u0438\u0442\u0430\u0435\u043c\u044b\u0435 \u043e\u0442 BUS, \u0440\u0430\u0441\u043f\u043e\u043b\u0430\u0433\u0430\u044e\u0442\u0441\u044f \u043d\u0430 \u043e\u0434\u043d\u043e\u043c \u0443\u0440\u043e\u0432\u043d\u0435 \u043f\u043e\u0434 \u043d\u0438\u043c."),
+    
+    // 8. Data Import
+    heading("8. \u0417\u0410\u0413\u0420\u0423\u0417\u041a\u0410 \u0418 \u041e\u0411\u0420\u0410\u0411\u041e\u0422\u041a\u0410 \u0414\u0410\u041d\u041d\u042b\u0425"),
+    body("\u0418\u043c\u043f\u043e\u0440\u0442 \u0434\u0430\u043d\u043d\u044b\u0445 \u043e\u0441\u0443\u0449\u0435\u0441\u0442\u0432\u043b\u044f\u0435\u0442\u0441\u044f \u0447\u0435\u0440\u0435\u0437 Excel-\u0444\u0430\u0439\u043b\u044b. \u0421\u0438\u0441\u0442\u0435\u043c\u0430 \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u0440\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u0451\u0442 \u0442\u0438\u043f \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u0430 \u043f\u043e \u043a\u043b\u044e\u0447\u0435\u0432\u044b\u043c \u0441\u043b\u043e\u0432\u0430\u043c \u0432 \u043f\u043e\u043b\u0435 \u0442\u0438\u043f\u0430 \u0438\u043b\u0438 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0438:"),
+    createTable(
+      ["\u041a\u043b\u044e\u0447\u0435\u0432\u044b\u0435 \u0441\u043b\u043e\u0432\u0430", "\u0422\u0438\u043f"],
+      [
+        ["source, \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a, \u0442\u043f, \u0442\u0440\u0430\u043d\u0441\u0444\u043e\u0440\u043c\u0430\u0442\u043e\u0440", "SOURCE"],
+        ["bus, \u0448\u0438\u043d\u0430, \u0441\u0431\u043e\u0440\u043a\u0430", "BUS"],
+        ["breaker, \u0430\u0432\u0442\u043e\u043c\u0430\u0442, \u0432\u044b\u043a\u043b\u044e\u0447\u0430\u0442\u0435\u043b\u044c", "BREAKER"],
+        ["meter, \u0441\u0447\u0451\u0442\u0447\u0438\u043a, \u0443\u0447\u0451\u0442", "METER"],
+        ["load, \u043d\u0430\u0433\u0440\u0443\u0437\u043a\u0430, \u043f\u043e\u0442\u0440\u0435\u0431\u0438\u0442\u0435\u043b\u044c", "LOAD"]
+      ]
+    ),
+    body("\u041f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u043c\u044b\u0435 \u043f\u043e\u043b\u044f \u0432 Excel: ID, \u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 (\u0438\u043b\u0438 Name), \u0422\u0438\u043f (\u0438\u043b\u0438 Type), \u041d\u0430\u043f\u0440\u044f\u0436\u0435\u043d\u0438\u0435 (\u0438\u043b\u0438 U), \u041c\u043e\u0449\u043d\u043e\u0441\u0442\u044c (\u0438\u043b\u0438 Power, P), \u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f."),
+    
+    // 9. UI Components
+    heading("9. \u041f\u041e\u041b\u042c\u0417\u041e\u0412\u0410\u0422\u0415\u041b\u042c\u0421\u041a\u0418\u0419 \u0418\u041d\u0422\u0415\u0420\u0424\u0415\u0419\u0421"),
+    body("\u0413\u043b\u0430\u0432\u043d\u0430\u044f \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0438\u0435 \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u044b \u0443\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f:"),
+    body("\u041f\u043e\u0438\u0441\u043a \u043f\u043e \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u0430\u043c \u2014 \u043f\u043e\u0437\u0432\u043e\u043b\u044f\u0435\u0442 \u0444\u0438\u043b\u044c\u0442\u0440\u043e\u0432\u0430\u0442\u044c \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0430\u0435\u043c\u044b\u0435 \u0443\u0437\u043b\u044b \u043f\u043e \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044e \u0438\u043b\u0438 ID. \u041f\u0430\u043d\u0435\u043b\u044c \u043c\u043e\u0449\u043d\u043e\u0441\u0442\u0438 \u2014 \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0430\u0435\u0442 \u043e\u0431\u0449\u0443\u044e, \u043f\u043e\u0442\u0440\u0435\u0431\u043b\u044f\u0435\u043c\u0443\u044e, \u0441\u0432\u043e\u0431\u043e\u0434\u043d\u0443\u044e \u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u043d\u0443\u044e \u043c\u043e\u0449\u043d\u043e\u0441\u0442\u044c \u0432 \u043a\u0412\u0410. \u0418\u043d\u0434\u0438\u043a\u0430\u0442\u043e\u0440 \u0432\u0430\u043b\u0438\u0434\u0430\u0446\u0438\u0438 \u2014 \u043f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u043a\u043e\u043b\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u043e\u0448\u0438\u0431\u043e\u043a \u0438 \u043f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u0439 \u0441 \u0446\u0432\u0435\u0442\u043e\u0432\u043e\u0439 \u0438\u043d\u0434\u0438\u043a\u0430\u0446\u0438\u0435\u0439 (\u043a\u0440\u0430\u0441\u043d\u044b\u0439 \u2014 \u043e\u0448\u0438\u0431\u043a\u0438, \u0436\u0451\u043b\u0442\u044b\u0439 \u2014 \u043f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u044f, \u0437\u0435\u043b\u0451\u043d\u044b\u0439 \u2014 \u043d\u043e\u0440\u043c\u0430). \u041f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0430\u0442\u0435\u043b\u044c \u0442\u0435\u043c\u044b \u2014 \u0441\u0432\u0435\u0442\u043b\u0430\u044f/\u0442\u0451\u043c\u043d\u0430\u044f \u0442\u0435\u043c\u0430. \u041a\u043d\u043e\u043f\u043a\u0430 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f \u2014 \u043f\u0435\u0440\u0435\u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u0442 \u0434\u0430\u043d\u043d\u044b\u0435 \u0441\u0435\u0442\u0438."),
+    body("\u041d\u0430 \u0441\u0445\u0435\u043c\u0435 \u0440\u0430\u0441\u043f\u043e\u043b\u043e\u0436\u0435\u043d\u044b \u043f\u043b\u0430\u0432\u0430\u044e\u0449\u0438\u0435 \u043f\u0430\u043d\u0435\u043b\u0438: \u043b\u0435\u0433\u0435\u043d\u0434\u0430 \u0441 \u0443\u0441\u043b\u043e\u0432\u043d\u044b\u043c\u0438 \u043e\u0431\u043e\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u044f\u043c\u0438 \u0442\u0438\u043f\u043e\u0432 \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u043e\u0432 (\u0432\u043d\u0438\u0437\u0443 \u0441\u043b\u0435\u0432\u0430), \u043f\u0430\u043d\u0435\u043b\u044c \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0438 (\u0432\u043a\u043b\u0430\u0434\u043a\u0430 \u0441 \u0434\u0435\u0442\u0430\u043b\u044f\u043c\u0438 \u043f\u043e \u043a\u043b\u0438\u043a\u0443), \u043f\u0430\u043d\u0435\u043b\u044c \u0432\u0430\u043b\u0438\u0434\u0430\u0446\u0438\u0438 \u0441 \u0441\u043f\u0438\u0441\u043a\u043e\u043c \u043f\u0440\u043e\u0431\u043b\u0435\u043c."),
+    
+    // 10. Conclusion
+    heading("10. \u0417\u0410\u041a\u041b\u044e\u0427\u0415\u041d\u0418\u0415"),
+    body("RVectrA \u043f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u0442 \u0441\u043e\u0431\u043e\u0439 \u043a\u043e\u043c\u043f\u043b\u0435\u043a\u0441\u043d\u043e\u0435 \u0440\u0435\u0448\u0435\u043d\u0438\u0435 \u0434\u043b\u044f \u0440\u0430\u0431\u043e\u0442\u044b \u0441 \u0434\u0430\u043d\u043d\u044b\u043c\u0438 \u044d\u043b\u0435\u043a\u0442\u0440\u0438\u0447\u0435\u0441\u043a\u0438\u0445 \u0441\u0435\u0442\u0435\u0439. \u0421\u0438\u0441\u0442\u0435\u043c\u0430 \u043e\u0431\u0435\u0441\u043f\u0435\u0447\u0438\u0432\u0430\u0435\u0442 \u0431\u044b\u0441\u0442\u0440\u044b\u0439 \u0438\u043c\u043f\u043e\u0440\u0442 \u0434\u0430\u043d\u043d\u044b\u0445, \u0438\u043d\u0442\u0443\u0438\u0442\u0438\u0432\u043d\u0443\u044e \u0432\u0438\u0437\u0443\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044e \u0442\u043e\u043f\u043e\u043b\u043e\u0433\u0438\u0438 \u0441\u0435\u0442\u0438 \u0438 \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0443\u044e \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443 \u0441\u043e\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0438\u044f \u043d\u043e\u0440\u043c\u0430\u0442\u0438\u0432\u0430\u043c. \u0418\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u0435 \u0441\u043e\u0432\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0445 \u0442\u0435\u0445\u043d\u043e\u043b\u043e\u0433\u0438\u0439 (Next.js 16, React 19, G6 v5, Prisma 6) \u0433\u0430\u0440\u0430\u043d\u0442\u0438\u0440\u0443\u0435\u0442 \u0432\u044b\u0441\u043e\u043a\u0443\u044e \u043f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c \u0438 \u043c\u0430\u0441\u0448\u0442\u0430\u0431\u0438\u0440\u0443\u0435\u043c\u043e\u0441\u0442\u044c \u0441\u0438\u0441\u0442\u0435\u043c\u044b.")
+  ];
+}
+
+// Build document
 const doc = new Document({
   styles: {
     default: {
       document: {
-        run: { font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" }, size: 24, color: c(P.body) },
+        run: { font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" }, size: 24, color: P.body },
         paragraph: { spacing: { line: 312 } }
       }
     }
   },
   sections: [
-    // Cover section
-    {
-      properties: {
-        page: { margin: { top: 0, bottom: 0, left: 0, right: 0 } }
-      },
-      children: [
-        new Paragraph({ spacing: { before: 4000 } }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 400 },
-          children: [new TextRun({ text: "RVectrA", bold: true, size: 72, color: c(P.accent), font: { ascii: "Calibri", eastAsia: "SimHei" } })]
-        }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 200 },
-          children: [new TextRun({ text: "Цифровой двойник электрической сети", size: 36, color: c(P.primary), font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" } })]
-        }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 600 },
-          children: [new TextRun({ text: "PowerGrid Digital Twin", size: 28, color: c(P.secondary), font: { ascii: "Calibri", eastAsia: "Microsoft YaHei" } })]
-        }),
-        new Paragraph({ spacing: { before: 2000 } }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "Техническая документация", size: 28, color: c(P.secondary) })]
-        }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 200 },
-          children: [new TextRun({ text: "Версия 1.0", size: 24, color: c(P.secondary) })]
-        }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 100 },
-          children: [new TextRun({ text: "14 апреля 2026", size: 24, color: c(P.secondary) })]
-        })
-      ]
+    { 
+      properties: { page: { margin: { top: 0, bottom: 0, left: 0, right: 0 } } },
+      children: buildCover() 
     },
-    // Content section
-    {
-      properties: {
-        page: { margin: { top: 1440, bottom: 1440, left: 1701, right: 1417 } }
+    { 
+      properties: { 
+        page: { 
+          margin: { top: 1440, bottom: 1440, left: 1701, right: 1417 },
+          pageNumbers: { start: 1 }
+        } 
       },
       headers: {
         default: new Header({
           children: [new Paragraph({
             alignment: AlignmentType.RIGHT,
-            children: [new TextRun({ text: "RVectrA — Техническая документация", size: 18, color: c(P.secondary) })]
+            children: [new TextRun({ text: "RVectrA \u2014 \u0426\u0438\u0444\u0440\u043e\u0432\u043e\u0439 \u0434\u0432\u043e\u0439\u043d\u0438\u043a \u0441\u0435\u0442\u0438", size: 18, color: P.secondary })]
           })]
         })
       },
@@ -135,310 +311,20 @@ const doc = new Document({
         default: new Footer({
           children: [new Paragraph({
             alignment: AlignmentType.CENTER,
-            children: [new TextRun({ children: [PageNumber.CURRENT], size: 18 })]
+            children: [
+              new TextRun({ text: "\u0421\u0442\u0440\u0430\u043d\u0438\u0446\u0430 ", size: 18, color: P.secondary }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 18, color: P.secondary })
+            ]
           })]
         })
       },
-      children: [
-        // Table of Contents
-        heading("Содержание", HeadingLevel.HEADING_1),
-        new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: "1. Введение и обзор проекта", size: 24 })] }),
-        new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: "2. Установка и запуск", size: 24 })] }),
-        new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: "3. Архитектура проекта", size: 24 })] }),
-        new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: "4. База данных (Prisma Schema)", size: 24 })] }),
-        new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: "5. API маршруты", size: 24 })] }),
-        new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: "6. Сервисы обработки данных", size: 24 })] }),
-        new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: "7. Компоненты фронтенда", size: 24 })] }),
-        new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: "8. Справочники и расчёты", size: 24 })] }),
-        new Paragraph({ spacing: { after: 400 }, children: [new TextRun({ text: "9. Типы данных", size: 24 })] }),
-
-        // Section 1
-        heading("1. Введение и обзор проекта", HeadingLevel.HEADING_1),
-        body("RVectrA — это веб-приложение для создания цифрового двойника электрической сети. Система позволяет импортировать данные из Excel-файлов, визуализировать топологию сети, выполнять валидацию электрических параметров и отображать результаты в интерактивном графическом интерфейсе."),
-        body("Проект разработан на современном технологическом стеке: Next.js 16 (React 19), Prisma 6 ORM с базой данных SQLite, Tailwind CSS 4 для стилизации и shadcn/ui для компонентов интерфейса. Визуализация графа сети реализована на чистом SVG без использования сторонних библиотек для максимальной производительности и гибкости."),
-        
-        heading("1.1. Ключевые возможности", HeadingLevel.HEADING_2),
-        body("Импорт данных из Excel: система автоматически парсит листы Networkall, Источники, Шкафы, Нагрузки, Выключатели, Связи и создаёт соответствующие записи в базе данных. При отсутствии файла создаются демо-данные для тестирования."),
-        body("Визуализация мнемосхемы: интерактивный SVG-граф с поддержкой масштабирования, панорамирования, поиска по названию и ID, подсветки проблемных элементов и детальной информацией при клике."),
-        body("Валидация сети: автоматическая проверка соответствия токов выключателей и кабелей, потерь напряжения, чувствительности защиты и селективности защитных устройств."),
-        body("Расчёт электрических параметров: вычисление сопротивлений кабелей, токов короткого замыкания и падений напряжения с использованием справочных данных."),
-
-        // Section 2
-        heading("2. Установка и запуск", HeadingLevel.HEADING_1),
-        
-        heading("2.1. Системные требования", HeadingLevel.HEADING_2),
-        body("Node.js версии 18.x или выше, пакетный менеджер npm или bun, операционная система Linux, macOS или Windows. Для работы с базой данных SQLite никаких дополнительных настроек не требуется."),
-        
-        heading("2.2. Установка зависимостей", HeadingLevel.HEADING_2),
-        ...codeBlock([
-          "# Клонирование репозитория",
-          "git clone <repository-url>",
-          "cd network-digital-twin",
-          "",
-          "# Установка зависимостей",
-          "bun install",
-          "# или",
-          "npm install",
-          "",
-          "# Инициализация базы данных",
-          "bunx prisma generate",
-          "bunx prisma db push"
-        ]),
-
-        heading("2.3. Запуск в режиме разработки", HeadingLevel.HEADING_2),
-        ...codeBlock([
-          "# Запуск сервера разработки",
-          "bun run dev",
-          "# или",
-          "npm run dev",
-          "",
-          "# Приложение будет доступно по адресу:",
-          "http://localhost:3000"
-        ]),
-
-        heading("2.4. Подготовка данных для импорта", HeadingLevel.HEADING_2),
-        body("Для импорта реальных данных поместите Excel-файл input.xlsx в директорию /home/z/my-project/upload/. Файл должен содержать листы: Networkall (топология сети), Источники/Sources, Шкафы/Cabinets, Нагрузки/Loads, Выключатели/Breakers, Связи/Connections."),
-
-        // Section 3
-        heading("3. Архитектура проекта", HeadingLevel.HEADING_1),
-        body("Проект следует стандартной структуре Next.js App Router с разделением на API routes (backend) и React компоненты (frontend). Основные директории проекта организованы следующим образом:"),
-
-        heading("3.1. Структура директорий", HeadingLevel.HEADING_2),
-        ...codeBlock([
-          "src/",
-          "├── app/                    # Next.js App Router",
-          "│   ├── page.tsx           # Главная страница",
-          "│   ├── layout.tsx         # Корневой layout",
-          "│   ├── globals.css        # Глобальные стили",
-          "│   └── api/               # API маршруты",
-          "│       ├── network/       # Получение данных сети",
-          "│       ├── import/        # Импорт из Excel",
-          "│       ├── validation/    # Валидация сети",
-          "│       ├── elements/      # CRUD элементов",
-          "│       └── references/    # Справочные данные",
-          "├── components/             # React компоненты",
-          "│   ├── NetworkGraph.tsx   # Визуализация графа",
-          "│   ├── ElementDetails.tsx # Панель деталей",
-          "│   ├── ValidationPanel.tsx# Панель валидации",
-          "│   └── ui/                # shadcn/ui компоненты",
-          "├── lib/                    # Библиотеки и утилиты",
-          "│   ├── db.ts              # Prisma client",
-          "│   ├── services/          # Бизнес-логика",
-          "│   ├── calculations/      # Электрические расчёты",
-          "│   └── data/              # Справочные данные",
-          "├── types/                  # TypeScript типы",
-          "└── hooks/                  # React хуки",
-          "",
-          "prisma/",
-          "├── schema.prisma          # Схема базы данных",
-          "└── powergrid.db           # SQLite база данных"
-        ]),
-
-        heading("3.2. Технологический стек", HeadingLevel.HEADING_2),
-        createTable(
-          ["Компонент", "Технология", "Версия"],
-          [
-            ["Фреймворк", "Next.js", "16.1.1"],
-            ["UI библиотека", "React", "19.0.0"],
-            ["ORM", "Prisma", "6.11.1"],
-            ["База данных", "SQLite", "—"],
-            ["Стилизация", "Tailwind CSS", "4.x"],
-            ["UI компоненты", "shadcn/ui", "—"],
-            ["Парсинг Excel", "xlsx", "0.18.5"],
-            ["Язык", "TypeScript", "5.x"]
-          ]
-        ),
-
-        // Section 4
-        heading("4. База данных (Prisma Schema)", HeadingLevel.HEADING_1),
-        body("База данных построена на SQLite с использованием Prisma ORM. Схема отражает структуру электрической сети с поддержкой элементов, устройств, соединений, результатов валидации и справочных данных."),
-
-        heading("4.1. Основные модели", HeadingLevel.HEADING_2),
-        
-        heading("Element — Элемент сети", HeadingLevel.HEADING_3),
-        body("Основная сущность, представляющая элемент электрической сети. Каждый элемент имеет уникальный идентификатор, имя, тип (SOURCE, BUS, BREAKER, LOAD, METER, JUNCTION, CABINET), уровень напряжения и координаты для визуализации."),
-        ...codeBlock([
-          "model Element {",
-          "  id          String   @id",
-          "  elementId   String   @unique",
-          "  name        String",
-          "  type        String",
-          "  parentId    String?",
-          "  voltageLevel Float?",
-          "  posX        Float?",
-          "  posY        Float?",
-          "  createdAt   DateTime @default(now())",
-          "  updatedAt   DateTime",
-          "}"
-        ]),
-
-        heading("Connection — Связь между элементами", HeadingLevel.HEADING_3),
-        body("Представляет электрическое соединение между двумя элементами. Содержит информацию о типе соединения (CABLE, BUSBAR, JUMPER), параметрах кабеля (марка, сечение, длина) и расчётных значениях сопротивлений."),
-        ...codeBlock([
-          "model Connection {",
-          "  id           String   @id",
-          "  sourceId     String",
-          "  targetId     String",
-          "  cableId      String?",
-          "  type         String   // CABLE, BUSBAR, JUMPER",
-          "  length       Float?",
-          "  wireType     String?  // Марка кабеля",
-          "  wireSize     Float?   // Сечение мм²",
-          "  resistanceR  Float?   // Активное сопротивление",
-          "  reactanceX   Float?   // Реактивное сопротивление",
-          "  impedanceZ   Float?   // Полное сопротивление",
-          "}"
-        ]),
-
-        heading("Device — Устройство", HeadingLevel.HEADING_3),
-        body("Устройство, установленное в элементе сети. Содержит тип устройства (SOURCE, BREAKER, LOAD, METER, TRANSFORMER), номинальные параметры и характеристики."),
-        ...codeBlock([
-          "model Device {",
-          "  id          String   @id",
-          "  type        String   // SOURCE, BREAKER, LOAD, METER",
-          "  slotId      String   // ID элемента",
-          "  model       String?  // Модель устройства",
-          "  voltageNom  Float?   // Номинальное напряжение",
-          "  currentNom  Float?   // Номинальный ток",
-          "  pKw         Float?   // Активная мощность",
-          "  qKvar       Float?   // Реактивная мощность",
-          "  sKva        Float?   // Полная мощность",
-          "  cosPhi      Float?   // Коэффициент мощности",
-          "}"
-        ]),
-
-        heading("4.2. Модели справочников", HeadingLevel.HEADING_2),
-        body("База данных включает справочные таблицы для кабелей (CableReference), выключателей (BreakerReference) и трансформаторов (TransformerReference). Эти данные используются для расчётов сопротивлений и выбора оборудования."),
-
-        heading("4.3. Результаты валидации", HeadingLevel.HEADING_2),
-        body("Модели ValidationRule и ValidationResult хранят правила проверки и их результаты. Каждое правило имеет код, название, категорию (PROTECTION, CABLE, SELECTIVITY, VOLTAGE) и критичность (LOW, MEDIUM, HIGH, CRITICAL)."),
-
-        // Section 5
-        heading("5. API маршруты", HeadingLevel.HEADING_1),
-        body("API построен на Next.js Route Handlers и предоставляет REST-интерфейс для работы с данными сети. Все маршруты возвращают JSON-ответы."),
-
-        heading("5.1. GET /api/network", HeadingLevel.HEADING_2),
-        body("Возвращает полные данные графа сети для визуализации. Включает все элементы с устройствами и результатами валидации, а также все соединения между элементами. Формат ответа: { nodes: GraphNode[], edges: GraphEdge[] }."),
-        ...codeBlock([
-          "// Пример ответа",
-          "{",
-          "  \"nodes\": [",
-          "    {",
-          "      \"id\": \"SRC_TP21\",",
-          "      \"type\": \"SOURCE\",",
-          "      \"name\": \"ТП-21 Трансформатор 1\",",
-          "      \"posX\": 100,",
-          "      \"posY\": 100,",
-          "      \"hasIssues\": false,",
-          "      \"devices\": [...]",
-          "    }",
-          "  ],",
-          "  \"edges\": [...]",
-          "}"
-        ]),
-
-        heading("5.2. POST /api/import", HeadingLevel.HEADING_2),
-        body("Запускает импорт данных из Excel-файла input.xlsx. Очищает существующие данные, парсит листы Excel, создаёт элементы, устройства и соединения, рассчитывает позиции для визуализации. Возвращает статистику импорта и список ошибок."),
-
-        heading("5.3. GET/POST /api/validation", HeadingLevel.HEADING_2),
-        body("GET возвращает список найденных проблем. POST запускает валидацию сети по всем правилам. Правила проверки включают: CABLE_001 (соответствие тока выключателя и кабеля), VOLTAGE_001 (потеря напряжения), PROT_001 (чувствительность защиты), SEL_001 (селективность защит)."),
-
-        heading("5.4. GET /api/elements", HeadingLevel.HEADING_2),
-        body("Возвращает список всех элементов сети. Поддерживает фильтрацию по типу и поиск по названию. Используется для выпадающих списков и автодополнения."),
-
-        heading("5.5. GET /api/references", HeadingLevel.HEADING_2),
-        body("Возвращает справочные данные: кабели, выключатели, трансформаторы. Данные используются при импорте для автоматического заполнения параметров кабелей и устройств."),
-
-        // Section 6
-        heading("6. Сервисы обработки данных", HeadingLevel.HEADING_1),
-
-        heading("6.1. Import Service (import.service.ts)", HeadingLevel.HEADING_2),
-        body("Главный сервис импорта данных из Excel. Выполняет следующие функции:"),
-        body("importFromExcel() — основная функция импорта. Проверяет наличие файла, очищает базу данных, парсит листы Excel в порядке зависимостей, создаёт демо-данные если файл отсутствует."),
-        body("importNetworkAll() — обрабатывает лист Networkall, извлекая элементы и связи из топологии. Автоматически определяет тип элемента по имени (detectElementType): источники (Т1, Т2, ПЦ, ДГУ), выключатели (QF, QS), шины (с.ш.), узлы учёта, точки распределения."),
-        body("importSources/Cabinets/Loads/Breakers() — специализированные функции для импорта конкретных типов оборудования с заполнением специфических параметров."),
-        body("calculateNodePositions() — вычисляет координаты узлов для визуализации, группируя элементы по типам и располагая их слева направо."),
-
-        heading("6.2. Validation Service (validation.service.ts)", HeadingLevel.HEADING_2),
-        body("Сервис валидации электрической сети по инженерным правилам. Реализует 4 основных правила:"),
-        body("checkCableCapacity() — правило CABLE_001: проверяет что Iном.выкл ≤ Iдоп.кабеля. Если ток выключателя превышает допустимый ток кабеля, создаётся проблема уровня FAIL."),
-        body("checkVoltageDrop() — правило VOLTAGE_001: проверяет что суммарная потеря напряжения от источника до нагрузки не превышает 4%. Использует путь от нагрузки до источника."),
-        body("checkProtectionSensitivity() — правило PROT_001: проверяет что Iкз.конец ≥ 3 × Iном.выкл. Критически важное правило для обеспечения срабатывания защиты при коротком замыкании."),
-        body("checkSelectivity() — правило SEL_001: проверяет что номинальный ток вводного выключателя больше тока отходящего для обеспечения селективности защит."),
-
-        // Section 7
-        heading("7. Компоненты фронтенда", HeadingLevel.HEADING_1),
-
-        heading("7.1. NetworkGraph.tsx — Главная мнемосхема", HeadingLevel.HEADING_2),
-        body("Ключевой компонент визуализации графа сети. Реализован на чистом SVG без сторонних библиотек для максимальной производительности. Поддерживает масштабирование (колесо мыши, слайдер), панорамирование (перетаскивание), поиск по названию/ID, подсветку при наведении, детальную информацию при клике."),
-        body("Алгоритм лэйаута использует трёхуровневую иерархию: Top Level (источники до первой шины), Distribution Level (шины и распределительные устройства), Consumer Level (нагрузки). Элементы размещаются автоматически с учётом топологии сети."),
-
-        heading("7.2. ElementDetails.tsx — Панель деталей", HeadingLevel.HEADING_2),
-        body("Отображает детальную информацию о выбранном элементе или соединении. Показывает тип, название, ID, статусы (ON/OFF, LIVE/DEAD), электрические параметры (Iном, P, Q, S, cos φ), результаты валидации с рекомендациями. Для соединений выводит параметры кабеля, сопротивления и расчётные значения."),
-
-        heading("7.3. ValidationPanel.tsx — Панель валидации", HeadingLevel.HEADING_2),
-        body("Отображает список найденных проблем с группировкой по критичности. Поддерживает компактный режим (только счётчики) и развёрнутый режим (список проблем). Каждая проблема показывает код правила, название элемента, сообщение и рекомендацию."),
-
-        heading("7.4. page.tsx — Главная страница", HeadingLevel.HEADING_2),
-        body("Корневой компонент приложения. Содержит шапку с элементами управления, основную область с мнемосхемой, плавающие панели деталей и валидации. Управляет состоянием: данные графа, результаты валидации, выбранный элемент, масштаб, поисковый запрос."),
-
-        // Section 8
-        heading("8. Справочники и расчёты", HeadingLevel.HEADING_1),
-
-        heading("8.1. Справочники (references.ts)", HeadingLevel.HEADING_2),
-        body("Модуль содержит справочные данные для расчётов:"),
-        body("CABLE_REFERENCES — массив данных о кабелях с полями: марка (wireType), сечение (wireSize), количество жил, материал, удельные сопротивления (rOhmKm, xOhmKm), допустимые токи (iAir, iGround)."),
-        body("BREAKER_REFERENCES — справочник выключателей: производитель, модель, тип (MCB/MCCB/ACB), номинальные токи, полюсность, отключающая способность, характеристики расцепителя."),
-        body("findCableReference(wireType, wireSize) — поиск данных кабеля по марке и сечению."),
-
-        heading("8.2. Расчёт сопротивлений (impedance.ts)", HeadingLevel.HEADING_2),
-        body("Функции для расчёта электрических параметров:"),
-        body("calculateCableImpedance(length, wireSize, material, wireType) — расчёт R, X, Z кабеля. Использует удельное сопротивление меди (0.0175 Ом·мм²/м) или алюминия (0.0294 Ом·мм²/м)."),
-        body("calculateCableImpedanceFromReference(length, wireType, wireSize) — расчёт с использованием справочных данных."),
-        body("adjustResistanceForTemperature(r20, temperature) — корректировка сопротивления по температуре."),
-
-        heading("8.3. Расчёт токов КЗ (shortCircuit.ts)", HeadingLevel.HEADING_2),
-        body("calculateShortCircuit(zTransformer, zCable, voltage) — расчёт токов короткого замыкания. Возвращает: ik3 (трёхфазное КЗ), ik1 (однофазное КЗ), ik2 (двухфазное КЗ), zk (полное сопротивление до точки КЗ). Использует формулу: Iкз = U / (√3 × Z)."),
-
-        heading("8.4. Расчёт падения напряжения (voltageDrop.ts)", HeadingLevel.HEADING_2),
-        body("calculateVoltageDropByCurrent(current, r, x, cosPhi, voltage) — расчёт падения напряжения в процентах. Учитывает активную и реактивную составляющие сопротивления, коэффициент мощности нагрузки."),
-
-        // Section 9
-        heading("9. Типы данных", HeadingLevel.HEADING_1),
-        body("Файл src/types/index.ts содержит все TypeScript типы проекта."),
-
-        heading("9.1. Типы элементов", HeadingLevel.HEADING_2),
-        ...codeBlock([
-          "type ElementType = 'SOURCE' | 'CABINET' | 'LOAD' | 'BUS' | 'METER' | 'BREAKER' | 'JUNCTION';",
-          "type DeviceType = 'SOURCE' | 'BREAKER' | 'LOAD' | 'METER' | 'ATS' | 'SWITCH' | 'TRANSFORMER';",
-          "type ConnectionType = 'CABLE' | 'BUSBAR' | 'JUMPER';",
-          "type ValidationStatus = 'PASS' | 'WARN' | 'FAIL' | 'CRITICAL';"
-        ]),
-
-        heading("9.2. Интерфейсы данных", HeadingLevel.HEADING_2),
-        body("GraphNode — узел графа для визуализации: id, type, name, posX, posY, hasIssues, criticalIssues, devices, validationResults."),
-        body("GraphEdge — ребро графа (соединение): id, source, target, type, length, wireType, wireSize, resistanceR, reactanceX, impedanceZ."),
-        body("GraphData — полные данные графа: nodes (GraphNode[]), edges (GraphEdge[])."),
-        body("ValidationIssue — проблема валидации: id, code, name, severity, elementName, message, recommendation, actualValue, expectedValue."),
-
-        heading("9.3. Интерфейсы справочников", HeadingLevel.HEADING_2),
-        body("CableReferenceData — данные кабеля: wireType, wireSize, core, material, rOhmKm, xOhmKm, iAir, iGround."),
-        body("BreakerReferenceData — данные выключателя: manufacturer, model, type, inRatings, poles, voltage, breakingCapacity, trippingChars."),
-        body("ImpedanceResult — результат расчёта сопротивления: r (активное), x (реактивное), z (полное)."),
-        body("ShortCircuitResult — результат расчёта токов КЗ: ik3, ik1, ik2, zk."),
-
-        // Conclusion
-        heading("Заключение", HeadingLevel.HEADING_1),
-        body("RVectrA представляет собой современное веб-приложение для моделирования и анализа электрических сетей. Архитектура на базе Next.js 16 с App Router обеспечивает высокую производительность и отличную масштабируемость. Использование Prisma ORM с SQLite упрощает разработку и позволяет легко перейти на другую базу данных при необходимости."),
-        body("Ключевые преимущества системы: автоматический импорт данных из Excel, интеллектуальное определение типов оборудования, визуализация топологии сети с автоматическим лэйаутом, валидация по инженерным правилам, расчёт электрических параметров с использованием справочных данных."),
-        body("Для расширения функциональности рекомендуется добавить: редактирование элементов и соединений через UI, экспорт результатов в отчёты, интеграцию с системами SCADA, поддержку динамических режимов работы сети, расчёт потерь мощности и баланса нагрузки.")
-      ]
+      children: buildContent()
     }
   ]
 });
 
-// Generate document
-Packer.toBuffer(doc).then(buffer => {
-  fs.writeFileSync("/home/z/my-project/download/RVectrA_Техническая_документация.docx", buffer);
-  console.log("Document saved to /home/z/my-project/download/RVectrA_Техническая_документация.docx");
+// Generate file
+Packer.toBuffer(doc).then(buf => {
+  fs.writeFileSync("/home/z/my-project/download/RVectrA_Documentation.docx", buf);
+  console.log("Documentation generated: /home/z/my-project/download/RVectrA_Documentation.docx");
 });

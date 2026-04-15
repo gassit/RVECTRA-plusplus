@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    // Получаем элементы
+    // Получаем элементы со статусами
     const elements = await prisma.element.findMany({
       select: {
         id: true,
@@ -12,15 +12,20 @@ export async function GET() {
         type: true,
         posX: true,
         posY: true,
+        parentId: true,
+        electricalStatus: true,
+        operationalStatus: true,
       }
     });
 
-    // Получаем связи без вложенных запросов
+    // Получаем связи со статусами
     const connections = await prisma.connection.findMany({
       select: {
         id: true,
         sourceId: true,
         targetId: true,
+        electricalStatus: true,
+        operationalStatus: true,
       }
     });
 
@@ -32,11 +37,21 @@ export async function GET() {
       id: conn.id,
       sourceId: conn.sourceId,
       targetId: conn.targetId,
-      source: elementMap.get(conn.sourceId) 
-        ? { elementId: elementMap.get(conn.sourceId)!.elementId, name: elementMap.get(conn.sourceId)!.name, type: elementMap.get(conn.sourceId)!.type }
+      electricalStatus: conn.electricalStatus,
+      operationalStatus: conn.operationalStatus,
+      source: elementMap.get(conn.sourceId)
+        ? {
+            elementId: elementMap.get(conn.sourceId)!.elementId,
+            name: elementMap.get(conn.sourceId)!.name,
+            type: elementMap.get(conn.sourceId)!.type
+          }
         : { elementId: '', name: 'Unknown', type: 'unknown' },
       target: elementMap.get(conn.targetId)
-        ? { elementId: elementMap.get(conn.targetId)!.elementId, name: elementMap.get(conn.targetId)!.name, type: elementMap.get(conn.targetId)!.type }
+        ? {
+            elementId: elementMap.get(conn.targetId)!.elementId,
+            name: elementMap.get(conn.targetId)!.name,
+            type: elementMap.get(conn.targetId)!.type
+          }
         : { elementId: '', name: 'Unknown', type: 'unknown' },
     }));
 

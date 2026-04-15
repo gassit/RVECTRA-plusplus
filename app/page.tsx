@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import NetworkGraph from '@/components/network/NetworkGraph';
 import { useTheme } from '@/components/providers/ThemeProvider';
+import type { ElectricalStatus, OperationalStatus } from '@/types';
 
 interface NetworkData {
   elements: Array<{
@@ -12,11 +13,16 @@ interface NetworkData {
     type: string;
     posX?: number | null;
     posY?: number | null;
+    parentId?: string | null;
+    electricalStatus: ElectricalStatus;
+    operationalStatus: OperationalStatus;
   }>;
   connections: Array<{
     id: string;
     sourceId: string;
     targetId: string;
+    electricalStatus: ElectricalStatus;
+    operationalStatus: OperationalStatus;
     source: { elementId: string; name: string; type: string };
     target: { elementId: string; name: string; type: string };
   }>;
@@ -31,6 +37,9 @@ interface Stats {
     loads: number;
     junctions: number;
     total: number;
+    live: number;
+    dead: number;
+    off: number;
   };
   power: {
     total: number;
@@ -79,7 +88,7 @@ export default function Home() {
   useEffect(() => {
     if (dataLoadedRef.current) return;
     dataLoadedRef.current = true;
-    
+
     const load = async () => {
       try {
         setLoading(true);
@@ -147,8 +156,25 @@ export default function Home() {
     };
   }, [networkData, searchQuery]);
 
+  // Calculate status stats
+  const statusStats = useMemo(() => {
+    if (!networkData) return { live: 0, dead: 0, off: 0 };
+    const elements = networkData.elements;
+    return {
+      live: elements.filter(e => e.operationalStatus === 'ON' && e.electricalStatus === 'LIVE').length,
+      dead: elements.filter(e => e.electricalStatus === 'DEAD').length,
+      off: elements.filter(e => e.operationalStatus === 'OFF').length,
+    };
+  }, [networkData]);
+
   const errorCount = validation?.stats.errors || 0;
   const warningCount = validation?.stats.warnings || 0;
+
+  // Find selected element details
+  const selectedElement = useMemo(() => {
+    if (!selectedNode || !networkData) return null;
+    return networkData.elements.find(e => e.id === selectedNode);
+  }, [selectedNode, networkData]);
 
   return (
     <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-900 transition-colors overflow-hidden">
@@ -183,6 +209,22 @@ export default function Home() {
                   </svg>
                 </button>
               )}
+            </div>
+          </div>
+
+          {/* Status Stats - Compact */}
+          <div className="flex items-center gap-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg text-xs">
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+              <span className="font-medium text-green-600 dark:text-green-400">{statusStats.live}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-gray-400 opacity-50"></span>
+              <span className="font-medium text-gray-500">{statusStats.dead}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-red-500 opacity-35"></span>
+              <span className="font-medium text-red-500">{statusStats.off}</span>
             </div>
           </div>
 
@@ -357,6 +399,24 @@ export default function Home() {
               </button>
             </div>
             <div className="p-4 space-y-4">
+              {/* Status Stats */}
+              <div>
+                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Статусы элементов</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="flex flex-col items-center p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <span className="text-lg font-bold text-green-600 dark:text-green-400">{statusStats.live}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">LIVE</span>
+                  </div>
+                  <div className="flex flex-col items-center p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                    <span className="text-lg font-bold text-gray-500">{statusStats.dead}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">DEAD</span>
+                  </div>
+                  <div className="flex flex-col items-center p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                    <span className="text-lg font-bold text-red-500">{statusStats.off}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">OFF</span>
+                  </div>
+                </div>
+              </div>
               <div>
                 <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Элементы сети</h4>
                 <div className="grid grid-cols-3 gap-2">
@@ -469,13 +529,13 @@ export default function Home() {
         )}
 
         {/* Selected Node Info */}
-        {selectedNode && (
-          <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-4 w-72 border border-gray-200 dark:border-gray-700 z-20">
-            <div className="flex justify-between items-start">
+        {selectedNode && selectedElement && (
+          <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-4 w-80 border border-gray-200 dark:border-gray-700 z-20">
+            <div className="flex justify-between items-start mb-3">
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Выбранный узел</h3>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{selectedElement.name}</h3>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  ID: {selectedNode}
+                  ID: {selectedElement.elementId} | Тип: {selectedElement.type}
                 </p>
               </div>
               <button
@@ -487,12 +547,63 @@ export default function Home() {
                 </svg>
               </button>
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className={`p-2 rounded-lg text-center ${
+                selectedElement.electricalStatus === 'LIVE'
+                  ? 'bg-green-50 dark:bg-green-900/20'
+                  : 'bg-gray-100 dark:bg-gray-700'
+              }`}>
+                <div className={`text-sm font-medium ${
+                  selectedElement.electricalStatus === 'LIVE'
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-gray-500'
+                }`}>
+                  {selectedElement.electricalStatus}
+                </div>
+                <div className="text-xs text-gray-400">Электрический</div>
+              </div>
+              <div className={`p-2 rounded-lg text-center ${
+                selectedElement.operationalStatus === 'OFF'
+                  ? 'bg-red-50 dark:bg-red-900/20'
+                  : 'bg-blue-50 dark:bg-blue-900/20'
+              }`}>
+                <div className={`text-sm font-medium ${
+                  selectedElement.operationalStatus === 'OFF'
+                    ? 'text-red-500'
+                    : 'text-blue-600 dark:text-blue-400'
+                }`}>
+                  {selectedElement.operationalStatus}
+                </div>
+                <div className="text-xs text-gray-400">Оперативный</div>
+              </div>
+            </div>
           </div>
         )}
 
         {/* Legend */}
         <div className="absolute bottom-4 left-4 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-sm z-20">
           <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Легенда</h4>
+
+          {/* Status Legend */}
+          <div className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
+            <div className="text-xs text-gray-400 mb-2">Статусы:</div>
+            <div className="grid grid-cols-3 gap-x-4 gap-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-green-500 border-2 border-green-600"></span>
+                <span className="text-xs text-gray-600 dark:text-gray-400">LIVE</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-gray-400 border-2 border-gray-500 opacity-50"></span>
+                <span className="text-xs text-gray-600 dark:text-gray-400">DEAD</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-gray-300 border-2 border-red-500 opacity-35"></span>
+                <span className="text-xs text-red-500">OFF</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Type Legend */}
           <div className="grid grid-cols-2 gap-x-6 gap-y-2">
             <div className="flex items-center gap-2">
               <div className="w-8 h-5 rounded border-4 border-yellow-400 bg-yellow-50 dark:bg-yellow-900/30"></div>

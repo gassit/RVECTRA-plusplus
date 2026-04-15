@@ -1,19 +1,42 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import * as xlsx from 'xlsx';
+import { propagateStates } from '@/lib/services/state-propagation.service';
+import type { OperationalStatus } from '@/types';
+
+/**
+ * Парсит оперативный статус из значения state
+ * OFF: "off", "выкл", "0", "false", "Отключен"
+ * ON: все остальные значения
+ */
+function parseOperationalStatus(stateValue: string | undefined | null): OperationalStatus {
+  if (!stateValue) return 'ON';
+
+  const state = String(stateValue).toLowerCase().trim();
+
+  if (/off/.test(state) ||
+      /выкл/.test(state) ||
+      state === '0' ||
+      /false/.test(state) ||
+      /отключен/.test(state)) {
+    return 'OFF';
+  }
+
+  return 'ON';
+}
 
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    
+
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
     const buffer = await file.arrayBuffer();
     const workbook = xlsx.read(buffer, { type: 'buffer' });
-    
+
     let imported = 0;
     let errors = 0;
 
@@ -27,7 +50,8 @@ export async function POST(request: Request) {
           const elementId = String(row['ID'] || row['id'] || row['Элемент'] || '');
           const name = String(row['Название'] || row['Name'] || row['name'] || elementId);
           const typeRaw = String(row['Тип'] || row['Type'] || row['type'] || 'junction').toLowerCase();
-          
+          const stateValue = row['state'] || row['State'] || row['Состояние'] || row['Статус'] || '';
+
           let type = 'junction';
           if (typeRaw.includes('source') || typeRaw.includes('источник') || typeRaw.includes('тп') || typeRaw.includes('трансформатор')) {
             type = 'source';
@@ -43,6 +67,8 @@ export async function POST(request: Request) {
 
           if (!elementId) continue;
 
+          const operationalStatus = parseOperationalStatus(String(stateValue));
+
           // Создание элемента
           await prisma.element.upsert({
             where: { elementId },
@@ -52,11 +78,14 @@ export async function POST(request: Request) {
               name,
               type,
               voltageLevel: parseFloat(String(row['Напряжение'] || row['U'] || '0.4')) || 0.4,
+              operationalStatus,
+              electricalStatus: 'DEAD',
               updatedAt: new Date()
             },
             update: {
               name,
               type,
+              operationalStatus,
               updatedAt: new Date()
             }
           });
@@ -68,27 +97,32 @@ export async function POST(request: Request) {
             if (element) {
               const slot = await prisma.deviceSlot.create({
                 data: {
+                  id: `slot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                   slotId: `SLOT_${elementId}`,
                   elementId: element.id,
                   slotType: 'load'
                 }
               });
-              
+
               const device = await prisma.device.create({
                 data: {
+                  id: `dev_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                   deviceId: `DEV_L${String(imported).padStart(3, '0')}`,
                   slotId: slot.id,
-                  deviceType: 'load'
+                  deviceType: 'load',
+                  updatedAt: new Date()
                 }
               });
 
               await prisma.load.create({
                 data: {
+                  id: `load_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                   deviceId: device.id,
                   name: name,
                   powerP: power,
-                  powerQ: power * 0.33, // cos phi ~ 0.95
-                  category: parseInt(String(row['Категория'] || '3'))
+                  powerQ: power * 0.33,
+                  category: parseInt(String(row['Категория'] || '3')),
+                  updatedAt: new Date()
                 }
               });
             }
@@ -102,7 +136,17 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ imported, errors, total: imported + errors });
+    // После импорта распространяем состояния
+    console.log('[import] Запуск propagateStates...');
+    const propagationResult = await propagateStates();
+    console.log('[import] propagateStates завершен:', propagationResult);
+
+    return NextResponse.json({
+      imported,
+      errors,
+      total: imported + errors,
+      propagation: propagationResult
+    });
   } catch (error) {
     console.error('Import error:', error);
     return NextResponse.json({ error: 'Failed to import data' }, { status: 500 });

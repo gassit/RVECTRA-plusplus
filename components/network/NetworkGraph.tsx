@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import type { ElectricalStatus, OperationalStatus } from '@/types';
 
 interface NetworkData {
   elements: Array<{
@@ -10,11 +11,16 @@ interface NetworkData {
     type: string;
     posX?: number | null;
     posY?: number | null;
+    parentId?: string | null;
+    electricalStatus: ElectricalStatus;
+    operationalStatus: OperationalStatus;
   }>;
   connections: Array<{
     id: string;
     sourceId: string;
     targetId: string;
+    electricalStatus: ElectricalStatus;
+    operationalStatus: OperationalStatus;
   }>;
 }
 

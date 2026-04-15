@@ -24,7 +24,6 @@ model Breaker {
   refId            String?
   ratedCurrent     Float
   currentSetting   Float?
-  status           String            @default("on")
   lastTripReason   String?
   tripCount        Int               @default(0)
   createdAt        DateTime          @default(now())
@@ -53,7 +52,6 @@ model Cable {
   section        Float
   material       String          @default("copper")
   iDop           Float?
-  status         String          @default("active")
   createdAt      DateTime        @default(now())
   updatedAt      DateTime
   CableReference CableReference? @relation(fields: [refId], references: [id])
@@ -92,6 +90,8 @@ model Connection {
   targetId                             String
   cableId                              String?
   order                                Int      @default(0)
+  electricalStatus                     String   @default("DEAD")
+  operationalStatus                    String   @default("ON")
   createdAt                            DateTime @default(now())
   Cable                                Cable?   @relation(fields: [cableId], references: [id])
   Element_Connection_targetIdToElement Element  @relation("Connection_targetIdToElement", fields: [targetId], references: [id])
@@ -103,7 +103,6 @@ model Device {
   deviceId    String       @unique
   slotId      String
   deviceType  String
-  status      String       @default("active")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime
   Breaker     Breaker?
@@ -133,6 +132,8 @@ model Element {
   voltageLevel                            Float?
   posX                                    Float?
   posY                                    Float?
+  electricalStatus                        String       @default("DEAD")
+  operationalStatus                       String       @default("ON")
   createdAt                               DateTime     @default(now())
   updatedAt                               DateTime
   Connection_Connection_targetIdToElement Connection[] @relation("Connection_targetIdToElement")
@@ -150,7 +151,6 @@ model Load {
   powerQ    Float?
   cosPhi    Float    @default(0.9)
   category  Int      @default(3)
-  status    String   @default("connected")
   createdAt DateTime @default(now())
   updatedAt DateTime
   Device    Device   @relation(fields: [deviceId], references: [id])
@@ -163,7 +163,6 @@ model Meter {
   serialNumber String?
   accuracy     Float?
   tariff       Int            @default(1)
-  status       String         @default("active")
   createdAt    DateTime       @default(now())
   updatedAt    DateTime
   Device       Device         @relation(fields: [deviceId], references: [id])
@@ -192,7 +191,6 @@ model Transformer {
   primaryKV            Float
   secondaryKV          Float
   loadPercent          Float                 @default(0)
-  status               String                @default("active")
   createdAt            DateTime              @default(now())
   updatedAt            DateTime
   TransformerReference TransformerReference? @relation(fields: [refId], references: [id])

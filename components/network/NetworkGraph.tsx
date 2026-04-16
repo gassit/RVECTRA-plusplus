@@ -22,10 +22,12 @@ interface NetworkData {
     electricalStatus: ElectricalStatus;
     operationalStatus: OperationalStatus;
   }>;
+  conflictElementIds?: string[];
 }
 
 interface NetworkGraphProps {
   data: NetworkData | null;
+  isDark?: boolean;
   onNodeClick?: (nodeId: string) => void;
 }
 
@@ -44,6 +46,6 @@ const NetworkGraphInner = dynamic(
   }
 );
 
-export default function NetworkGraph({ data, onNodeClick }: NetworkGraphProps) {
-  return <NetworkGraphInner data={data} onNodeClick={onNodeClick} />;
+export default function NetworkGraph({ data, isDark, onNodeClick }: NetworkGraphProps) {
+  return <NetworkGraphInner data={data} isDark={isDark} onNodeClick={onNodeClick} />;
 }

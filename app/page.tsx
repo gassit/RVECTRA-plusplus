@@ -26,6 +26,7 @@ interface NetworkData {
     source: { elementId: string; name: string; type: string };
     target: { elementId: string; name: string; type: string };
   }>;
+  conflictElementIds?: string[];
 }
 
 interface Stats {
@@ -378,7 +379,11 @@ export default function Home() {
             </div>
           ) : (
             <NetworkGraph
-              data={filteredData}
+              data={filteredData ? {
+                ...filteredData,
+                conflictElementIds: networkData?.conflictElementIds || [],
+              } : null}
+              isDark={theme === 'dark'}
               onNodeClick={handleNodeClick}
             />
           )}

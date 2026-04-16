@@ -557,23 +557,21 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
       )}
 
       {/* Легенда */}
-      <div className="absolute top-2 right-2 z-10 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-xl shadow-lg p-3 text-xs">
-        <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Легенда</h4>
-        
+      <div className="absolute top-2 right-2 z-10 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-md p-2 text-[10px]">
         {/* Статусы узлов */}
-        <div className="mb-2 pb-2 border-b border-gray-200 dark:border-gray-700">
-          <div className="text-xs text-gray-400 mb-1.5">Узлы:</div>
-          <div className="grid grid-cols-3 gap-x-3 gap-y-1">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-green-500 border-2 border-green-600"></span>
+        <div className="mb-1.5 pb-1.5 border-b border-gray-200 dark:border-gray-700">
+          <div className="text-[9px] text-gray-400 mb-1">Узлы:</div>
+          <div className="grid grid-cols-3 gap-x-2 gap-y-0.5">
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-green-500 border border-green-600"></span>
               <span className="text-gray-600 dark:text-gray-400">LIVE</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-gray-400 border-2 border-gray-500 opacity-50"></span>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-gray-400 border border-gray-500 opacity-50"></span>
               <span className="text-gray-600 dark:text-gray-400">DEAD</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-gray-300 border-2 border-red-500 opacity-35"></span>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-gray-300 border border-red-500 opacity-35"></span>
               <span className="text-red-500">OFF</span>
             </div>
           </div>
@@ -581,9 +579,9 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
         {/* Конфликты */}
         {stats.conflicts > 0 && (
-          <div className="mb-2 pb-2 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center gap-1.5">
-              <span className="text-orange-500 font-bold">⚠</span>
+          <div className="mb-1.5 pb-1.5 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-1">
+              <span className="text-orange-500 font-bold text-xs">⚠</span>
               <span className="text-orange-500">Двойное питание ({stats.conflicts})</span>
             </div>
           </div>
@@ -591,18 +589,18 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
         {/* Связи */}
         <div>
-          <div className="text-xs text-gray-400 mb-1.5">Связи:</div>
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-0.5 bg-green-500"></div>
+          <div className="text-[9px] text-gray-400 mb-1">Связи:</div>
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-0.5 bg-green-500"></div>
               <span className="text-gray-600 dark:text-gray-400">LIVE</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-0.5 bg-gray-400 opacity-50"></div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-0.5 bg-gray-400 opacity-50"></div>
               <span className="text-gray-600 dark:text-gray-400">DEAD</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-0.5 bg-red-500" style={{ background: 'repeating-linear-gradient(90deg, #ef4444, #ef4444 3px, transparent 3px, transparent 6px)' }}></div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-0.5 bg-red-500" style={{ background: 'repeating-linear-gradient(90deg, #ef4444, #ef4444 2px, transparent 2px, transparent 4px)' }}></div>
               <span className="text-gray-600 dark:text-gray-400">OFF</span>
             </div>
           </div>

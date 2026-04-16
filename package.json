@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@antv/g6": "^5.1.0",
+    "@prisma/adapter-libsql": "^7.7.0",
     "@prisma/client": "^6.11.1",
     "next": "^16.1.1",
     "prisma": "^6.11.1",

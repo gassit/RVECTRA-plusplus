@@ -1,14 +1,11 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaLibSQL } from '@prisma/adapter-libsql';
 import * as xlsx from 'xlsx';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { OperationalStatus } from '../types';
+import { propagateStates } from '../lib/services/state-propagation.service';
 
-const adapter = new PrismaLibSQL({
-  url: process.env.DATABASE_URL || 'file:/home/z/my-project/db/custom.db'
-});
-const prisma = new PrismaClient({ adapter });
+const prisma = new PrismaClient();
 
 // Определение типа элемента по названию
 function detectElementType(name: string): string {
@@ -112,175 +109,7 @@ function findExcelFile(): string | null {
   return path.join(uploadDir, excelFiles[0]);
 }
 
-/**
- * Алгоритм распространения состояний (inline версия для скрипта)
- */
-async function propagateStatesInline(): Promise<void> {
-  console.log('\n=== РАСПРОСТРАНЕНИЕ СОСТОЯНИЙ ===');
 
-  const elements = await prisma.element.findMany();
-  const connections = await prisma.connection.findMany();
-
-  console.log(`Элементов: ${elements.length}`);
-  console.log(`Связей: ${connections.length}`);
-
-  // Создаем мапы для быстрого доступа
-  const elementMap = new Map<string, typeof elements[0]>();
-  for (const el of elements) {
-    elementMap.set(el.id, el);
-  }
-
-  // Мапы для отслеживания состояний
-  const electricalStatusMap = new Map<string, string>();
-  const operationalStatusMap = new Map<string, string>();
-
-  // Инициализация: все элементы DEAD
-  for (const el of elements) {
-    electricalStatusMap.set(el.id, 'DEAD');
-    operationalStatusMap.set(el.id, el.operationalStatus || 'ON');
-  }
-
-  // Структуры для BFS
-  const outgoingConnections = new Map<string, string[]>();
-  const connectionMap = new Map<string, typeof connections[0]>();
-
-  for (const conn of connections) {
-    connectionMap.set(conn.id, conn);
-    if (!outgoingConnections.has(conn.sourceId)) {
-      outgoingConnections.set(conn.sourceId, []);
-    }
-    outgoingConnections.get(conn.sourceId)!.push(conn.id);
-  }
-
-  // Найти все SOURCE элементы
-  const sources = elements.filter(el => el.type.toLowerCase() === 'source');
-  console.log(`Источников: ${sources.length}`);
-
-  // Очередь BFS
-  const queue: Array<{ elementId: string }> = [];
-
-  // Инициализация источников
-  for (const source of sources) {
-    const opStatus = operationalStatusMap.get(source.id) || 'ON';
-    if (opStatus === 'ON') {
-      electricalStatusMap.set(source.id, 'LIVE');
-    } else {
-      electricalStatusMap.set(source.id, 'DEAD');
-    }
-    queue.push({ elementId: source.id });
-  }
-
-  // Множество посещенных
-  const visited = new Set<string>();
-
-  // BFS
-  while (queue.length > 0) {
-    const { elementId } = queue.shift()!;
-    const currentElement = elementMap.get(elementId);
-    if (!currentElement) continue;
-
-    // Пропускаем CABINET при BFS
-    if (currentElement.type.toLowerCase() === 'cabinet') continue;
-
-    const currentElectrical = electricalStatusMap.get(elementId) || 'DEAD';
-    const currentOperational = operationalStatusMap.get(elementId) || 'ON';
-
-    const outgoing = outgoingConnections.get(elementId) || [];
-
-    for (const connId of outgoing) {
-      const conn = connectionMap.get(connId);
-      if (!conn) continue;
-
-      const targetId = conn.targetId;
-      const targetElement = elementMap.get(targetId);
-      if (!targetElement) continue;
-
-      // Пропускаем CABINET в BFS
-      if (targetElement.type.toLowerCase() === 'cabinet') continue;
-
-      const connOperational = conn.operationalStatus || 'ON';
-      const targetOperational = operationalStatusMap.get(targetId) || 'ON';
-
-      if (currentElectrical === 'LIVE' && currentOperational === 'ON' && connOperational === 'ON') {
-        if (targetOperational === 'ON') {
-          const prevStatus = electricalStatusMap.get(targetId);
-          if (prevStatus !== 'LIVE') {
-            electricalStatusMap.set(targetId, 'LIVE');
-          }
-        } else {
-          electricalStatusMap.set(targetId, 'DEAD');
-        }
-      } else {
-        const existingStatus = electricalStatusMap.get(targetId);
-        if (existingStatus !== 'LIVE') {
-          electricalStatusMap.set(targetId, 'DEAD');
-        }
-      }
-
-      const visitKey = `${elementId}-${targetId}`;
-      if (!visited.has(visitKey)) {
-        visited.add(visitKey);
-        queue.push({ elementId: targetId });
-      }
-    }
-  }
-
-  // CABINET - пост-обработка
-  const cabinets = elements.filter(el => el.type.toLowerCase() === 'cabinet');
-  for (const cabinet of cabinets) {
-    const children = elements.filter(el => el.parentId === cabinet.id);
-
-    if (children.length === 0) {
-      electricalStatusMap.set(cabinet.id, 'DEAD');
-    } else {
-      const hasLiveChild = children.some(child => electricalStatusMap.get(child.id) === 'LIVE');
-      electricalStatusMap.set(cabinet.id, hasLiveChild ? 'LIVE' : 'DEAD');
-    }
-  }
-
-  // Обновляем элементы
-  let elementsUpdated = 0;
-  for (const [id, electricalStatus] of electricalStatusMap) {
-    try {
-      await prisma.element.update({
-        where: { id },
-        data: { electricalStatus }
-      });
-      elementsUpdated++;
-    } catch (e) {
-      console.error(`Ошибка обновления элемента ${id}`);
-    }
-  }
-
-  // Обновляем связи
-  let connectionsUpdated = 0;
-  for (const conn of connections) {
-    const sourceElectrical = electricalStatusMap.get(conn.sourceId) || 'DEAD';
-    const sourceOperational = operationalStatusMap.get(conn.sourceId) || 'ON';
-    const connOperational = conn.operationalStatus || 'ON';
-
-    const connElectrical =
-      (sourceElectrical === 'LIVE' && sourceOperational === 'ON' && connOperational === 'ON')
-        ? 'LIVE'
-        : 'DEAD';
-
-    try {
-      await prisma.connection.update({
-        where: { id: conn.id },
-        data: { electricalStatus: connElectrical }
-      });
-      connectionsUpdated++;
-    } catch (e) {
-      console.error(`Ошибка обновления связи ${conn.id}`);
-    }
-  }
-
-  const liveElements = Array.from(electricalStatusMap.values()).filter(s => s === 'LIVE').length;
-  console.log(`\nОбновлено элементов: ${elementsUpdated}`);
-  console.log(`Обновлено связей: ${connectionsUpdated}`);
-  console.log(`LIVE элементов: ${liveElements}`);
-  console.log(`DEAD элементов: ${elements.length - liveElements}`);
-}
 
 async function main() {
   console.log('=== ИМПОРТ ДАННЫХ ИЗ EXCEL ===\n');
@@ -444,12 +273,14 @@ async function main() {
 
       await prisma.element.create({
         data: {
+          id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           elementId,
           name: info.name,
           type: info.type,
           voltageLevel: 0.4,
           operationalStatus,
           electricalStatus: 'DEAD', // Будет обновлено в propagateStates
+          updatedAt: new Date(),
         },
       });
       imported++;
@@ -484,6 +315,7 @@ async function main() {
       if (sourceElement && targetElement) {
         await prisma.connection.create({
           data: {
+            id: `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             sourceId: sourceElement.id,
             targetId: targetElement.id,
             operationalStatus: 'ON',
@@ -560,7 +392,21 @@ async function main() {
   }
 
   // Распространение состояний
-  await propagateStatesInline();
+  console.log('\n=== РАСПРОСТРАНЕНИЕ СОСТОЯНИЙ ===');
+  const propagationResult = await propagateStates();
+
+  console.log(`\nОбновлено элементов: ${propagationResult.elementsUpdated}`);
+  console.log(`Обновлено связей: ${propagationResult.connectionsUpdated}`);
+  console.log(`LIVE элементов: ${propagationResult.liveElements}`);
+  console.log(`DEAD элементов: ${propagationResult.deadElements}`);
+  console.log(`OFF элементов: ${propagationResult.offElements}`);
+
+  if (propagationResult.conflicts && propagationResult.conflicts.length > 0) {
+    console.log(`\n⚠️  Обнаружено конфликтов двойного питания: ${propagationResult.conflicts.length}`);
+    for (const conflict of propagationResult.conflicts) {
+      console.log(`  - "${conflict.elementName}" питается от: ${conflict.sources.join(', ')}`);
+    }
+  }
 
   // Итоговая статистика
   console.log('\n=== ИМПОРТ ЗАВЕРШЁН ===');

@@ -25,8 +25,36 @@ function parseOperationalStatus(stateValue: string | undefined | null): Operatio
   return 'ON';
 }
 
+/**
+ * Очищает базу данных перед импортом
+ * Удаляет все данные в правильном порядке (с учётом foreign keys)
+ */
+async function clearDatabase() {
+  console.log('[import] Очистка базы данных...');
+
+  await prisma.$transaction([
+    prisma.validationResult.deleteMany(),
+    prisma.alarm.deleteMany(),
+    prisma.meterReading.deleteMany(),
+    prisma.load.deleteMany(),
+    prisma.meter.deleteMany(),
+    prisma.transformer.deleteMany(),
+    prisma.breaker.deleteMany(),
+    prisma.device.deleteMany(),
+    prisma.deviceSlot.deleteMany(),
+    prisma.connection.deleteMany(),
+    prisma.cable.deleteMany(),
+    prisma.element.deleteMany(),
+  ]);
+
+  console.log('[import] База данных очищена');
+}
+
 export async function POST(request: Request) {
   try {
+    // Очистка базы перед импортом
+    await clearDatabase();
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
 

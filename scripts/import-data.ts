@@ -219,8 +219,17 @@ async function main() {
   let skippedRows = 0;
 
   for (const row of rawData) {
-    // Нормализация: trim + сжатие множественных пробелов в один
-    const normalizeName = (s: string) => s.replace(/\s+/g, ' ').trim();
+    // Расширенная нормализация имён:
+    // 1. trim - убрать начальные/конечные пробелы
+    // 2. Сжать множественные пробелы в один
+    // 3. Убрать пробелы вокруг слешей: " / " → "/"
+    // 4. Убрать пробелы между заглавными буквами и цифрами: "ГРЩ 1" → "ГРЩ1"
+    const normalizeName = (s: string) => s
+      .replace(/\s+/g, ' ')           // сжать множественные пробелы
+      .replace(/\s*\/\s*/g, '/')      // убрать пробелы вокруг слеша
+      .replace(/\s*\\\s*/g, '\\')     // убрать пробелы вокруг обратного слеша
+      .replace(/([А-ЯA-Z]+)\s+(\d)/g, '$1$2')  // "ГРЩ 1" → "ГРЩ1"
+      .trim();
     
     const from = normalizeName(String(row[fromCol!] || ''));
     const to = normalizeName(String(row[toCol!] || ''));

@@ -216,9 +216,12 @@ async function main() {
   let skippedRows = 0;
 
   for (const row of rawData) {
-    const from = String(row[fromCol!] || '').trim();
-    const to = String(row[toCol!] || '').trim();
-    const connection = connectionCol ? String(row[connectionCol] || '').trim() : undefined;
+    // Нормализация: trim + сжатие множественных пробелов в один
+    const normalizeName = (s: string) => s.replace(/\s+/g, ' ').trim();
+    
+    const from = normalizeName(String(row[fromCol!] || ''));
+    const to = normalizeName(String(row[toCol!] || ''));
+    const connection = connectionCol ? normalizeName(String(row[connectionCol] || '')) : undefined;
     const state = stateCol ? String(row[stateCol] || '').trim() : undefined;
 
     if (!from || !to) {

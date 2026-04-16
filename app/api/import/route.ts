@@ -74,9 +74,12 @@ export async function POST(request: Request) {
 
       for (const row of data) {
         try {
+          // Нормализация: trim + сжатие множественных пробелов
+          const normalizeName = (s: string) => s.replace(/\s+/g, ' ').trim();
+          
           // Определение типа элемента
-          const elementId = String(row['ID'] || row['id'] || row['Элемент'] || '');
-          const name = String(row['Название'] || row['Name'] || row['name'] || elementId);
+          const elementId = normalizeName(String(row['ID'] || row['id'] || row['Элемент'] || ''));
+          const name = normalizeName(String(row['Название'] || row['Name'] || row['name'] || elementId));
           const typeRaw = String(row['Тип'] || row['Type'] || row['type'] || 'junction').toLowerCase();
           const stateValue = row['state'] || row['State'] || row['Состояние'] || row['Статус'] || '';
 
@@ -97,7 +100,7 @@ export async function POST(request: Request) {
 
           const operationalStatus = parseOperationalStatus(String(stateValue));
 
-          // Создание элемента
+          // Создание элемента (нормализованный elementId)
           await prisma.element.upsert({
             where: { elementId },
             create: {

@@ -586,52 +586,50 @@ export default function Home() {
         )}
 
         {/* Legend */}
-        <div className="absolute bottom-4 left-4 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-sm z-20">
-          <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Легенда</h4>
-
+        <div className="absolute bottom-4 left-4 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-md p-2 text-[10px] z-20">
           {/* Status Legend */}
-          <div className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
-            <div className="text-xs text-gray-400 mb-2">Статусы:</div>
-            <div className="grid grid-cols-3 gap-x-4 gap-y-1">
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-green-500 border-2 border-green-600"></span>
-                <span className="text-xs text-gray-600 dark:text-gray-400">LIVE</span>
+          <div className="mb-1.5 pb-1.5 border-b border-gray-200 dark:border-gray-700">
+            <div className="text-[9px] text-gray-400 mb-1">Статусы:</div>
+            <div className="grid grid-cols-3 gap-x-2 gap-y-0.5">
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-500 border border-green-600"></span>
+                <span className="text-gray-600 dark:text-gray-400">LIVE</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-gray-400 border-2 border-gray-500 opacity-50"></span>
-                <span className="text-xs text-gray-600 dark:text-gray-400">DEAD</span>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-gray-400 border border-gray-500 opacity-50"></span>
+                <span className="text-gray-600 dark:text-gray-400">DEAD</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-gray-300 border-2 border-red-500 opacity-35"></span>
-                <span className="text-xs text-red-500">OFF</span>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-gray-300 border border-red-500 opacity-35"></span>
+                <span className="text-red-500">OFF</span>
               </div>
             </div>
           </div>
 
           {/* Type Legend */}
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-5 rounded border-4 border-yellow-400 bg-yellow-50 dark:bg-yellow-900/30"></div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+            <div className="flex items-center gap-1">
+              <div className="w-5 h-3 rounded border-2 border-yellow-400 bg-yellow-50 dark:bg-yellow-900/30"></div>
               <span className="text-gray-600 dark:text-gray-400">SOURCE</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-5 rounded border-4 border-gray-800 bg-white dark:bg-gray-700"></div>
+            <div className="flex items-center gap-1">
+              <div className="w-5 h-3 rounded border-2 border-gray-800 bg-white dark:bg-gray-700"></div>
               <span className="text-gray-600 dark:text-gray-400">BREAKER</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-5 rounded border-4 border-white bg-gray-700"></div>
+            <div className="flex items-center gap-1">
+              <div className="w-5 h-3 rounded border-2 border-white bg-gray-700"></div>
               <span className="text-gray-600 dark:text-gray-400">LOAD</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-5 rounded border-4 border-blue-500 bg-blue-50 dark:bg-blue-900/30"></div>
+            <div className="flex items-center gap-1">
+              <div className="w-5 h-3 rounded border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/30"></div>
               <span className="text-gray-600 dark:text-gray-400">METER</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-4 rounded border-4 border-amber-600 bg-amber-50 dark:bg-amber-900/30"></div>
+            <div className="flex items-center gap-1">
+              <div className="w-6 h-2.5 rounded border-2 border-amber-600 bg-amber-50 dark:bg-amber-900/30"></div>
               <span className="text-gray-600 dark:text-gray-400">BUS</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded-full border-3 border-gray-400 bg-gray-100 dark:bg-gray-700"></div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full border-2 border-gray-400 bg-gray-100 dark:bg-gray-700"></div>
               <span className="text-gray-600 dark:text-gray-400">JUNCTION</span>
             </div>
           </div>

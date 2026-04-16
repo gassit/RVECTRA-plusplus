@@ -276,6 +276,71 @@ async function main() {
   console.log(`Связей для импорта: ${connectionsData.length}`);
   console.log(`Пропущено строк: ${skippedRows}`);
 
+  // === ИЗВЛЕЧЕНИЕ CABINET ИЗ СОСТАВНЫХ ИМЁН (Источник 4 из промта) ===
+  console.log('\n=== ИЗВЛЕЧЕНИЕ CABINET ИЗ СОСТАВНЫХ ИМЁН ===');
+
+  // Паттерны для извлечения CABINET из имён
+  const cabinetExtractionPatterns = [
+    /ГРЩ\d*/gi,           // ГРЩ1, ГРЩ2
+    /ЩР\d*[-\w]*/gi,      // ЩР3-ПУВ, ЩР1
+    /ШУ[-\w]*/gi,         // ШУ-1, ШУ.ДП2
+    /ВРУ[-\w]*/gi,        // ВРУ-1, ВРУ Автопарковка
+    /АВР\d*/gi,           // АВР1, АВР
+    /ЩАО\w*/gi,           // ЩАО, ЩАО1
+    /\d*Ш[УДВЗ]\w*/gi,    // 1ШУ, 2ШУЗ, ШД
+    /Шкаф\s+[\w\-]+/gi,   // Шкаф УКРМ1, Шкаф управления
+  ];
+
+  // Паттерн для извлечения из имён шин: "N с.ш. CABINET_NAME"
+  const busCabinetPattern = /(\d+)\s*с\.ш\.\s*([^\s]+)/gi;
+
+  const extractedCabinets = new Set<string>();
+
+  for (const [elementId, info] of elementsMap) {
+    // Извлечение из имён шин: "1 с.ш. ГРЩ1" → "ГРЩ1"
+    if (info.type === 'bus') {
+      const busMatch = /(\d+)\s*с\.ш\.\s*(.+)/i.exec(info.name);
+      if (busMatch) {
+        const cabinetCandidate = busMatch[2].trim();
+        // Проверяем, что это не SOURCE или уже существующий элемент
+        const candidateType = detectElementType(cabinetCandidate);
+        if (candidateType !== 'source' && !elementsMap.has(cabinetCandidate)) {
+          extractedCabinets.add(cabinetCandidate);
+        }
+      }
+    }
+
+    // Извлечение из составных имён: "QF1 ГРЩ1" → "ГРЩ1"
+    if (info.type !== 'cabinet' && info.type !== 'source' && info.type !== 'bus') {
+      for (const pattern of cabinetExtractionPatterns) {
+        const matches = info.name.match(pattern);
+        if (matches) {
+          for (const match of matches) {
+            const candidate = match.trim();
+            const candidateType = detectElementType(candidate);
+            if (candidateType === 'cabinet' && !elementsMap.has(candidate)) {
+              extractedCabinets.add(candidate);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Добавляем извлечённые CABINET в elementsMap
+  for (const cabinetName of extractedCabinets) {
+    elementsMap.set(cabinetName, {
+      name: cabinetName,
+      type: 'cabinet',
+      state: undefined,
+    });
+  }
+
+  console.log(`Извлечено CABINET из составных имён: ${extractedCabinets.size}`);
+  for (const name of extractedCabinets) {
+    console.log(`  ${name}`);
+  }
+
   // Статистика по типам
   const typeStats = new Map<string, number>();
   for (const el of elementsMap.values()) {

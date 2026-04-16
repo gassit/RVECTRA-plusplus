@@ -3,7 +3,7 @@ import * as xlsx from 'xlsx';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { OperationalStatus } from '../types';
-import { propagateStates } from '../lib/services/state-propagation.service';
+import { propagateStates } from '../lib/services/state-propagation.service.js';
 
 const prisma = new PrismaClient();
 
@@ -101,7 +101,10 @@ function findExcelFile(): string | null {
 
   if (excelFiles.length === 0) return null;
 
-  // Приоритет: ЭХОв.xlsx, затем любой xlsx файл
+  // Приоритет: input.xlsx, затем ЭХОв.xlsx, затем любой xlsx файл
+  if (excelFiles.includes('input.xlsx')) {
+    return path.join(uploadDir, 'input.xlsx');
+  }
   if (excelFiles.includes('ЭХОв.xlsx')) {
     return path.join(uploadDir, 'ЭХОв.xlsx');
   }
@@ -366,10 +369,12 @@ async function main() {
         const voltage = parseFloat(String(row['Напряжение'] || row['voltage'] || '380')) / 1000;
 
         if (mark && section > 0) {
+          const markKey = `${mark}_${cores}x${section}`;
           await prisma.cableReference.upsert({
-            where: { mark: `${mark}_${cores}x${section}` },
+            where: { mark: markKey },
             create: {
-              mark: `${mark}_${cores}x${section}`,
+              id: `cable_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              mark: markKey,
               section,
               material,
               voltage,
@@ -403,13 +408,6 @@ async function main() {
   console.log(`LIVE элементов: ${propagationResult.liveElements}`);
   console.log(`DEAD элементов: ${propagationResult.deadElements}`);
   console.log(`OFF элементов: ${propagationResult.offElements}`);
-
-  if (propagationResult.conflicts && propagationResult.conflicts.length > 0) {
-    console.log(`\n⚠️  Обнаружено конфликтов двойного питания: ${propagationResult.conflicts.length}`);
-    for (const conflict of propagationResult.conflicts) {
-      console.log(`  - "${conflict.elementName}" питается от: ${conflict.sources.join(', ')}`);
-    }
-  }
 
   // Итоговая статистика
   console.log('\n=== ИМПОРТ ЗАВЕРШЁН ===');

@@ -34,6 +34,16 @@ function detectElementType(name: string): string {
     return 'source';
   }
 
+  // === ШКАФЫ / ЩИТЫ (CABINET) - проверяем ДО нагрузок! ===
+  if (/^щр\d*/i.test(name)) return 'cabinet';           // ЩР1, ЩР2, ЩР3-ПУВ
+  if (/^шу\s/i.test(name) || /^шу\d/i.test(name)) return 'cabinet';  // ШУ-1, ШУ 2, ШУ.ДП2
+  if (/^вру/i.test(name)) return 'cabinet';             // ВРУ-1, ВРУ Автопарковка
+  if (/^грщ/i.test(name)) return 'cabinet';             // ГРЩ-1, ГРЩ1
+  if (nameLower === 'авр' || /^авр\s/i.test(name)) return 'cabinet';  // АВР
+  if (/^щао/i.test(name)) return 'cabinet';             // ЩАО
+  if (/^\d*ш[удвз]/i.test(name)) return 'cabinet';     // 1Ш, 2ШУ, ШД, 2ШУЗ
+  if (nameLower.startsWith('шкаф')) return 'cabinet';   // Шкаф управления, Шкаф УКРМ
+
   // Автоматические выключатели - проверяем ДО шин!
   // QF с номером (QF1, QF2, QF1.1, QF2.10, QF18 и т.д.)
   if (/^qf\d*[\.\d]*\s/i.test(name) || /^qf\s/i.test(name)) {
@@ -56,11 +66,11 @@ function detectElementType(name: string): string {
   }
 
   // Нагрузки
-  if (/щр[-\d]/i.test(name) || /щао/i.test(name) ||
-      /вру/i.test(name) || /чиллер/i.test(name) ||
+  if (/чиллер/i.test(name) ||
       /нагрузка/i.test(name) || /эпу/i.test(name) ||
-      /шус/i.test(name) || /шу\./i.test(name) ||
-      /магистраль/i.test(name)) {
+      /шус/i.test(name) ||
+      /магистраль/i.test(name) ||
+      /резерв$/i.test(name)) {
     return 'load';
   }
 
@@ -276,32 +286,160 @@ async function main() {
     console.log(`  ${type}: ${count}`);
   }
 
+  // === ПОСТРОЕНИЕ ИЕРАРХИИ CABINET ===
+  console.log('\n=== ПОСТРОЕНИЕ ИЕРАРХИИ CABINET ===');
+
+  // Собираем все CABINET и их алиасы
+  const cabinetAliases = new Map<string, string[]>(); // cabinetName -> [aliases]
+  const cabinetIds = new Set<string>();
+
+  for (const [elementId, info] of elementsMap) {
+    if (info.type === 'cabinet') {
+      cabinetIds.add(elementId);
+      const aliases = [elementId];
+      
+      // Добавляем алиас без префикса "шкаф/шкафа"
+      const withoutPrefix = elementId.replace(/^шкаф\s+/i, '').replace(/^шкафа\s+/i, '');
+      if (withoutPrefix !== elementId) {
+        aliases.push(withoutPrefix);
+      }
+      
+      cabinetAliases.set(elementId, aliases);
+    }
+  }
+
+  console.log(`Найдено CABINET: ${cabinetIds.size}`);
+  for (const [name, aliases] of cabinetAliases) {
+    console.log(`  ${name}${aliases.length > 1 ? ` (алиасы: ${aliases.slice(1).join(', ')})` : ''}`);
+  }
+
+  // Функция поиска родительского CABINET для элемента
+  function findParentCabinet(elementName: string, elementType: string): string | undefined {
+    if (elementType === 'cabinet') return undefined; // CABINET не может быть дочерним
+
+    // Извлекаем возможные имена CABINET из имени элемента
+    // Паттерны: "QF1 ГРЩ1", "QF1 ЩР3-ПУВ", "1 с.ш. ГРЩ1"
+    const patterns = [
+      /(?:^|\s)(ГРЩ\d*[^\s/]*)/gi,
+      /(?:^|\s)(ЩР\d*[^\s/]*)/gi,
+      /(?:^|\s)(ШУ\d*[^\s/]*)/gi,
+      /(?:^|\s)(ВРУ\d*[^\s/]*)/gi,
+      /(?:^|\s)(АВР\d*)/gi,
+      /(?:^|\s)(ЩАО\w*)/gi,
+      /(?:^|\s)(\d*Ш[УДВЗ]\w*)/gi,
+      /(?:^|\s)(Шкаф\s+[^\s/]+)/gi,
+    ];
+
+    const candidates: string[] = [];
+    for (const pattern of patterns) {
+      let match;
+      while ((match = pattern.exec(elementName)) !== null) {
+        candidates.push(match[1]);
+      }
+    }
+
+    // Также извлекаем из "N с.ш. CABINET_NAME"
+    const busMatch = elementName.match(/\d+\s*с\.ш\.\s*([^\s]+)/);
+    if (busMatch) {
+      candidates.push(busMatch[1]);
+    }
+
+    // Ищем совпадение с CABINET (самое длинное)
+    let bestMatch: string | undefined;
+    for (const candidate of candidates) {
+      for (const [cabinetName, aliases] of cabinetAliases) {
+        if (aliases.some(alias => candidate === alias || candidate.startsWith(alias))) {
+          if (!bestMatch || cabinetName.length > bestMatch.length) {
+            bestMatch = cabinetName;
+          }
+        }
+      }
+    }
+
+    return bestMatch;
+  }
+
+  // Строим карту parentId
+  const parentMap = new Map<string, string>(); // elementName -> cabinetName
+  for (const [elementId, info] of elementsMap) {
+    const parentCabinet = findParentCabinet(info.name, info.type);
+    if (parentCabinet) {
+      parentMap.set(elementId, parentCabinet);
+    }
+  }
+
+  console.log(`\nНазначено parentId: ${parentMap.size}`);
+
   // Импорт элементов
   console.log('\n=== ИМПОРТ ЭЛЕМЕНТОВ ===');
 
+  // Сначала создаём CABINET (чтобы другие могли ссылаться на них)
+  const elementIdToDbId = new Map<string, string>();
+
+  // 1. Импорт CABINET
   let imported = 0;
   let errors = 0;
 
   for (const [elementId, info] of elementsMap) {
+    if (info.type !== 'cabinet') continue;
+
     try {
       const operationalStatus = parseOperationalStatus(info.state);
+      const dbId = `el_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       await prisma.element.create({
         data: {
-          id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          id: dbId,
           elementId,
           name: info.name,
           type: info.type,
           voltageLevel: 0.4,
           operationalStatus,
-          electricalStatus: 'DEAD', // Будет обновлено в propagateStates
+          electricalStatus: 'DEAD',
           updatedAt: new Date(),
+          parentId: null, // CABINET не имеет родителя
         },
       });
+      elementIdToDbId.set(elementId, dbId);
       imported++;
+    } catch (e) {
+      console.error(`  Ошибка создания CABINET: ${elementId}`);
+      errors++;
+    }
+  }
+  console.log(`CABINET импортировано: ${imported}`);
 
-      if (imported % 50 === 0) {
-        console.log(`  Импортировано: ${imported}`);
+  // 2. Импорт остальных элементов
+  let otherImported = 0;
+  for (const [elementId, info] of elementsMap) {
+    if (info.type === 'cabinet') continue;
+
+    try {
+      const operationalStatus = parseOperationalStatus(info.state);
+      const dbId = `el_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Находим parentId
+      const parentElementId = parentMap.get(elementId);
+      const parentDbId = parentElementId ? elementIdToDbId.get(parentElementId) : undefined;
+
+      await prisma.element.create({
+        data: {
+          id: dbId,
+          elementId,
+          name: info.name,
+          type: info.type,
+          voltageLevel: 0.4,
+          operationalStatus,
+          electricalStatus: 'DEAD',
+          updatedAt: new Date(),
+          parentId: parentDbId || null,
+        },
+      });
+      elementIdToDbId.set(elementId, dbId);
+      otherImported++;
+
+      if (otherImported % 50 === 0) {
+        console.log(`  Импортировано: ${otherImported}`);
       }
     } catch (e) {
       console.error(`  Ошибка: ${elementId}`);
@@ -309,7 +447,7 @@ async function main() {
     }
   }
 
-  console.log(`Импортировано элементов: ${imported}`);
+  console.log(`Всего импортировано элементов: ${imported + otherImported}`);
   if (errors > 0) console.log(`Ошибок: ${errors}`);
 
   // Импорт связей

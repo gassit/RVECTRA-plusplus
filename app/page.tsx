@@ -391,84 +391,84 @@ export default function Home() {
 
         {/* Floating Stats Panel */}
         {showStats && stats && (
-          <div className="absolute top-16 left-4 w-72 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden z-20">
-            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-700/50">
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Статистика сети</h3>
+          <div className="absolute top-16 left-4 w-52 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden z-20">
+            <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-700/50">
+              <h3 className="text-xs font-semibold text-gray-700 dark:text-gray-300">Статистика сети</h3>
               <button
                 onClick={() => setShowStats(false)}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <div className="p-4 space-y-4">
+            <div className="p-2 space-y-2">
               {/* Status Stats */}
               <div>
-                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Статусы элементов</h4>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="flex flex-col items-center p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                    <span className="text-lg font-bold text-green-600 dark:text-green-400">{statusStats.live}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">LIVE</span>
+                <h4 className="text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Статусы</h4>
+                <div className="grid grid-cols-3 gap-1">
+                  <div className="flex flex-col items-center p-1 bg-green-50 dark:bg-green-900/20 rounded">
+                    <span className="text-sm font-bold text-green-600 dark:text-green-400">{statusStats.live}</span>
+                    <span className="text-[9px] text-gray-500 dark:text-gray-400">LIVE</span>
                   </div>
-                  <div className="flex flex-col items-center p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                    <span className="text-lg font-bold text-gray-500">{statusStats.dead}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">DEAD</span>
+                  <div className="flex flex-col items-center p-1 bg-gray-100 dark:bg-gray-700 rounded">
+                    <span className="text-sm font-bold text-gray-500">{statusStats.dead}</span>
+                    <span className="text-[9px] text-gray-500 dark:text-gray-400">DEAD</span>
                   </div>
-                  <div className="flex flex-col items-center p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                    <span className="text-lg font-bold text-red-500">{statusStats.off}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">OFF</span>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Элементы сети</h4>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="flex flex-col items-center p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                    <span className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{stats.elements.sources}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">SOURCE</span>
-                  </div>
-                  <div className="flex flex-col items-center p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-                    <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{stats.elements.buses}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">BUS</span>
-                  </div>
-                  <div className="flex flex-col items-center p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                    <span className="text-lg font-bold text-gray-700 dark:text-gray-300">{stats.elements.breakers}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">BREAKER</span>
-                  </div>
-                  <div className="flex flex-col items-center p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{stats.elements.meters}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">METER</span>
-                  </div>
-                  <div className="flex flex-col items-center p-2 bg-gray-800 dark:bg-gray-600 rounded-lg">
-                    <span className="text-lg font-bold text-white">{stats.elements.loads}</span>
-                    <span className="text-xs text-gray-400">LOAD</span>
-                  </div>
-                  <div className="flex flex-col items-center p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                    <span className="text-lg font-bold text-gray-700 dark:text-gray-300">{stats.elements.junctions}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">JUNCTION</span>
+                  <div className="flex flex-col items-center p-1 bg-red-50 dark:bg-red-900/20 rounded">
+                    <span className="text-sm font-bold text-red-500">{statusStats.off}</span>
+                    <span className="text-[9px] text-gray-500 dark:text-gray-400">OFF</span>
                   </div>
                 </div>
               </div>
               <div>
-                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Мощность</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <span className="text-sm text-gray-500 dark:text-gray-400">Полная</span>
-                    <span className="font-semibold text-gray-700 dark:text-gray-300">{stats.power.total?.toFixed(1) || '0'} кВА</span>
+                <h4 className="text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Элементы</h4>
+                <div className="grid grid-cols-3 gap-1">
+                  <div className="flex flex-col items-center p-1 bg-yellow-50 dark:bg-yellow-900/20 rounded">
+                    <span className="text-sm font-bold text-yellow-600 dark:text-yellow-400">{stats.elements.sources}</span>
+                    <span className="text-[9px] text-gray-500 dark:text-gray-400">SOURCE</span>
                   </div>
-                  <div className="flex justify-between items-center p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <span className="text-sm text-blue-600 dark:text-blue-400">Потребляемая</span>
-                    <span className="font-semibold text-blue-700 dark:text-blue-300">{stats.power.consumed?.toFixed(1) || '0'} кВА</span>
+                  <div className="flex flex-col items-center p-1 bg-amber-50 dark:bg-amber-900/20 rounded">
+                    <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{stats.elements.buses}</span>
+                    <span className="text-[9px] text-gray-500 dark:text-gray-400">BUS</span>
                   </div>
-                  <div className="flex justify-between items-center p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                    <span className="text-sm text-green-600 dark:text-green-400">Свободна</span>
-                    <span className="font-semibold text-green-700 dark:text-green-300">{stats.power.free?.toFixed(1) || '0'} кВА</span>
+                  <div className="flex flex-col items-center p-1 bg-gray-100 dark:bg-gray-700 rounded">
+                    <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{stats.elements.breakers}</span>
+                    <span className="text-[9px] text-gray-500 dark:text-gray-400">BREAKER</span>
                   </div>
-                  <div className="flex justify-between items-center p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                    <span className="text-sm text-purple-600 dark:text-purple-400">Резерв</span>
-                    <span className="font-semibold text-purple-700 dark:text-purple-300">{stats.power.reserve?.toFixed(1) || '0'} кВА</span>
+                  <div className="flex flex-col items-center p-1 bg-blue-50 dark:bg-blue-900/20 rounded">
+                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{stats.elements.meters}</span>
+                    <span className="text-[9px] text-gray-500 dark:text-gray-400">METER</span>
+                  </div>
+                  <div className="flex flex-col items-center p-1 bg-gray-800 dark:bg-gray-600 rounded">
+                    <span className="text-sm font-bold text-white">{stats.elements.loads}</span>
+                    <span className="text-[9px] text-gray-400">LOAD</span>
+                  </div>
+                  <div className="flex flex-col items-center p-1 bg-gray-100 dark:bg-gray-700 rounded">
+                    <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{stats.elements.junctions}</span>
+                    <span className="text-[9px] text-gray-500 dark:text-gray-400">JUNCTION</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h4 className="text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Мощность</h4>
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center p-1 bg-gray-50 dark:bg-gray-700/50 rounded">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">Полная</span>
+                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{stats.power.total?.toFixed(1) || '0'} кВА</span>
+                  </div>
+                  <div className="flex justify-between items-center p-1 bg-blue-50 dark:bg-blue-900/20 rounded">
+                    <span className="text-[10px] text-blue-600 dark:text-blue-400">Потребл.</span>
+                    <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">{stats.power.consumed?.toFixed(1) || '0'} кВА</span>
+                  </div>
+                  <div className="flex justify-between items-center p-1 bg-green-50 dark:bg-green-900/20 rounded">
+                    <span className="text-[10px] text-green-600 dark:text-green-400">Свободно</span>
+                    <span className="text-xs font-semibold text-green-700 dark:text-green-300">{stats.power.free?.toFixed(1) || '0'} кВА</span>
+                  </div>
+                  <div className="flex justify-between items-center p-1 bg-purple-50 dark:bg-purple-900/20 rounded">
+                    <span className="text-[10px] text-purple-600 dark:text-purple-400">Резерв</span>
+                    <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">{stats.power.reserve?.toFixed(1) || '0'} кВА</span>
                   </div>
                 </div>
               </div>

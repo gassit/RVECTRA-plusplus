@@ -3,7 +3,7 @@ import * as xlsx from 'xlsx';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { OperationalStatus } from '../types';
-import { propagateStates } from '../lib/services/state-propagation.service.js';
+import { propagateStates } from '../lib/services/state-propagation.service';
 
 const prisma = new PrismaClient();
 

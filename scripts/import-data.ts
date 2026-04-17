@@ -8,74 +8,94 @@ import { propagateStates } from '../lib/services/state-propagation.service';
 const prisma = new PrismaClient();
 
 // Определение типа элемента по названию
+// Порядок проверки критичен: SOURCE → BREAKER → CABINET → JUNCTION → METER → BUS → LOAD
 function detectElementType(name: string): string {
   const nameLower = name.toLowerCase();
 
-  // Точки распределения (Точрасп) - проверяем ПЕРВЫМ, это соединения
-  if (/точрасп/i.test(name)) {
-    return 'junction';
-  }
-
-  // Счетчики - проверяем рано, т.к. могут содержать "с.ш."
-  if (/узуч/i.test(name) || /счетчик/i.test(name) ||
-      /счётчик/i.test(name) || /art-.*pqrs/i.test(name) ||
-      /пум/i.test(name)) {
-    return 'meter';
-  }
-
-  // Источники питания (трансформаторы, генераторы)
-  if (/^т[0-9]\s/.test(name) || /трансформатор/i.test(name) ||
-      /^т[0-9]\s+тп/i.test(name)) {
-    return 'source';
-  }
-
-  // ДГУ - источники (но не Точрасп ДГУ)
-  if (/^дгу/i.test(name)) {
-    return 'source';
-  }
-
-  // === ШКАФЫ / ЩИТЫ (CABINET) - проверяем ДО нагрузок! ===
-  if (/^щр\d*/i.test(name)) return 'cabinet';           // ЩР1, ЩР2, ЩР3-ПУВ
-  if (/^шу\s/i.test(name) || /^шу\d/i.test(name)) return 'cabinet';  // ШУ-1, ШУ 2, ШУ.ДП2
-  if (/^вру/i.test(name)) return 'cabinet';             // ВРУ-1, ВРУ Автопарковка
-  if (/^грщ/i.test(name)) return 'cabinet';             // ГРЩ-1, ГРЩ1
-  if (nameLower === 'авр' || /^авр\s/i.test(name)) return 'cabinet';  // АВР
-  if (/^щао/i.test(name)) return 'cabinet';             // ЩАО
-  if (/^\d*ш[удвз]/i.test(name)) return 'cabinet';     // 1Ш, 2ШУ, ШД, 2ШУЗ
-  if (nameLower.startsWith('шкаф')) return 'cabinet';   // Шкаф управления, Шкаф УКРМ
-
-  // Автоматические выключатели - проверяем ДО шин!
-  // QF с номером (QF1, QF2, QF1.1, QF2.10, QF18 и т.д.)
-  if (/^qf\d*[\.\d]*\s/i.test(name) || /^qf\s/i.test(name)) {
-    return 'breaker';
-  }
-
-  // QS - разъединители (тоже breaker тип), включая 4QS
-  if (/^qs\d*\s/i.test(name) || /\dqs\s/i.test(name)) {
-    return 'breaker';
-  }
-
-  // 1QF, 2QF, 3QF, 4QF - автоматические выключатели
-  if (/^[1-4]qf\s/i.test(name)) {
-    return 'breaker';
-  }
-
-  // Шины и сборки - проверяем ПОСЛЕ выключателей
-  if (/с\.ш\./.test(name) || /^шина$/i.test(name) || /сборка/i.test(name)) {
-    return 'bus';
-  }
-
-  // Нагрузки
-  if (/чиллер/i.test(name) ||
-      /нагрузка/i.test(name) || /эпу/i.test(name) ||
-      /шус/i.test(name) ||
-      /магистраль/i.test(name) ||
-      /резерв$/i.test(name)) {
+  // Шаг 1: Пустые/null/NaN → LOAD
+  if (!name || nameLower === 'null' || nameLower === 'nan' || name.trim() === '') {
     return 'load';
   }
 
-  // По умолчанию - junction
-  return 'junction';
+  // ========== Шаг 2: SOURCE — Источники питания ==========
+  // Правило 1: Т + цифра + пробел (строго одна цифра)
+  if (/^т\d\s/i.test(name)) return 'source';
+  // Правило 2: Содержит "трансформатор"
+  if (/трансформатор/i.test(name)) return 'source';
+  // Правило 3: Т + цифра + ТП
+  if (/^т\d\s+тп/i.test(name)) return 'source';
+  // Правило 4: Начинается с "ПЦ"
+  if (nameLower.startsWith('пц')) return 'source';
+  // Правило 5: Начинается с "ЦП"
+  if (nameLower.startsWith('цп')) return 'source';
+  // Правило 6: Начинается с "ДГУ"
+  if (/^дгу/i.test(name)) return 'source';
+  // Правило 7: Содержит "ИБП" (но не "Точрасп")
+  if (/ибп/i.test(name) && !/точрасп/i.test(name)) return 'source';
+
+  // ========== Шаг 3: BREAKER — Коммутационные аппараты ==========
+  // Правило 1: QF + номер (пробел или конец строки)
+  if (/^qf\d*[\.\d]*(\s|$)/i.test(name)) return 'breaker';
+  // Правило 2: QF + пробел (без номера)
+  if (/^qf\s/i.test(name)) return 'breaker';
+  // Правило 3: N QF (1-9)
+  if (/^[1-9]qf(\s|$)/i.test(name)) return 'breaker';
+  // Правило 4: QS + номер
+  if (/^qs\d*(\s|$)/i.test(name)) return 'breaker';
+  // Правило 5: N QS (цифра перед QS)
+  if (/\dqs(\s|$)/i.test(name)) return 'breaker';
+  // Правило 6: Контактор КМ
+  if (/^км\d*/i.test(name)) return 'breaker';
+  // Правило 7: Автоматика
+  if (nameLower.startsWith('автоматика')) return 'breaker';
+  // Правило 8: Предохранитель FU
+  if (/^(\d*)fu\d*/i.test(name)) return 'breaker';
+
+  // ========== Шаг 4: CABINET — Шкафы/щиты ==========
+  // Правило 1: ЩР + цифры
+  if (/^щр\d*/i.test(name)) return 'cabinet';
+  // Правило 2: ШУ + пробел/цифра
+  if (/^шу\s/i.test(name) || /^шу\d/i.test(name)) return 'cabinet';
+  // Правило 3: ВРУ
+  if (/^вру/i.test(name)) return 'cabinet';
+  // Правило 4: ГРЩ
+  if (/^грщ/i.test(name)) return 'cabinet';
+  // Правило 5: АВР (отдельное слово или с пробелом)
+  if (nameLower === 'авр' || /^авр\s/i.test(name)) return 'cabinet';
+  // Правило 6: ЩАО
+  if (/^щао/i.test(name)) return 'cabinet';
+  // Правило 7: Ш + гласная/согласная [удвз]
+  if (/^\d*ш[удвз]/i.test(name)) return 'cabinet';
+  // Правило 8: Слово "Шкаф"
+  if (nameLower.startsWith('шкаф')) return 'cabinet';
+
+  // ========== Шаг 5: JUNCTION — Узлы/точки распределения ==========
+  // Правило 1: "Точрасп" / "Точ расп"
+  if (/точрасп/i.test(name) || /точ расп/i.test(name)) return 'junction';
+  // Правило 2: "Точка распределения"
+  if (/точка распределения/i.test(name)) return 'junction';
+  // Правило 3: "точка" (общее)
+  if (/точка/i.test(name)) return 'junction';
+
+  // ========== Шаг 6: METER — Узлы учёта ==========
+  // Правило 1: Полная форма "Узел учета"
+  if (nameLower.startsWith('узел учета')) return 'meter';
+  // Правило 2: Сокращение "Узуч"
+  if (/^узуч/i.test(name)) return 'meter';
+
+  // ========== Шаг 7: BUS — Сборные шины ==========
+  // Важно: проверяем, что это не точрасп (исключение)
+  if (!/точрасп/i.test(name)) {
+    // Правило 1: Сборные шины (с.ш.)
+    if (/\d*с\.ш\./.test(name)) return 'bus';
+    // Правило 2: Магистраль / Шина
+    if (/магистраль/i.test(name) || nameLower === 'шина') return 'bus';
+    // Правило 3: Сборка
+    if (/сборка/i.test(name)) return 'bus';
+  }
+
+  // ========== Шаг 8: LOAD — По умолчанию ==========
+  return 'load';
 }
 
 /**

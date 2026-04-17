@@ -38,12 +38,12 @@ function detectElementType(name: string): string {
   if (/^qf\d*[\.\d]*(\s|$)/i.test(name)) return 'breaker';
   // Правило 2: QF + пробел (без номера)
   if (/^qf\s/i.test(name)) return 'breaker';
-  // Правило 3: N QF (1-9)
-  if (/^[1-9]qf(\s|$)/i.test(name)) return 'breaker';
+  // Правило 3: N QF (1-9) с возможным номером после QF
+  if (/^[1-9]qf\d*(\s|$)/i.test(name)) return 'breaker';
   // Правило 4: QS + номер
   if (/^qs\d*(\s|$)/i.test(name)) return 'breaker';
-  // Правило 5: N QS (цифра перед QS)
-  if (/\dqs(\s|$)/i.test(name)) return 'breaker';
+  // Правило 5: N QS (цифра перед QS) с возможным номером после QS
+  if (/\dqs\d*(\s|$)/i.test(name)) return 'breaker';
   // Правило 6: Контактор КМ
   if (/^км\d*/i.test(name)) return 'breaker';
   // Правило 7: Автоматика

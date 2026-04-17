@@ -1,6 +1,15 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+interface CabinetBound {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export async function GET() {
   try {
     // Получаем элементы со статусами
@@ -55,7 +64,50 @@ export async function GET() {
         : { elementId: '', name: 'Unknown', type: 'unknown' },
     }));
 
-    return NextResponse.json({ elements, connections: connectionsWithInfo });
+    // Вычисляем границы Cabinet
+    const cabinetBounds: CabinetBound[] = [];
+
+    // Группируем элементы по parentId (Cabinet)
+    const byParent = new Map<string | null, typeof elements>();
+    for (const el of elements) {
+      const key = el.parentId;
+      if (!byParent.has(key)) {
+        byParent.set(key, []);
+      }
+      byParent.get(key)!.push(el);
+    }
+
+    // Для каждого Cabinet вычисляем границы на основе позиций дочерних элементов
+    for (const [parentId, children] of byParent) {
+      if (!parentId) continue;
+
+      const cabinet = elementMap.get(parentId);
+      if (!cabinet) continue;
+
+      const childrenWithPositions = children.filter(e => e.posX != null && e.posY != null);
+      if (childrenWithPositions.length === 0) continue;
+
+      const padding = 50;
+      const minX = Math.min(...childrenWithPositions.map(e => e.posX!)) - padding;
+      const maxX = Math.max(...childrenWithPositions.map(e => e.posX!)) + 120;
+      const minY = Math.min(...childrenWithPositions.map(e => e.posY!)) - padding;
+      const maxY = Math.max(...childrenWithPositions.map(e => e.posY!)) + 80;
+
+      cabinetBounds.push({
+        id: parentId,
+        name: cabinet.name,
+        x: minX,
+        y: minY,
+        width: maxX - minX,
+        height: maxY - minY
+      });
+    }
+
+    return NextResponse.json({ 
+      elements, 
+      connections: connectionsWithInfo,
+      cabinetBounds
+    });
   } catch (error) {
     console.error('Error fetching network:', error);
     return NextResponse.json({ error: 'Failed to fetch network' }, { status: 500 });

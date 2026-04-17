@@ -28,8 +28,8 @@ model Breaker {
   tripCount        Int               @default(0)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime
-  BreakerReference BreakerReference? @relation(fields: [refId], references: [id])
   Device           Device            @relation(fields: [deviceId], references: [id])
+  BreakerReference BreakerReference? @relation(fields: [refId], references: [id])
 }
 
 model BreakerReference {
@@ -93,9 +93,9 @@ model Connection {
   electricalStatus                     String   @default("DEAD")
   operationalStatus                    String   @default("ON")
   createdAt                            DateTime @default(now())
-  Cable                                Cable?   @relation(fields: [cableId], references: [id])
-  Element_Connection_targetIdToElement Element  @relation("Connection_targetIdToElement", fields: [targetId], references: [id])
   Element_Connection_sourceIdToElement Element  @relation("Connection_sourceIdToElement", fields: [sourceId], references: [id])
+  Element_Connection_targetIdToElement Element  @relation("Connection_targetIdToElement", fields: [targetId], references: [id])
+  Cable                                Cable?   @relation(fields: [cableId], references: [id])
 }
 
 model Device {
@@ -136,8 +136,8 @@ model Element {
   operationalStatus                       String       @default("ON")
   createdAt                               DateTime     @default(now())
   updatedAt                               DateTime
-  Connection_Connection_targetIdToElement Connection[] @relation("Connection_targetIdToElement")
   Connection_Connection_sourceIdToElement Connection[] @relation("Connection_sourceIdToElement")
+  Connection_Connection_targetIdToElement Connection[] @relation("Connection_targetIdToElement")
   DeviceSlot                              DeviceSlot[]
   Element                                 Element?     @relation("ElementToElement", fields: [parentId], references: [id])
   other_Element                           Element[]    @relation("ElementToElement")
@@ -193,8 +193,8 @@ model Transformer {
   loadPercent          Float                 @default(0)
   createdAt            DateTime              @default(now())
   updatedAt            DateTime
-  TransformerReference TransformerReference? @relation(fields: [refId], references: [id])
   Device               Device                @relation(fields: [deviceId], references: [id])
+  TransformerReference TransformerReference? @relation(fields: [refId], references: [id])
 }
 
 model TransformerReference {

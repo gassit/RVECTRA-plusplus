@@ -631,6 +631,10 @@ async function main() {
     console.log('Лист справочника кабелей не найден (пропускается)');
   }
 
+  // Расчёт позиций для схемы
+  console.log('\n=== РАСЧЁТ ПОЗИЦИЙ ЭЛЕМЕНТОВ ===');
+  await calculateLayout();
+
   // Распространение состояний
   console.log('\n=== РАСПРОСТРАНЕНИЕ СОСТОЯНИЙ ===');
   const propagationResult = await propagateStates();

@@ -94,7 +94,7 @@ function getBaseNodeStyle(type: string, isDark: boolean): BaseNodeStyle {
     fill: '#d1d5db',
     stroke: '#6b7280',
     lineWidth: 2,
-    labelFill: '#374151',
+    labelFill: '#000000',
     labelFontSize: 11,
     labelFontWeight: 'normal',
   };
@@ -105,7 +105,7 @@ function getBaseNodeStyle(type: string, isDark: boolean): BaseNodeStyle {
         fill: isDark ? '#1f2937' : '#fef9c3',
         stroke: '#15803d',
         lineWidth: 2,
-        labelFill: isDark ? '#fbbf24' : '#15803d',
+        labelFill: '#000000',
         labelFontSize: 12,
         labelFontWeight: 'bold',
       };
@@ -114,34 +114,34 @@ function getBaseNodeStyle(type: string, isDark: boolean): BaseNodeStyle {
         fill: isDark ? '#1e293b' : '#ffffff',
         stroke: isDark ? '#64748b' : '#94a3b8',
         lineWidth: 2,
-        labelFill: isDark ? '#f8fafc' : '#1e2937',
+        labelFill: '#000000',
         labelFontSize: 11,
         labelFontWeight: 'normal',
       };
     case 'load':
       return {
-        fill: '#111827',
+        fill: '#e5e7eb',
         stroke: '#6b7280',
         lineWidth: 2,
-        labelFill: '#f9fafb',
+        labelFill: '#000000',
         labelFontSize: 10,
         labelFontWeight: 'normal',
       };
     case 'meter':
       return {
-        fill: '#3b82f6',
-        stroke: '#1d4ed8',
+        fill: '#bfdbfe',
+        stroke: '#3b82f6',
         lineWidth: 2,
-        labelFill: '#ffffff',
+        labelFill: '#000000',
         labelFontSize: 9,
         labelFontWeight: 'normal',
       };
     case 'bus':
       return {
-        fill: '#d97706',
-        stroke: '#b45309',
+        fill: '#fde68a',
+        stroke: '#d97706',
         lineWidth: 2,
-        labelFill: '#ffffff',
+        labelFill: '#000000',
         labelFontSize: 10,
         labelFontWeight: 'bold',
       };
@@ -150,16 +150,16 @@ function getBaseNodeStyle(type: string, isDark: boolean): BaseNodeStyle {
         fill: isDark ? '#064e3b' : '#ecfdf5',
         stroke: '#059669',
         lineWidth: 3,
-        labelFill: isDark ? '#6ee7b7' : '#065f46',
+        labelFill: '#000000',
         labelFontSize: 11,
         labelFontWeight: 'bold',
       };
     case 'junction':
       return {
-        fill: '#9ca3af',
+        fill: '#d1d5db',
         stroke: '#6b7280',
         lineWidth: 2,
-        labelFill: '#ffffff',
+        labelFill: '#000000',
         labelFontSize: 8,
         labelFontWeight: 'normal',
       };

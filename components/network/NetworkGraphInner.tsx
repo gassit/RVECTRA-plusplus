@@ -277,7 +277,6 @@ function getEdgeStyle(
 export default function NetworkGraphInner({ data, isDark = false, onNodeClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
-  const isInitializingRef = useRef(false);
   const selectedNodeRef = useRef<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
@@ -291,19 +290,13 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
       return;
     }
 
-    // Защита от StrictMode double-mount
-    if (isInitializingRef.current) return;
-    isInitializingRef.current = true;
-
     const container = containerRef.current;
     if (!container) {
-      isInitializingRef.current = false;
       return;
     }
 
     const rect = container.getBoundingClientRect();
     if (rect.width < 10 || rect.height < 10) {
-      isInitializingRef.current = false;
       return;
     }
 
@@ -611,11 +604,9 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
     } catch {
       setStatus('error');
-      isInitializingRef.current = false;
     }
 
     return () => {
-      isInitializingRef.current = false;
       if (graphRef.current) {
         try { graphRef.current.destroy(); } catch { /* ignore */ }
         graphRef.current = null;

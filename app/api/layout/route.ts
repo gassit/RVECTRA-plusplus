@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { calculateLayout, saveLayoutPositions } from '@/lib/services/layout.service';
-
-const prisma = new PrismaClient();
 
 /**
  * POST /api/layout
@@ -61,8 +59,6 @@ export async function POST(request: NextRequest) {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -93,7 +89,7 @@ export async function GET() {
     });
 
     // Собираем границы Cabinet
-    const cabinetBounds = new Map<string, { x: number; y: number; width: number; height: number }>();
+    const cabinetBounds: Array<{ id: string; name: string; x: number; y: number; width: number; height: number }> = [];
 
     // Группируем элементы по parentId
     const byParent = new Map<string | null, typeof elements>();
@@ -110,6 +106,9 @@ export async function GET() {
     for (const [parentId, children] of byParent) {
       if (!parentId) continue;
 
+      const cabinet = elements.find(e => e.id === parentId);
+      const cabinetName = cabinet?.name || 'Cabinet';
+
       const childrenWithPositions = children.filter(e => e.posX != null && e.posY != null);
       if (childrenWithPositions.length === 0) continue;
 
@@ -118,7 +117,9 @@ export async function GET() {
       const minY = Math.min(...childrenWithPositions.map(e => e.posY!)) - 40;
       const maxY = Math.max(...childrenWithPositions.map(e => e.posY!)) + 60;
 
-      cabinetBounds.set(parentId, {
+      cabinetBounds.push({
+        id: parentId,
+        name: cabinetName,
         x: minX,
         y: minY,
         width: maxX - minX,
@@ -142,7 +143,7 @@ export async function GET() {
         sourceId: c.sourceId,
         targetId: c.targetId
       })),
-      cabinetBounds: Object.fromEntries(cabinetBounds)
+      cabinetBounds
     });
 
   } catch (error) {
@@ -151,7 +152,5 @@ export async function GET() {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }

@@ -24,6 +24,14 @@ interface NetworkData {
     operationalStatus: OperationalStatus;
   }>;
   conflictElementIds?: string[];
+  cabinetBounds?: Array<{
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
 }
 
 interface Props {
@@ -35,7 +43,7 @@ interface Props {
 // ============== 1. Формы узлов ==============
 function getNodeShape(type: string): string {
   switch (type) {
-    case 'source': return 'hexagon'; // octagon не зарегистрирован в G6 v5
+    case 'source': return 'hexagon';
     case 'meter': return 'diamond';
     case 'junction': return 'circle';
     case 'breaker':
@@ -345,7 +353,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
       return node;
     });
 
-    // Создаём рёбра
+    // Создаём рёбра с ортогональной маршрутизацией
     const ids = new Set(data.elements.map(e => e.id));
     const edges = data.connections
       .filter(c => ids.has(c.sourceId) && ids.has(c.targetId))
@@ -359,9 +367,42 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
             electricalStatus: c.electricalStatus,
             operationalStatus: c.operationalStatus,
           },
-          style: edgeStyle,
+          style: {
+            ...edgeStyle,
+            // Ортогональная маршрутизация
+            type: 'orthogonal',
+            router: {
+              type: 'orth',
+              offset: 20,
+            },
+          },
         };
       });
+
+    // Добавляем узлы для границ Cabinet (прямоугольники пунктиром)
+    const cabinetBounds = data.cabinetBounds || [];
+    const cabinetNodes = cabinetBounds.map((cb, i) => ({
+      id: `cabinet-bound-${i}`,
+      data: {
+        label: cb.name,
+        nodeType: 'cabinet-bound',
+      },
+      style: {
+        x: cb.x + cb.width / 2,
+        y: cb.y + cb.height / 2,
+        size: [cb.width, cb.height],
+        fill: 'transparent',
+        stroke: '#374151',
+        lineWidth: 1,
+        lineDash: [8, 4],
+        opacity: 0.6,
+        labelFill: '#6b7280',
+        labelFontSize: 10,
+        labelPlacement: 'top',
+        labelOffsetY: -cb.height / 2 - 5,
+        zIndex: -1,
+      },
+    }));
 
     try {
       // Конфигурация графа
@@ -369,7 +410,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
         container,
         width: rect.width,
         height: rect.height,
-        data: { nodes, edges },
+        data: { nodes: [...cabinetNodes, ...nodes], edges },
         autoFit: 'view',
         padding: [50, 50, 50, 50],
         behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
@@ -378,7 +419,6 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
       // Если есть рассчитанные позиции - используем их, иначе dagre layout
       if (hasPositions) {
-        // Без автоматического layout - используем рассчитанные позиции
         graphConfig.layout = false;
       } else {
         graphConfig.layout = {
@@ -394,29 +434,56 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
         ...graphConfig,
         node: {
           type: (m: { data?: { nodeType?: string } }) => {
-            return getNodeShape(m.data?.nodeType || '');
+            const nodeType = m.data?.nodeType || '';
+            if (nodeType === 'cabinet-bound') return 'rect';
+            return getNodeShape(nodeType);
           },
           style: {
-            size: (m: { data?: { nodeType?: string } }) => {
-              return getNodeSize(m.data?.nodeType || '');
+            size: (m: { data?: { nodeType?: string }; style?: { size?: number | [number, number] } }) => {
+              const nodeType = m.data?.nodeType || '';
+              if (nodeType === 'cabinet-bound') {
+                return m.style?.size || [200, 150];
+              }
+              return getNodeSize(nodeType);
             },
-            fill: (m: { data?: { fill?: string } }) => m.data?.fill || '#d1d5db',
-            stroke: (m: { data?: { stroke?: string } }) => m.data?.stroke || '#6b7280',
-            lineWidth: (m: { data?: { lineWidth?: number } }) => m.data?.lineWidth || 2,
-            opacity: (m: { data?: { opacity?: number } }) => m.data?.opacity || 1,
+            fill: (m: { data?: { fill?: string }; style?: { fill?: string } }) => {
+              if (m.style?.fill !== undefined) return m.style.fill;
+              return m.data?.fill || '#d1d5db';
+            },
+            stroke: (m: { data?: { stroke?: string }; style?: { stroke?: string } }) => {
+              if (m.style?.stroke !== undefined) return m.style.stroke;
+              return m.data?.stroke || '#6b7280';
+            },
+            lineWidth: (m: { data?: { lineWidth?: number }; style?: { lineWidth?: number } }) => {
+              if (m.style?.lineWidth !== undefined) return m.style.lineWidth;
+              return m.data?.lineWidth || 2;
+            },
+            opacity: (m: { data?: { opacity?: number }; style?: { opacity?: number } }) => {
+              if (m.style?.opacity !== undefined) return m.style.opacity;
+              return m.data?.opacity || 1;
+            },
+            lineDash: (m: { style?: { lineDash?: number[] } }) => {
+              return m.style?.lineDash || [];
+            },
             radius: (m: { data?: { nodeType?: string } }) => {
               return getNodeRadius(m.data?.nodeType || '');
             },
             shadowColor: (m: { data?: { shadowColor?: string } }) => m.data?.shadowColor,
             shadowBlur: (m: { data?: { shadowBlur?: number } }) => m.data?.shadowBlur,
             labelText: (m: { data?: { label?: string } }) => m.data?.label || '',
-            labelFontSize: (m: { data?: { labelFontSize?: number } }) => m.data?.labelFontSize || 11,
-            labelFill: (m: { data?: { labelFill?: string } }) => m.data?.labelFill || '#374151',
+            labelFontSize: (m: { data?: { labelFontSize?: number }; style?: { labelFontSize?: number } }) => {
+              return m.style?.labelFontSize || m.data?.labelFontSize || 11;
+            },
+            labelFill: (m: { data?: { labelFill?: string }; style?: { labelFill?: string } }) => {
+              return m.style?.labelFill || m.data?.labelFill || '#374151';
+            },
             labelFontWeight: (m: { data?: { labelFontWeight?: 'bold' | 'normal' | 'bolder' | 'lighter' } }) => m.data?.labelFontWeight || 'normal',
-            labelPlacement: (m: { data?: { nodeType?: string } }) => {
+            labelPlacement: (m: { data?: { nodeType?: string }; style?: { labelPlacement?: string } }) => {
+              if (m.style?.labelPlacement) return m.style.labelPlacement;
               return m.data?.nodeType === 'junction' ? 'center' : 'bottom';
             },
-            labelOffsetY: (m: { data?: { nodeType?: string } }) => {
+            labelOffsetY: (m: { data?: { nodeType?: string }; style?: { labelOffsetY?: number } }) => {
+              if (m.style?.labelOffsetY !== undefined) return m.style.labelOffsetY;
               return m.data?.nodeType === 'junction' ? 0 : 6;
             },
             labelFontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif',
@@ -424,6 +491,9 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
             badgePosition: (m: { data?: { badgePosition?: string } }) => m.data?.badgePosition,
             badgeFill: (m: { data?: { badgeFill?: string } }) => m.data?.badgeFill,
             badgeFontSize: 14,
+            zIndex: (m: { data?: { nodeType?: string } }) => {
+              return m.data?.nodeType === 'cabinet-bound' ? -1 : 0;
+            },
           },
         },
         edge: {
@@ -434,8 +504,10 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
             opacity: 0.8,
             endArrow: true,
             endArrowSize: 8,
-            // Ортогональные линии с изгибами
-            routing: 'orth',
+            router: {
+              type: 'orth',
+              offset: 20,
+            },
           },
         },
       });
@@ -444,11 +516,10 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
       // Клик по узлу - выделение
       graph.on('node:click', (evt: any) => {
-        // Проверяем, что граф ещё существует
         if (graphRef.current !== graph) return;
         
         const clickedId = evt.itemId;
-        if (!clickedId) return;
+        if (!clickedId || clickedId.startsWith('cabinet-bound-')) return;
 
         handleClick(clickedId);
 
@@ -496,7 +567,6 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
       // Клик по канвасу - снять выделение
       graph.on('canvas:click', () => {
-        // Проверяем, что граф ещё существует
         if (graphRef.current !== graph) return;
         
         if (selectedNodeRef.current) {
@@ -528,7 +598,6 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
       graph.render()
         .then(() => {
-          // Проверяем, что граф ещё не уничтожен
           if (graphRef.current === graph) {
             setStatus('ready');
             setTimeout(() => {

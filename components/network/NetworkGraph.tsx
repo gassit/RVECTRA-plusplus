@@ -3,6 +3,15 @@
 import dynamic from 'next/dynamic';
 import type { ElectricalStatus, OperationalStatus } from '@/types';
 
+interface CabinetBound {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface NetworkData {
   elements: Array<{
     id: string;
@@ -23,6 +32,7 @@ interface NetworkData {
     operationalStatus: OperationalStatus;
   }>;
   conflictElementIds?: string[];
+  cabinetBounds?: CabinetBound[];
 }
 
 interface NetworkGraphProps {

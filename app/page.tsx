@@ -5,6 +5,15 @@ import NetworkGraph from '@/components/network/NetworkGraph';
 import { useTheme } from '@/components/providers/ThemeProvider';
 import type { ElectricalStatus, OperationalStatus } from '@/types';
 
+interface CabinetBound {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface NetworkData {
   elements: Array<{
     id: string;
@@ -27,6 +36,7 @@ interface NetworkData {
     target: { elementId: string; name: string; type: string };
   }>;
   conflictElementIds?: string[];
+  cabinetBounds?: CabinetBound[];
 }
 
 interface Stats {
@@ -82,6 +92,7 @@ export default function Home() {
   const [showStats, setShowStats] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [layoutLoading, setLayoutLoading] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const dataLoadedRef = useRef(false);
 
@@ -131,6 +142,26 @@ export default function Home() {
   const handleNodeClick = useCallback((nodeId: string) => {
     setSelectedNode(nodeId);
   }, []);
+
+  // Calculate layout positions
+  const calculateLayout = async () => {
+    setLayoutLoading(true);
+    try {
+      const response = await fetch('/api/layout', { method: 'POST' });
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Layout calculated:', result);
+        // Refresh data to get new positions
+        await refreshData();
+      } else {
+        console.error('Layout calculation failed');
+      }
+    } catch (err) {
+      console.error('Layout calculation error:', err);
+    } finally {
+      setLayoutLoading(false);
+    }
+  };
 
   // Filter data based on search
   const filteredData = useMemo(() => {
@@ -294,6 +325,25 @@ export default function Home() {
               </svg>
             </button>
 
+            {/* Calculate Layout */}
+            <button
+              onClick={calculateLayout}
+              disabled={layoutLoading}
+              className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              title="Рассчитать позиции"
+            >
+              {layoutLoading ? (
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                </svg>
+              )}
+            </button>
+
             {/* Refresh */}
             <button
               onClick={refreshData}
@@ -382,6 +432,7 @@ export default function Home() {
               data={filteredData ? {
                 ...filteredData,
                 conflictElementIds: networkData?.conflictElementIds || [],
+                cabinetBounds: networkData?.cabinetBounds || [],
               } : null}
               isDark={theme === 'dark'}
               onNodeClick={handleNodeClick}

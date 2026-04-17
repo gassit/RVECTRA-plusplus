@@ -35,7 +35,7 @@ interface Props {
 // ============== 1. Формы узлов ==============
 function getNodeShape(type: string): string {
   switch (type) {
-    case 'source': return 'octagon';
+    case 'source': return 'hexagon'; // octagon не зарегистрирован в G6 v5
     case 'meter': return 'diamond';
     case 'junction': return 'circle';
     case 'breaker':
@@ -416,6 +416,9 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
       // Клик по узлу - выделение
       graph.on('node:click', (evt: any) => {
+        // Проверяем, что граф ещё существует
+        if (graphRef.current !== graph) return;
+        
         const clickedId = evt.itemId;
         if (!clickedId) return;
 
@@ -433,34 +436,41 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
               prevNode.operationalStatus,
               hasConflict
             );
-            graph.updateNodeData([{
-              id: selectedNodeRef.current,
-              style: {
-                stroke: nodeStyle.stroke,
-                lineWidth: nodeStyle.lineWidth,
-                shadowColor: undefined,
-                shadowBlur: undefined,
-              },
-            }]);
+            try {
+              graph.updateNodeData([{
+                id: selectedNodeRef.current,
+                style: {
+                  stroke: nodeStyle.stroke,
+                  lineWidth: nodeStyle.lineWidth,
+                  shadowColor: undefined,
+                  shadowBlur: undefined,
+                },
+              }]);
+            } catch { /* graph destroyed */ }
           }
         }
 
         // Выделяем текущий
-        graph.updateNodeData([{
-          id: clickedId,
-          style: {
-            stroke: '#3b82f6',
-            lineWidth: 4,
-            shadowColor: 'rgba(59,130,246,0.4)',
-            shadowBlur: 10,
-          },
-        }]);
+        try {
+          graph.updateNodeData([{
+            id: clickedId,
+            style: {
+              stroke: '#3b82f6',
+              lineWidth: 4,
+              shadowColor: 'rgba(59,130,246,0.4)',
+              shadowBlur: 10,
+            },
+          }]);
+        } catch { /* graph destroyed */ }
 
         selectedNodeRef.current = clickedId;
       });
 
       // Клик по канвасу - снять выделение
       graph.on('canvas:click', () => {
+        // Проверяем, что граф ещё существует
+        if (graphRef.current !== graph) return;
+        
         if (selectedNodeRef.current) {
           const prevNode = data.elements.find(e => e.id === selectedNodeRef.current);
           if (prevNode) {
@@ -472,15 +482,17 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
               prevNode.operationalStatus,
               hasConflict
             );
-            graph.updateNodeData([{
-              id: selectedNodeRef.current,
-              style: {
-                stroke: nodeStyle.stroke,
-                lineWidth: nodeStyle.lineWidth,
-                shadowColor: undefined,
-                shadowBlur: undefined,
-              },
-            }]);
+            try {
+              graph.updateNodeData([{
+                id: selectedNodeRef.current,
+                style: {
+                  stroke: nodeStyle.stroke,
+                  lineWidth: nodeStyle.lineWidth,
+                  shadowColor: undefined,
+                  shadowBlur: undefined,
+                },
+              }]);
+            } catch { /* graph destroyed */ }
           }
           selectedNodeRef.current = null;
         }
@@ -488,8 +500,15 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
       graph.render()
         .then(() => {
-          setStatus('ready');
-          setTimeout(() => graph.fitView?.(), 600);
+          // Проверяем, что граф ещё не уничтожен
+          if (graphRef.current === graph) {
+            setStatus('ready');
+            setTimeout(() => {
+              if (graphRef.current === graph) {
+                graph.fitView?.();
+              }
+            }, 600);
+          }
         })
         .catch(() => setStatus('error'));
 
@@ -525,7 +544,9 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
     });
 
     resizeObserver.observe(container);
-    return () => resizeObserver.disconnect();
+    return () => {
+      resizeObserver.disconnect();
+    };
   }, []);
 
   // Статистика

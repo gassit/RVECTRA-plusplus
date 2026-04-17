@@ -32,6 +32,11 @@ interface NetworkData {
     width: number;
     height: number;
   }>;
+  edgeOffsets?: Array<{
+    connectionId: string;
+    offset: number;
+    controlPoints: Array<{ x: number; y: number }>;
+  }>;
 }
 
 interface Props {
@@ -346,12 +351,38 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
       return node;
     });
 
-    // Создаём рёбра с ортогональной маршрутизацией
+    // Создаём мапу смещений для связей
+    const edgeOffsetMap = new Map(
+      (data.edgeOffsets || []).map(eo => [eo.connectionId, eo])
+    );
+
+    // Группируем связи между одинаковыми узлами для расчёта смещения
+    const edgeCountByKey = new Map<string, number>();
+    const edgeIndexByKey = new Map<string, number>();
+    
+    for (const c of data.connections) {
+      const key = `${c.sourceId}-${c.targetId}`;
+      edgeIndexByKey.set(c.id, edgeCountByKey.get(key) || 0);
+      edgeCountByKey.set(key, (edgeCountByKey.get(key) || 0) + 1);
+    }
+
+    // Создаём рёбра с ортогональной маршрутизацией и смещением
     const ids = new Set(data.elements.map(e => e.id));
     const edges = data.connections
       .filter(c => ids.has(c.sourceId) && ids.has(c.targetId))
       .map((c, i) => {
         const edgeStyle = getEdgeStyle(isDark, c.electricalStatus, c.operationalStatus);
+        
+        // Получаем смещение из layout или вычисляем динамически
+        const edgeOffset = edgeOffsetMap.get(c.id);
+        const key = `${c.sourceId}-${c.targetId}`;
+        const totalCount = edgeCountByKey.get(key) || 1;
+        const myIndex = edgeIndexByKey.get(c.id) || 0;
+        
+        // Смещение для параллельных связей: распределяем равномерно
+        const dynamicOffset = edgeOffset?.offset ?? 
+          (totalCount > 1 ? (myIndex - (totalCount - 1) / 2) * 25 : 0);
+        
         return {
           id: `edge-${i}`,
           source: c.sourceId,
@@ -359,15 +390,20 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
           data: {
             electricalStatus: c.electricalStatus,
             operationalStatus: c.operationalStatus,
+            edgeOffset: dynamicOffset,
           },
           style: {
             ...edgeStyle,
-            // Ортогональная маршрутизация
-            type: 'orthogonal',
+            // Ортогональная маршрутизация с увеличенным смещением
+            type: 'polyline',
             router: {
               type: 'orth',
-              offset: 20,
+              offset: 25 + Math.abs(dynamicOffset),
             },
+            // Добавляем контрольные точки если есть
+            ...(edgeOffset?.controlPoints ? {
+              controlPoints: edgeOffset.controlPoints,
+            } : {}),
           },
         };
       });
@@ -497,10 +533,13 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
             opacity: 0.8,
             endArrow: true,
             endArrowSize: 8,
+            // Улучшенная ортогональная маршрутизация
             router: {
               type: 'orth',
-              offset: 20,
+              offset: 30, // Увеличенное смещение от узлов
             },
+            // Радиус скругления углов
+            radius: 10,
           },
         },
       });

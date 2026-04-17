@@ -307,6 +307,9 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
     const conflictIds = new Set(data.conflictElementIds || []);
 
+    // Проверяем, есть ли рассчитанные позиции
+    const hasPositions = data.elements.some(e => e.posX != null && e.posY != null);
+
     // Создаём узлы
     const nodes = data.elements.map(e => {
       const baseStyle = getBaseNodeStyle(e.type, isDark);
@@ -318,7 +321,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
         hasConflict
       );
 
-      return {
+      const node: any = {
         id: e.id,
         data: {
           label: (e.name || e.elementId || e.id).substring(0, 20),
@@ -329,6 +332,17 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
           ...nodeStyle,
         },
       };
+
+      // Добавляем позицию если есть
+      if (e.posX != null && e.posY != null) {
+        node.style = {
+          ...node.style,
+          x: e.posX,
+          y: e.posY,
+        };
+      }
+
+      return node;
     });
 
     // Создаём рёбра
@@ -350,7 +364,8 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
       });
 
     try {
-      const graph = new Graph({
+      // Конфигурация графа
+      const graphConfig: any = {
         container,
         width: rect.width,
         height: rect.height,
@@ -359,13 +374,24 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
         padding: [50, 50, 50, 50],
         behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
         transforms: ['process-parallel-edges'],
-        layout: {
+      };
+
+      // Если есть рассчитанные позиции - используем их, иначе dagre layout
+      if (hasPositions) {
+        // Без автоматического layout - используем рассчитанные позиции
+        graphConfig.layout = false;
+      } else {
+        graphConfig.layout = {
           type: 'dagre',
           rankdir: 'TB',
           nodesep: 60,
           ranksep: 80,
           controlPoints: true,
-        },
+        };
+      }
+
+      const graph = new Graph({
+        ...graphConfig,
         node: {
           type: (m: { data?: { nodeType?: string } }) => {
             return getNodeShape(m.data?.nodeType || '');
@@ -401,13 +427,15 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
           },
         },
         edge: {
-          type: 'line',
+          type: 'polyline',
           style: {
             stroke: '#9ca3af',
             lineWidth: 2,
             opacity: 0.8,
             endArrow: true,
             endArrowSize: 8,
+            // Ортогональные линии с изгибами
+            routing: 'orth',
           },
         },
       });

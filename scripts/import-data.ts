@@ -121,6 +121,264 @@ function parseOperationalStatus(stateValue: string | undefined | null): Operatio
   return 'ON';
 }
 
+/**
+ * Расчёт позиций элементов для схемы
+ * 
+ * Правила размещения:
+ * 1. Все линии горизонтальные и вертикальные
+ * 2. SOURCE над JUNCTION (вертикально)
+ * 3. JUNCTION над одним BREAKER, другой BREAKER горизонтально с первым
+ * 4. BREAKER над BUS на одной вертикальной линии
+ * 5. BUS с одним Cabinet на одном уровне по горизонтали
+ * 6. Узлы с одним Cabinet на одном уровне
+ */
+async function calculateLayout(): Promise<void> {
+  // Получаем все элементы и связи
+  const elements = await prisma.element.findMany();
+  const connections = await prisma.connection.findMany();
+
+  console.log(`Элементов для размещения: ${elements.length}`);
+  console.log(`Связей для анализа: ${connections.length}`);
+
+  // Мапы для быстрого доступа
+  const elementMap = new Map<string, typeof elements[0]>();
+  const elementByDbId = new Map<string, typeof elements[0]>();
+  
+  for (const el of elements) {
+    elementMap.set(el.elementId, el);
+    elementByDbId.set(el.id, el);
+  }
+
+  // Группируем элементы по parentId (Cabinet)
+  const cabinetChildren = new Map<string, typeof elements>();
+  const cabinetBuses = new Map<string, typeof elements>();
+  
+  for (const el of elements) {
+    if (el.parentId) {
+      if (!cabinetChildren.has(el.parentId)) {
+        cabinetChildren.set(el.parentId, []);
+      }
+      cabinetChildren.get(el.parentId)!.push(el);
+      
+      if (el.type === 'bus') {
+        if (!cabinetBuses.has(el.parentId)) {
+          cabinetBuses.set(el.parentId, []);
+        }
+        cabinetBuses.get(el.parentId)!.push(el);
+      }
+    }
+  }
+
+  // Строим граф связей
+  const outgoing = new Map<string, string[]>(); // elementId -> [target elementId]
+  const incoming = new Map<string, string[]>(); // elementId -> [source elementId]
+
+  for (const conn of connections) {
+    const source = elementByDbId.get(conn.sourceId);
+    const target = elementByDbId.get(conn.targetId);
+    
+    if (source && target) {
+      if (!outgoing.has(source.elementId)) {
+        outgoing.set(source.elementId, []);
+      }
+      outgoing.get(source.elementId)!.push(target.elementId);
+      
+      if (!incoming.has(target.elementId)) {
+        incoming.set(target.elementId, []);
+      }
+      incoming.get(target.elementId)!.push(source.elementId);
+    }
+  }
+
+  // Уровни размещения (Y-координата)
+  // 0: SOURCE, 1: JUNCTION (Точрасп), 2: BREAKER, 3: BUS, 4: METER, 5: LOAD
+  const LEVEL_HEIGHT = 120;
+  const NODE_WIDTH = 80;
+  const NODE_GAP = 40;
+
+  // Определяем уровень элемента
+  function getLevel(el: typeof elements[0]): number {
+    switch (el.type.toLowerCase()) {
+      case 'source': return 0;
+      case 'junction': return 1;
+      case 'breaker': return 2;
+      case 'bus': return 3;
+      case 'meter': return 2; // METER на уровне BREAKER
+      case 'load': return 4;
+      case 'cabinet': return -1; // CABINET не участвует в потоке
+      default: return 5;
+    }
+  }
+
+  // Карта позиций
+  const positions = new Map<string, { x: number; y: number }>();
+
+  // Группируем по кабинетам для горизонтального выравнивания
+  const cabinetGroups = new Map<string, typeof elements>();
+  for (const el of elements) {
+    const cabinetId = el.parentId || 'root';
+    if (!cabinetGroups.has(cabinetId)) {
+      cabinetGroups.set(cabinetId, []);
+    }
+    cabinetGroups.get(cabinetId)!.push(el);
+  }
+
+  // Счётчики X для каждого уровня
+  const levelXCounters = new Map<number, number>();
+
+  // Сначала размещаем SOURCE (корневые элементы)
+  const sources = elements.filter(el => el.type.toLowerCase() === 'source');
+  let sourceX = 100;
+  
+  for (const source of sources) {
+    positions.set(source.id, { x: sourceX, y: 0 });
+    sourceX += NODE_WIDTH + NODE_GAP * 3;
+  }
+
+  // BFS для размещения downstream элементов
+  const queue: string[] = sources.map(s => s.elementId);
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const currentElementId = queue.shift()!;
+    if (visited.has(currentElementId)) continue;
+    visited.add(currentElementId);
+
+    const currentEl = elementMap.get(currentElementId);
+    if (!currentEl) continue;
+
+    const currentPos = positions.get(currentEl.id);
+    if (!currentPos) continue;
+
+    const currentLevel = getLevel(currentEl);
+    const targets = outgoing.get(currentElementId) || [];
+
+    // Сортируем цели по типу: сначала BUS, потом BREAKER, потом остальные
+    targets.sort((a, b) => {
+      const elA = elementMap.get(a);
+      const elB = elementMap.get(b);
+      if (!elA || !elB) return 0;
+      const levelA = getLevel(elA);
+      const levelB = getLevel(elB);
+      return levelA - levelB;
+    });
+
+    let offsetX = currentPos.x - ((targets.length - 1) * (NODE_WIDTH + NODE_GAP)) / 2;
+
+    for (let i = 0; i < targets.length; i++) {
+      const targetElementId = targets[i];
+      const targetEl = elementMap.get(targetElementId);
+      if (!targetEl) continue;
+
+      if (!positions.has(targetEl.id)) {
+        const targetLevel = getLevel(targetEl);
+        const y = targetLevel * LEVEL_HEIGHT;
+
+        // Если это BUS, выравниваем по горизонтали с другими BUS того же кабинета
+        if (targetEl.type.toLowerCase() === 'bus' && targetEl.parentId) {
+          const siblingBuses = cabinetBuses.get(targetEl.parentId) || [];
+          const existingBusPositions = siblingBuses
+            .filter(b => positions.has(b.id))
+            .map(b => positions.get(b.id)!.x);
+          
+          if (existingBusPositions.length > 0) {
+            // Выравниваем по существующим BUS
+            const avgX = existingBusPositions.reduce((a, b) => a + b, 0) / existingBusPositions.length;
+            positions.set(targetEl.id, { x: avgX, y });
+          } else {
+            positions.set(targetEl.id, { x: offsetX, y });
+          }
+        } else {
+          positions.set(targetEl.id, { x: offsetX, y });
+        }
+
+        offsetX += NODE_WIDTH + NODE_GAP;
+      }
+
+      queue.push(targetElementId);
+    }
+  }
+
+  // Специальная обработка для JUNCTION с двумя BREAKER
+  for (const el of elements) {
+    if (el.type.toLowerCase() === 'junction') {
+      const pos = positions.get(el.id);
+      if (!pos) continue;
+
+      const targets = outgoing.get(el.elementId) || [];
+      const breakers = targets
+        .map(t => elementMap.get(t))
+        .filter(e => e && e.type.toLowerCase() === 'breaker');
+
+      if (breakers.length >= 2) {
+        // Первый BREAKER под JUNCTION
+        const firstBreaker = breakers[0];
+        if (firstBreaker && !positions.has(firstBreaker.id)) {
+          positions.set(firstBreaker.id, { x: pos.x, y: pos.y + LEVEL_HEIGHT });
+        }
+
+        // Второй BREAKER горизонтально с первым
+        const secondBreaker = breakers[1];
+        if (secondBreaker && !positions.has(secondBreaker.id)) {
+          positions.set(secondBreaker.id, { 
+            x: pos.x + NODE_WIDTH + NODE_GAP, 
+            y: pos.y + LEVEL_HEIGHT 
+          });
+        }
+      }
+    }
+  }
+
+  // Выравнивание элементов с одним Cabinet на одном уровне
+  for (const [cabinetId, children] of cabinetGroups) {
+    // Группируем детей по типам
+    const byType = new Map<string, typeof children>();
+    for (const child of children) {
+      if (!byType.has(child.type)) {
+        byType.set(child.type, []);
+      }
+      byType.get(child.type)!.push(child);
+    }
+
+    // Для каждого типа выравниваем Y
+    for (const [type, items] of byType) {
+      if (items.length > 1 && type.toLowerCase() !== 'bus') {
+        // Находим средний Y для группы
+        const yPositions = items
+          .map(item => positions.get(item.id)?.y)
+          .filter(y => y !== undefined) as number[];
+        
+        if (yPositions.length > 0) {
+          const avgY = Math.round(yPositions.reduce((a, b) => a + b, 0) / yPositions.length);
+          
+          for (const item of items) {
+            const pos = positions.get(item.id);
+            if (pos) {
+              positions.set(item.id, { x: pos.x, y: avgY });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Сохраняем позиции в БД
+  let updated = 0;
+  for (const [id, pos] of positions) {
+    try {
+      await prisma.element.update({
+        where: { id },
+        data: { posX: pos.x, posY: pos.y }
+      });
+      updated++;
+    } catch (e) {
+      // Игнорируем ошибки
+    }
+  }
+
+  console.log(`Позиций назначено: ${updated}`);
+}
+
 // Поиск файла Excel в папке upload
 function findExcelFile(): string | null {
   const uploadDir = '/home/z/my-project/upload';

@@ -32,6 +32,22 @@ body {
   height: 100%;
 }
 
+/* G6 canvas - touch gestures */
+.g6-graph-container,
+.g6-graph-container canvas {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Prevent page scroll on graph area on mobile */
+@media (pointer: coarse) {
+  .g6-graph-container {
+    touch-action: none;
+  }
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;

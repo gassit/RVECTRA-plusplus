@@ -442,7 +442,35 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
         data: { nodes: [...cabinetNodes, ...nodes], edges },
         autoFit: 'view',
         padding: [50, 50, 50, 50],
-        behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
+        behaviors: [
+          // Перетаскивание канваса (одним пальцем на мобильных)
+          {
+            type: 'drag-canvas',
+            enable: true,
+            sensitivity: 1,
+          },
+          // Масштабирование колесом мыши (десктоп)
+          {
+            type: 'zoom-canvas',
+            enable: true,
+            sensitivity: 2,
+            minZoom: 0.1,
+            maxZoom: 4,
+          },
+          // Масштабирование двумя пальцами (мобильные)
+          {
+            type: 'pinch-canvas',
+            enable: true,
+            sensitivity: 1,
+            minZoom: 0.1,
+            maxZoom: 4,
+          },
+          // Перетаскивание элементов (опционально)
+          {
+            type: 'drag-element',
+            enable: true,
+          },
+        ],
         transforms: ['process-parallel-edges'],
       };
 
@@ -695,6 +723,27 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
     );
   }
 
+  // Функции масштабирования
+  const handleZoomIn = useCallback(() => {
+    if (graphRef.current) {
+      const zoom = graphRef.current.getZoom?.() || 1;
+      graphRef.current.zoomTo?.(Math.min(zoom * 1.3, 4), undefined, true);
+    }
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    if (graphRef.current) {
+      const zoom = graphRef.current.getZoom?.() || 1;
+      graphRef.current.zoomTo?.(Math.max(zoom / 1.3, 0.1), undefined, true);
+    }
+  }, []);
+
+  const handleFitView = useCallback(() => {
+    if (graphRef.current) {
+      graphRef.current.fitView?.({ padding: [50, 50, 50, 50] });
+    }
+  }, []);
+
   return (
     <div className="h-full w-full relative bg-gray-50 dark:bg-gray-900">
       {/* Статус */}
@@ -703,6 +752,31 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
           ✓ {data.elements.length} узлов, {data.connections.length} связей
         </div>
       )}
+
+      {/* Кнопки управления масштабом */}
+      <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-2">
+        <button
+          onClick={handleZoomIn}
+          className="w-12 h-12 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-full shadow-lg flex items-center justify-center text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 active:scale-95 transition-transform touch-manipulation"
+          aria-label="Увеличить"
+        >
+          +
+        </button>
+        <button
+          onClick={handleFitView}
+          className="w-12 h-12 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-full shadow-lg flex items-center justify-center text-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 active:scale-95 transition-transform touch-manipulation"
+          aria-label="По размеру"
+        >
+          ⊞
+        </button>
+        <button
+          onClick={handleZoomOut}
+          className="w-12 h-12 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-full shadow-lg flex items-center justify-center text-xl font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 active:scale-95 transition-transform touch-manipulation"
+          aria-label="Уменьшить"
+        >
+          −
+        </button>
+      </div>
 
       {/* Легенда */}
       <div className="absolute top-2 right-2 z-10 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-md p-2 text-[10px]">

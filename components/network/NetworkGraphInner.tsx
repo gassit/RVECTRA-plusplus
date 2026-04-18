@@ -449,7 +449,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
             enable: true,
             sensitivity: 1,
           },
-          // Масштабирование колесом мыши (десктоп)
+          // Масштабирование колесом мыши и pinch-to-zoom
           {
             type: 'zoom-canvas',
             enable: true,
@@ -457,15 +457,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
             minZoom: 0.1,
             maxZoom: 4,
           },
-          // Масштабирование двумя пальцами (мобильные)
-          {
-            type: 'pinch-canvas',
-            enable: true,
-            sensitivity: 1,
-            minZoom: 0.1,
-            maxZoom: 4,
-          },
-          // Перетаскивание элементов (опционально)
+          // Перетаскивание элементов
           {
             type: 'drag-element',
             enable: true,

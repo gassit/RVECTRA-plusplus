@@ -12,11 +12,11 @@
  * 2. ТОПОЛОГИЯ ВНУТРИ ШКАФА (CABINET):
  *    - Уровень Шин: BUS на одной горизонтальной линии (центр шкафа)
  *    - Над шинами: вводные BREAKER
- *    - Под шинами: отходящие BREAKER, METER
+ *    - Под шинами: отходящие BREAKER, METER, JUNCTION
  *    - Секционные BREAKER: горизонтально между соседними шинами
  * 
  * 3. ГРУППИРОВКА:
- *    - Автоматы, питающие одну шину, сгруппированы вплотную
+ *    - Автоматы группируются по имени шины (1 с.ш., 2 с.ш. и т.д.)
  *    - Плотная компоновка внутри шкафов
  */
 
@@ -52,24 +52,32 @@ interface LayoutResult {
 }
 
 // ============== КОНСТАНТЫ ==============
-const GRID_STEP = 60;
-const NODE_WIDTH = 100;
-const NODE_HEIGHT = 60;
-const NODE_SPACING = 50;
-const BUS_WIDTH = 150;
-const BUS_HEIGHT = 30;
-const BUS_SPACING = 100;
-const LAYER_VERTICAL = 120;
-const CABINET_PADDING = 60;
-const CABINET_MARGIN = 80;
-const CANVAS_MARGIN = 100;
-const EDGE_SPACING = 30;
+const GRID = 40;                   // Шаг сетки
+const NODE_W = 80;                 // Ширина узла
+const NODE_H = 50;                 // Высота узла
+const H_SPACING = 50;              // Горизонтальный отступ между элементами
+const V_SPACING = 70;              // Вертикальный отступ между уровнями
+const BUS_W = 120;                 // Ширина шины
+const BUS_H = 25;                  // Высота шины
+const BUS_GAP = 60;                // Отступ между шинами
+const CABINET_PAD = 40;            // Отступ внутри шкафа
+const CABINET_GAP = 60;            // Отступ между шкафами
+const MARGIN = 60;                 // Отступ от краёв
 
 /**
  * Проверка типа элемента
  */
 function isType(type: string, checkType: string): boolean {
   return type.toLowerCase() === checkType.toLowerCase();
+}
+
+/**
+ * Извлечь номер секции/шины из названия элемента
+ * Например: "QF1.1 1 с.ш. ГРЩ1" -> "1"
+ */
+function extractBusSection(name: string): string | null {
+  const match = name.match(/(\d+)\s*с\.ш\./i);
+  return match ? match[1] : null;
 }
 
 /**
@@ -91,96 +99,6 @@ function calculateControlPoints(
 }
 
 /**
- * Определить роль выключателя на основе связей
- */
-type BreakerRole = 'INCOMING' | 'SECTIONAL' | 'OUTGOING' | 'UNKNOWN';
-
-function getBreakerRole(
-  breaker: LayoutElement,
-  busElements: LayoutElement[],
-  connections: LayoutConnection[],
-  allElements: LayoutElement[],
-  positions: Map<string, Position>
-): BreakerRole {
-  const busIds = new Set(busElements.map(b => b.id));
-  
-  // Находим все связи выключателя
-  const sourcesToBreaker = connections.filter(c => c.targetId === breaker.id).map(c => c.sourceId);
-  const targetsFromBreaker = connections.filter(c => c.sourceId === breaker.id).map(c => c.targetId);
-  
-  // Проверяем, соединяет ли выключатель две шины (секционный)
-  const sourceIsBus = sourcesToBreaker.some(id => busIds.has(id));
-  const targetIsBus = targetsFromBreaker.some(id => busIds.has(id));
-  
-  if (sourceIsBus && targetIsBus) {
-    return 'SECTIONAL';
-  }
-  
-  // Проверяем по уровню в схеме
-  // Если связь идет от SOURCE или от элемента без позиции - вводной
-  const hasSourceConnection = sourcesToBreaker.some(id => {
-    const el = allElements.find(e => e.id === id);
-    return el && isType(el.type, 'source');
-  });
-  
-  if (hasSourceConnection) {
-    return 'INCOMING';
-  }
-  
-  // Если связь идет от шины - отходящий
-  if (sourceIsBus) {
-    return 'OUTGOING';
-  }
-  
-  // Если связь идет к шине - вводной
-  if (targetIsBus) {
-    return 'INCOMING';
-  }
-  
-  // Если от выключателя идут связи к нагрузкам - отходящий
-  const hasLoadConnection = targetsFromBreaker.some(id => {
-    const el = allElements.find(e => e.id === id);
-    return el && (isType(el.type, 'load') || isType(el.type, 'meter'));
-  });
-  
-  if (hasLoadConnection) {
-    return 'OUTGOING';
-  }
-  
-  return 'UNKNOWN';
-}
-
-/**
- * Найти шину, которую питает элемент
- */
-function findConnectedBus(
-  elementId: string,
-  connections: LayoutConnection[],
-  busElements: LayoutElement[],
-  direction: 'upstream' | 'downstream' = 'downstream'
-): LayoutElement | null {
-  const busIds = new Set(busElements.map(b => b.id));
-  
-  if (direction === 'downstream') {
-    // Ищем связь от элемента к шине
-    for (const conn of connections) {
-      if (conn.sourceId === elementId && busIds.has(conn.targetId)) {
-        return busElements.find(b => b.id === conn.targetId) || null;
-      }
-    }
-  } else {
-    // Ищем связь от шины к элементу
-    for (const conn of connections) {
-      if (conn.targetId === elementId && busIds.has(conn.sourceId)) {
-        return busElements.find(b => b.id === conn.sourceId) || null;
-      }
-    }
-  }
-  
-  return null;
-}
-
-/**
  * Главная функция расчета позиций для всех элементов
  */
 export function calculateLayout(
@@ -191,14 +109,15 @@ export function calculateLayout(
   const cabinetBounds = new Map<string, { x: number; y: number; width: number; height: number; name: string }>();
   const edgeOffsets = new Map<string, EdgeOffset>();
 
-  // Разделяем элементы по типам
+  // Разделяем элементы
   const cabinets = elements.filter(e => isType(e.type, 'cabinet'));
   const nonCabinets = elements.filter(e => !isType(e.type, 'cabinet'));
   const sources = nonCabinets.filter(e => isType(e.type, 'source'));
   
   const cabinetNames = new Map(cabinets.map(c => [c.id, c.name]));
+  const cabinetIds = new Set(cabinets.map(c => c.id));
 
-  // Группируем элементы по parentId (Cabinet)
+  // Группируем по parentId
   const groups = new Map<string | null, LayoutElement[]>();
   for (const el of nonCabinets) {
     const key = el.parentId;
@@ -206,336 +125,231 @@ export function calculateLayout(
     groups.get(key)!.push(el);
   }
 
-  // Строим граф связей
-  const outgoing = new Map<string, string[]>();
-  const incoming = new Map<string, string[]>();
-  const elementIds = new Set(elements.map(e => e.id));
-  
-  for (const conn of connections) {
-    if (!elementIds.has(conn.sourceId) || !elementIds.has(conn.targetId)) continue;
-    
-    if (!outgoing.has(conn.sourceId)) outgoing.set(conn.sourceId, []);
-    outgoing.get(conn.sourceId)!.push(conn.targetId);
-    
-    if (!incoming.has(conn.targetId)) incoming.set(conn.targetId, []);
-    incoming.get(conn.targetId)!.push(conn.sourceId);
-  }
+  let currentX = MARGIN;
+  let currentY = MARGIN;
 
-  // Вычисляем уровни на основе связей (топологическая сортировка)
-  const levels = new Map<string, number>();
-  
-  function computeLevel(id: string, visited: Set<string>): number {
-    if (levels.has(id)) return levels.get(id)!;
-    if (visited.has(id)) return 0;
-    visited.add(id);
-
-    const element = nonCabinets.find(e => e.id === id);
-    
-    // SOURCE всегда на уровне 0
-    if (element && isType(element.type, 'source')) {
-      levels.set(id, 0);
-      return 0;
-    }
-
-    const parents = incoming.get(id) || [];
-    
-    if (parents.length === 0) {
-      // Нет входящих - определяем по типу
-      const typeLevels: Record<string, number> = {
-        'source': 0,
-        'junction': 1,
-        'breaker': 2,
-        'bus': 3,
-        'meter': 4,
-        'load': 5,
-      };
-      const typeLevel = element ? (typeLevels[element.type.toLowerCase()] ?? 3) : 3;
-      levels.set(id, typeLevel);
-      return typeLevel;
-    }
-
-    const maxParentLevel = Math.max(...parents.map(p => computeLevel(p, visited)));
-    const level = maxParentLevel + 1;
-    
-    levels.set(id, level);
-    return level;
-  }
-
-  for (const el of nonCabinets) {
-    computeLevel(el.id, new Set());
-  }
-
-  let currentX = CANVAS_MARGIN;
-  let currentY = CANVAS_MARGIN;
-
-  // ================== РАЗМЕЩЕНИЕ SOURCE (вверху схемы) ==================
+  // ================== SOURCE (вверху) ==================
   if (sources.length > 0) {
-    const sourceY = currentY;
-    let sourceX = currentX;
-    
-    for (const source of sources) {
-      positions.set(source.id, {
-        x: Math.round(sourceX / GRID_STEP) * GRID_STEP,
-        y: Math.round(sourceY / GRID_STEP) * GRID_STEP
+    for (let i = 0; i < sources.length; i++) {
+      positions.set(sources[i].id, {
+        x: Math.round((currentX + i * (NODE_W + H_SPACING)) / GRID) * GRID,
+        y: Math.round(currentY / GRID) * GRID
       });
-      sourceX += NODE_WIDTH + NODE_SPACING;
     }
-    
-    currentY += LAYER_VERTICAL * 2;
+    currentY += V_SPACING * 2;
   }
 
-  // ================== ФУНКЦИЯ РАЗМЕЩЕНИЯ ЭЛЕМЕНТОВ ВНУТРИ CABINET ==================
+  // ================== ФУНКЦИЯ РАЗМЕЩЕНИЯ ШКАФА ==================
   function layoutCabinet(
     cabinetElements: LayoutElement[],
     startX: number,
     startY: number
   ): { maxX: number; maxY: number } {
     
-    // Разделяем элементы по типам
     const buses = cabinetElements.filter(e => isType(e.type, 'bus'));
     const breakers = cabinetElements.filter(e => isType(e.type, 'breaker'));
     const meters = cabinetElements.filter(e => isType(e.type, 'meter'));
     const junctions = cabinetElements.filter(e => isType(e.type, 'junction'));
     const loads = cabinetElements.filter(e => isType(e.type, 'load'));
     const others = cabinetElements.filter(e => 
-      !isType(e.type, 'bus') && 
-      !isType(e.type, 'breaker') && 
-      !isType(e.type, 'meter') &&
-      !isType(e.type, 'junction') &&
-      !isType(e.type, 'load') &&
-      !isType(e.type, 'source')
+      !isType(e.type, 'bus') && !isType(e.type, 'breaker') && 
+      !isType(e.type, 'meter') && !isType(e.type, 'junction') && 
+      !isType(e.type, 'load') && !isType(e.type, 'source')
     );
 
-    // ===== УРОВЕНЬ 0: Элементы без связей к шинам (над шинами) =====
-    // Элементы с уровнем 0-1 по топологии
-    const topElements = cabinetElements.filter(e => {
-      const level = levels.get(e.id) ?? 3;
-      return level <= 1 && !isType(e.type, 'bus') && !isType(e.type, 'source');
+    // ===== 1. ШИНЫ - на одной линии =====
+    const busY = startY + V_SPACING;
+    const sortedBuses = [...buses].sort((a, b) => {
+      const sA = extractBusSection(a.name) || '0';
+      const sB = extractBusSection(b.name) || '0';
+      return sA.localeCompare(sB);
     });
     
-    let topY = startY;
-    let topX = startX;
-    
-    for (const el of topElements) {
-      if (!positions.has(el.id)) {
-        positions.set(el.id, {
-          x: Math.round(topX / GRID_STEP) * GRID_STEP,
-          y: Math.round(topY / GRID_STEP) * GRID_STEP
-        });
-        topX += NODE_WIDTH + NODE_SPACING;
-      }
-    }
-    
-    if (topElements.length > 0) {
-      topY += LAYER_VERTICAL;
-    }
-
-    // ===== УРОВЕНЬ 1: ШИНЫ (BUS) - на одной горизонтальной линии =====
-    const busY = Math.max(topY + LAYER_VERTICAL, startY + LAYER_VERTICAL);
     let busX = startX;
     const busPositions = new Map<string, Position>();
-    
-    // Сортируем шины по имени
-    const sortedBuses = [...buses].sort((a, b) => a.name.localeCompare(b.name));
+    const busSections = new Map<string, string>(); // id -> section
     
     for (const bus of sortedBuses) {
+      const section = extractBusSection(bus.name) || '0';
+      busSections.set(bus.id, section);
+      
       const pos = {
-        x: Math.round(busX / GRID_STEP) * GRID_STEP,
-        y: Math.round(busY / GRID_STEP) * GRID_STEP
+        x: Math.round(busX / GRID) * GRID,
+        y: Math.round(busY / GRID) * GRID
       };
       positions.set(bus.id, pos);
       busPositions.set(bus.id, pos);
-      busX += BUS_WIDTH + BUS_SPACING;
+      busX += BUS_W + BUS_GAP;
     }
 
-    // ===== КЛАССИФИКАЦИЯ BREAKER =====
-    const breakerRoles = new Map<string, BreakerRole>();
+    // ===== 2. ГРУППИРУЕМ ЭЛЕМЕНТЫ ПО СЕКЦИЯМ ШИН =====
+    const bySection = new Map<string, { incoming: LayoutElement[]; outgoing: LayoutElement[] }>();
     
-    for (const breaker of breakers) {
-      const role = getBreakerRole(breaker, buses, connections, cabinetElements, positions);
-      breakerRoles.set(breaker.id, role);
-    }
-
-    // ===== УРОВЕНЬ -1: ВВОДНЫЕ BREAKER (над шинами) =====
-    const incomingBreakers = breakers.filter(b => breakerRoles.get(b.id) === 'INCOMING');
-    const incomingY = busY - LAYER_VERTICAL;
-    
-    // Группируем вводные по шинам
-    const incomingByBus = new Map<string, LayoutElement[]>();
-    for (const breaker of incomingBreakers) {
-      const bus = findConnectedBus(breaker.id, connections, buses, 'downstream');
-      const key = bus?.id || 'default';
-      if (!incomingByBus.has(key)) incomingByBus.set(key, []);
-      incomingByBus.get(key)!.push(breaker);
-    }
-    
+    // Инициализируем секции
     for (const bus of sortedBuses) {
-      const busPos = busPositions.get(bus.id)!;
-      const busIncoming = incomingByBus.get(bus.id) || [];
-      busIncoming.sort((a, b) => a.name.localeCompare(b.name));
+      const section = busSections.get(bus.id)!;
+      bySection.set(section, { incoming: [], outgoing: [] });
+    }
+    bySection.set('unknown', { incoming: [], outgoing: [] });
+
+    // Функция определения секции элемента
+    function getSection(el: LayoutElement): string {
+      const nameSection = extractBusSection(el.name);
+      if (nameSection && bySection.has(nameSection)) {
+        return nameSection;
+      }
+      return 'unknown';
+    }
+
+    // Распределяем выключатели
+    for (const br of breakers) {
+      const section = getSection(br);
+      const name = br.name.toLowerCase();
       
-      let incX = busPos.x - (busIncoming.length - 1) * (NODE_WIDTH + NODE_SPACING / 2) / 2;
+      // Определяем тип: вводной (QF1, QF2, QF3 на верхнем уровне) или отходящий
+      const isIncoming = name.includes('qf1 ') || name.includes('qf2 ') || name.includes('qf3 ') ||
+                         name.match(/^qf[123]\s/i) || name.includes('вводной');
       
-      for (const breaker of busIncoming) {
-        if (!positions.has(breaker.id)) {
-          positions.set(breaker.id, {
-            x: Math.round(incX / GRID_STEP) * GRID_STEP,
-            y: Math.round(incomingY / GRID_STEP) * GRID_STEP
-          });
-        }
-        incX += NODE_WIDTH + NODE_SPACING / 2;
+      if (isIncoming) {
+        bySection.get(section)!.incoming.push(br);
+      } else {
+        bySection.get(section)!.outgoing.push(br);
       }
     }
 
-    // ===== УРОВЕНЬ 0: СЕКЦИОННЫЕ BREAKER (горизонтально между шинами) =====
-    const sectionalBreakers = breakers.filter(b => breakerRoles.get(b.id) === 'SECTIONAL');
+    // Распределяем meters и junctions
+    for (const m of meters) {
+      const section = getSection(m);
+      bySection.get(section)!.outgoing.push(m);
+    }
     
-    for (let i = 0; i < sortedBuses.length - 1; i++) {
-      const bus1 = sortedBuses[i];
-      const bus2 = sortedBuses[i + 1];
-      const pos1 = busPositions.get(bus1.id)!;
-      const pos2 = busPositions.get(bus2.id)!;
+    for (const j of junctions) {
+      const section = getSection(j);
+      bySection.get(section)!.outgoing.push(j);
+    }
+
+    // ===== 3. РАЗМЕЩАЕМ ВВОДНЫЕ (над шинами) =====
+    const incomingY = busY - V_SPACING;
+    
+    for (const bus of sortedBuses) {
+      const section = busSections.get(bus.id)!;
+      const busPos = busPositions.get(bus.id)!;
+      const incoming = bySection.get(section)!.incoming.sort((a, b) => a.name.localeCompare(b.name));
       
-      const sectional = sectionalBreakers.find(b => {
-        const connectedBus = findConnectedBus(b.id, connections, buses, 'downstream') ||
-                            findConnectedBus(b.id, connections, buses, 'upstream');
-        return connectedBus && (connectedBus.id === bus1.id || connectedBus.id === bus2.id);
-      });
+      let x = busPos.x - (incoming.length - 1) * (NODE_W + H_SPACING * 0.5) / 2;
       
-      if (sectional && !positions.has(sectional.id)) {
-        const midX = (pos1.x + pos2.x) / 2;
-        positions.set(sectional.id, {
-          x: Math.round(midX / GRID_STEP) * GRID_STEP,
-          y: Math.round(busY / GRID_STEP) * GRID_STEP
+      for (const el of incoming) {
+        positions.set(el.id, {
+          x: Math.round(x / GRID) * GRID,
+          y: Math.round(incomingY / GRID) * GRID
         });
+        x += NODE_W + H_SPACING * 0.5;
       }
     }
 
-    // ===== УРОВЕНЬ +1: ОТХОДЯЩИЕ BREAKER, METER, JUNCTION (под шинами) =====
-    const outgoingY = busY + LAYER_VERTICAL;
-    const elementsBelowBus: LayoutElement[] = [];
+    // ===== 4. РАЗМЕЩАЕМ ОТХОДЯЩИЕ (под шинами) =====
+    const outgoingY = busY + V_SPACING;
     
-    // Отходящие выключатели
-    elementsBelowBus.push(...breakers.filter(b => breakerRoles.get(b.id) === 'OUTGOING'));
-    // Мeters
-    elementsBelowBus.push(...meters);
-    // Junctions
-    elementsBelowBus.push(...junctions);
-    // Неизвестные выключатели
-    elementsBelowBus.push(...breakers.filter(b => breakerRoles.get(b.id) === 'UNKNOWN'));
-    
-    // Группируем по шинам
-    const belowByBus = new Map<string, LayoutElement[]>();
-    
-    for (const el of elementsBelowBus) {
-      const bus = findConnectedBus(el.id, connections, buses, 'upstream');
-      const key = bus?.id || 'default';
-      if (!belowByBus.has(key)) belowByBus.set(key, []);
-      belowByBus.get(key)!.push(el);
-    }
-    
-    // Размещаем под каждой шиной
     for (const bus of sortedBuses) {
+      const section = busSections.get(bus.id)!;
       const busPos = busPositions.get(bus.id)!;
-      const busBelow = belowByBus.get(bus.id) || [];
-      busBelow.sort((a, b) => a.name.localeCompare(b.name));
+      const outgoing = bySection.get(section)!.outgoing.sort((a, b) => a.name.localeCompare(b.name));
       
-      let belowX = busPos.x - (busBelow.length - 1) * (NODE_WIDTH + NODE_SPACING / 3) / 2;
+      // Размещаем в несколько рядов если много элементов
+      const perRow = Math.ceil(Math.sqrt(outgoing.length));
+      let x = busPos.x - (Math.min(outgoing.length, perRow) - 1) * (NODE_W + H_SPACING * 0.3) / 2;
+      let y = outgoingY;
+      let count = 0;
       
-      for (const el of busBelow) {
-        if (!positions.has(el.id)) {
-          positions.set(el.id, {
-            x: Math.round(belowX / GRID_STEP) * GRID_STEP,
-            y: Math.round(outgoingY / GRID_STEP) * GRID_STEP
-          });
+      for (const el of outgoing) {
+        positions.set(el.id, {
+          x: Math.round(x / GRID) * GRID,
+          y: Math.round(y / GRID) * GRID
+        });
+        x += NODE_W + H_SPACING * 0.3;
+        count++;
+        
+        if (count >= perRow) {
+          count = 0;
+          x = busPos.x - (Math.min(outgoing.length - count, perRow) - 1) * (NODE_W + H_SPACING * 0.3) / 2;
+          y += V_SPACING;
         }
-        belowX += NODE_WIDTH + NODE_SPACING / 3;
       }
     }
 
-    // ===== УРОВЕНЬ +2: LOAD (ещё ниже) =====
-    const loadY = outgoingY + LAYER_VERTICAL;
+    // ===== 5. РАЗМЕЩАЕМ LOAD =====
+    const loadY = outgoingY + V_SPACING * 3;
     let loadX = startX;
     
     for (const load of loads) {
       if (!positions.has(load.id)) {
         positions.set(load.id, {
-          x: Math.round(loadX / GRID_STEP) * GRID_STEP,
-          y: Math.round(loadY / GRID_STEP) * GRID_STEP
+          x: Math.round(loadX / GRID) * GRID,
+          y: Math.round(loadY / GRID) * GRID
         });
-        loadX += NODE_WIDTH + NODE_SPACING;
+        loadX += NODE_W + H_SPACING;
       }
     }
 
-    // ===== УРОВЕНЬ +3: Прочие элементы =====
-    const otherY = loadY + LAYER_VERTICAL;
+    // ===== 6. РАЗМЕЩАЕМ ПРОЧИЕ =====
+    const otherY = loadY + V_SPACING;
     let otherX = startX;
     
     for (const el of others) {
       if (!positions.has(el.id)) {
         positions.set(el.id, {
-          x: Math.round(otherX / GRID_STEP) * GRID_STEP,
-          y: Math.round(otherY / GRID_STEP) * GRID_STEP
+          x: Math.round(otherX / GRID) * GRID,
+          y: Math.round(otherY / GRID) * GRID
         });
-        otherX += NODE_WIDTH + NODE_SPACING;
+        otherX += NODE_W + H_SPACING;
       }
     }
 
-    // Вычисляем границы шкафа
+    // Вычисляем границы
     const allX = Array.from(positions.values()).map(p => p.x);
     const allY = Array.from(positions.values()).map(p => p.y);
     
-    const maxX = (allX.length > 0 ? Math.max(...allX) : startX) + NODE_WIDTH + CABINET_PADDING;
-    const maxY = (allY.length > 0 ? Math.max(...allY) : startY) + LAYER_VERTICAL;
+    const maxX = Math.max(...allX, busX) + NODE_W + CABINET_PAD;
+    const maxY = Math.max(...allY, outgoingY + V_SPACING * 2) + CABINET_PAD;
 
     return { maxX, maxY };
   }
 
-  // ================== РАЗМЕЩЕНИЕ КОРНЕВЫХ ЭЛЕМЕНТОВ (без parentId) ==================
+  // ================== КОРНЕВЫЕ ЭЛЕМЕНТЫ ==================
   const rootElements = groups.get(null) || [];
   groups.delete(null);
 
-  // Сортируем корневые: SOURCE уже размещены, остальные по уровню
-  const sortedRootElements = rootElements
+  // Сортируем root элементы по типу
+  const sortedRoots = rootElements
     .filter(e => !positions.has(e.id))
     .sort((a, b) => {
-      const levelA = levels.get(a.id) ?? 3;
-      const levelB = levels.get(b.id) ?? 3;
-      return levelA - levelB;
+      const order = { source: 0, junction: 1, breaker: 2, bus: 3, meter: 4, load: 5 };
+      const oA = order[a.type.toLowerCase() as keyof typeof order] ?? 6;
+      const oB = order[b.type.toLowerCase() as keyof typeof order] ?? 6;
+      return oA - oB;
     });
 
-  if (sortedRootElements.length > 0) {
-    // Группируем по уровням
-    const byLevel = new Map<number, LayoutElement[]>();
-    for (const el of sortedRootElements) {
-      const level = levels.get(el.id) ?? 3;
-      if (!byLevel.has(level)) byLevel.set(level, []);
-      byLevel.get(level)!.push(el);
-    }
+  if (sortedRoots.length > 0) {
+    let x = currentX;
+    let y = currentY;
     
-    let rootY = currentY;
-    const rootStartX = currentX;
-    
-    for (const [level, levelElements] of byLevel) {
-      const y = currentY + level * LAYER_VERTICAL;
-      let x = rootStartX;
+    for (const el of sortedRoots) {
+      positions.set(el.id, {
+        x: Math.round(x / GRID) * GRID,
+        y: Math.round(y / GRID) * GRID
+      });
+      x += NODE_W + H_SPACING;
       
-      for (const el of levelElements) {
-        positions.set(el.id, {
-          x: Math.round(x / GRID_STEP) * GRID_STEP,
-          y: Math.round(y / GRID_STEP) * GRID_STEP
-        });
-        x += NODE_WIDTH + NODE_SPACING;
+      if (x > 800) {
+        x = currentX;
+        y += V_SPACING;
       }
-      
-      rootY = Math.max(rootY, y);
     }
-    
-    currentY = rootY + LAYER_VERTICAL * 2;
+    currentY = y + V_SPACING * 2;
   }
 
-  // ================== РАЗМЕЩЕНИЕ КАЖДОГО CABINET ==================
-  const sortedCabinetEntries = [...groups.entries()]
+  // ================== РАЗМЕЩАЕМ ШКАФЫ ==================
+  const sortedCabinets = [...groups.entries()]
     .filter((entry): entry is [string, LayoutElement[]] => entry[0] !== null)
     .sort((a, b) => {
       const nameA = cabinetNames.get(a[0]) || '';
@@ -545,77 +359,63 @@ export function calculateLayout(
 
   let globalMaxY = currentY;
 
-  for (const [cabinetId, cabinetElements] of sortedCabinetEntries) {
-    if (!cabinetId) continue;
-
+  for (const [cabinetId, cabinetElements] of sortedCabinets) {
     const result = layoutCabinet(cabinetElements, currentX, currentY);
     
-    // Сохраняем границы Cabinet
     const cabinetName = cabinetNames.get(cabinetId) || 'Cabinet';
-    const cabinetWidth = result.maxX - currentX + CABINET_PADDING;
-    const cabinetHeight = result.maxY - currentY + CABINET_PADDING;
-    
     cabinetBounds.set(cabinetId, {
-      x: currentX - CABINET_PADDING / 2,
-      y: currentY - CABINET_PADDING / 2,
-      width: cabinetWidth,
-      height: cabinetHeight,
+      x: currentX - CABINET_PAD / 2,
+      y: currentY - CABINET_PAD / 2,
+      width: result.maxX - currentX + CABINET_PAD,
+      height: result.maxY - currentY + CABINET_PAD,
       name: cabinetName
     });
 
     globalMaxY = Math.max(globalMaxY, result.maxY);
-    
-    // Переходим к следующему шкафу
-    currentX = result.maxX + CABINET_MARGIN;
+    currentX = result.maxX + CABINET_GAP;
 
-    // Перенос на новую строку если слишком широко
-    if (currentX > 1400) {
-      currentX = CANVAS_MARGIN;
-      currentY = globalMaxY + CABINET_MARGIN;
+    if (currentX > 1200) {
+      currentX = MARGIN;
+      currentY = globalMaxY + CABINET_GAP;
     }
   }
 
-  // ================== РАЗМЕЩЕНИЕ LOAD ВНЕ ШКАФОВ ==================
-  const orphanLoads = nonCabinets.filter(e => 
-    isType(e.type, 'load') && !positions.has(e.id)
-  );
-  
+  // ================== LOAD ВНЕ ШКАФОВ ==================
+  const orphanLoads = nonCabinets.filter(e => isType(e.type, 'load') && !positions.has(e.id));
   if (orphanLoads.length > 0) {
-    let loadX = CANVAS_MARGIN;
-    const loadY = globalMaxY + LAYER_VERTICAL;
+    let x = MARGIN;
+    const y = globalMaxY + V_SPACING;
     
     for (const load of orphanLoads) {
       positions.set(load.id, {
-        x: Math.round(loadX / GRID_STEP) * GRID_STEP,
-        y: Math.round(loadY / GRID_STEP) * GRID_STEP
+        x: Math.round(x / GRID) * GRID,
+        y: Math.round(y / GRID) * GRID
       });
-      loadX += NODE_WIDTH + NODE_SPACING;
+      x += NODE_W + H_SPACING;
     }
-    globalMaxY = loadY + LAYER_VERTICAL;
+    globalMaxY = y + V_SPACING;
   }
 
-  // ================== НЕРАЗМЕЩЁННЫЕ ЭЛЕМЕНТЫ ==================
-  // Размещаем все оставшиеся элементы
+  // ================== НЕРАЗМЕЩЁННЫЕ ==================
   const unpositioned = nonCabinets.filter(e => !positions.has(e.id));
   if (unpositioned.length > 0) {
-    let unX = CANVAS_MARGIN;
-    let unY = globalMaxY + LAYER_VERTICAL * 2;
+    let x = MARGIN;
+    let y = globalMaxY + V_SPACING * 2;
     
     for (const el of unpositioned) {
       positions.set(el.id, {
-        x: Math.round(unX / GRID_STEP) * GRID_STEP,
-        y: Math.round(unY / GRID_STEP) * GRID_STEP
+        x: Math.round(x / GRID) * GRID,
+        y: Math.round(y / GRID) * GRID
       });
-      unX += NODE_WIDTH + NODE_SPACING;
-      
-      if (unX > 1200) {
-        unX = CANVAS_MARGIN;
-        unY += LAYER_VERTICAL;
+      x += NODE_W + H_SPACING;
+      if (x > 1000) {
+        x = MARGIN;
+        y += V_SPACING;
       }
     }
   }
 
-  // ================== РАСЧЁТ OFFSETS ДЛЯ ЛИНИЙ ==================
+  // ================== СМЕЩЕНИЯ ДЛЯ ЛИНИЙ ==================
   const edgeGroups = new Map<string, LayoutConnection[]>();
   for (const conn of connections) {
     const key = `${conn.sourceId}-${conn.targetId}`;
@@ -625,22 +425,15 @@ export function calculateLayout(
 
   for (const [, conns] of edgeGroups) {
     conns.forEach((conn, index) => {
-      const offset = (index - (conns.length - 1) / 2) * EDGE_SPACING;
-      
+      const offset = (index - (conns.length - 1) / 2) * 20;
       const sourcePos = positions.get(conn.sourceId);
       const targetPos = positions.get(conn.targetId);
       
       if (sourcePos && targetPos) {
-        const controlPoints = calculateControlPoints(
-          sourcePos.x, sourcePos.y,
-          targetPos.x, targetPos.y,
-          offset
-        );
-        
         edgeOffsets.set(conn.id, {
           connectionId: conn.id,
           offset,
-          controlPoints,
+          controlPoints: calculateControlPoints(sourcePos.x, sourcePos.y, targetPos.x, targetPos.y, offset)
         });
       }
     });
@@ -650,15 +443,15 @@ export function calculateLayout(
 }
 
 /**
- * Сохранение рассчитанных позиций в базу данных
+ * Сохранение позиций в БД
  */
 export async function saveLayoutPositions(
   positions: Map<string, Position>,
   prisma: any
 ): Promise<number> {
   let updated = 0;
-
   const updates = [];
+  
   for (const [id, pos] of positions) {
     updates.push(
       prisma.element.update({
@@ -679,36 +472,19 @@ export async function saveLayoutPositions(
 }
 
 /**
- * Экспорт правил позиционирования (для документации)
+ * Экспорт правил
  */
 export function getLayoutRules(): string {
   return `
-# ПРАВИЛА ПОЗИЦИОНИРОВАНИЯ ЭЛЕМЕНТОВ НА СХЕМЕ
+# ПРАВИЛА ПОЗИЦИОНИРОВАНИЯ
 
-## 1. Глобальная структура
+## Глобальная структура
+- SOURCE (вверху) → CABINET (центр) → LOAD (низ)
 
-| Уровень | Тип элемента | Описание |
-|---------|--------------|----------|
-| Верх | SOURCE | Источники питания (желтые шестиугольники) |
-| Центр | CABINET | Шкафы с оборудованием (пунктирные прямоугольники) |
-| Низ | LOAD | Потребители |
-
-## 2. Топология внутри шкафа (CABINET)
-
-- **Уровень Шин:** BUS (узкие горизонтальные прямоугольники) на одной горизонтальной линии
-- **Над шинами:** Вводные автоматические выключатели (BREAKER)
-- **На уровне шин:** Секционные выключатели (горизонтально между соседними шинами)
-- **Под шинами:** Отходящие автоматические выключатели (BREAKER), счётчики (METER)
-
-## 3. Группировка
-
-- Автоматы, питающие одну шину, сгруппированы вплотную друг к другу
-- Плотная компоновка внутри шкафов
-
-## 4. Иерархия питания
-
-SOURCE → BREAKER (вводной) → BUS → BREAKER (отходящий) → METER → LOAD
-                    ↓
-              BREAKER (секционный) → BUS (соседняя секция)
+## Внутри шкафа
+- BUS на одной горизонтальной линии
+- Вводные BREAKER над шинами
+- Отходящие BREAKER/METER/JUNCTION под шинами
+- Группировка по секциям шин (1 с.ш., 2 с.ш. и т.д.)
 `;
 }

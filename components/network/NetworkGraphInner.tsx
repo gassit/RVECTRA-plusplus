@@ -742,20 +742,20 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
   const handleZoomIn = useCallback(() => {
     if (graphRef.current) {
       const zoom = graphRef.current.getZoom?.() || 1;
-      graphRef.current.zoomTo?.(Math.min(zoom * 1.3, 4), undefined, true);
+      graphRef.current.zoomTo?.(Math.min(zoom * 1.3, 4));
     }
   }, []);
 
   const handleZoomOut = useCallback(() => {
     if (graphRef.current) {
       const zoom = graphRef.current.getZoom?.() || 1;
-      graphRef.current.zoomTo?.(Math.max(zoom / 1.3, 0.1), undefined, true);
+      graphRef.current.zoomTo?.(Math.max(zoom / 1.3, 0.1));
     }
   }, []);
 
   const handleFitView = useCallback(() => {
     if (graphRef.current) {
-      graphRef.current.fitView?.({ padding: [50, 50, 50, 50] });
+      graphRef.current.fitView?.();
     }
   }, []);
 

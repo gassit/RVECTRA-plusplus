@@ -111,14 +111,15 @@ export function calculateLayout(elements: LayoutElement[], connections: LayoutCo
     const busPos = new Map<string, Position>();
     
     let x = startX;
+    let lastBusRightEdge = startX;
     for (const bus of buses) {
       const pos = { x: snap(x), y: snap(yBus) };
       localPositions.set(bus.id, pos);
       positions.set(bus.id, pos);
       busPos.set(bus.id, pos);
+      lastBusRightEdge = snap(x) + BUS_W / 2;  // Правый край шины
       x += BUS_W + BUS_GAP;
     }
-    const maxX_bus = x;
 
     // === ВВОДНЫЕ (по связям к шинам) ===
     const yInc = yBus - V_SPACING;
@@ -133,15 +134,38 @@ export function calculateLayout(elements: LayoutElement[], connections: LayoutCo
       }
     }
 
+    // Вычисляем максимальный вылет вводных за левую границу
+    let maxIncLeft = startX;
+    for (const bus of buses) {
+      const bp = busPos.get(bus.id)!;
+      const incs = (incByBus.get(bus.id) || []);
+      const totalW = incs.length * (NODE_W + H_SPACING * 0.5) - H_SPACING * 0.5;
+      const incLeft = bp.x - totalW / 2 - NODE_W / 2;
+      maxIncLeft = Math.min(maxIncLeft, incLeft);
+    }
+    
+    // Если вводные выходят за startX, сдвигаем все элементы шкафа
+    let shiftX = 0;
+    if (maxIncLeft < startX) {
+      shiftX = startX - maxIncLeft;
+      // Сдвигаем шины
+      for (const [id, pos] of busPos) {
+        pos.x += shiftX;
+        positions.set(id, { x: pos.x, y: pos.y });
+      }
+      // Обновляем lastBusRightEdge
+      lastBusRightEdge += shiftX;
+    }
+
     for (const bus of buses) {
       const bp = busPos.get(bus.id)!;
       const incs = (incByBus.get(bus.id) || []).sort((a, b) => a.name.localeCompare(b.name));
       
       const totalW = incs.length * (NODE_W + H_SPACING * 0.5) - H_SPACING * 0.5;
-      let startX = bp.x - totalW / 2;
+      let incX = bp.x - totalW / 2;
       
       for (let i = 0; i < incs.length; i++) {
-        const pos = { x: snap(startX + i * (NODE_W + H_SPACING * 0.5)), y: snap(yInc) };
+        const pos = { x: snap(incX + i * (NODE_W + H_SPACING * 0.5)), y: snap(yInc) };
         localPositions.set(incs[i].id, pos);
         positions.set(incs[i].id, pos);
       }
@@ -199,25 +223,57 @@ export function calculateLayout(elements: LayoutElement[], connections: LayoutCo
       maxY = Math.max(maxY, outY);
     }
 
-    // LOAD и прочие
+    // LOAD, BREAKERS без связей с шинами, и прочие
     let yOther = maxY + V_SPACING;
     let xOther = startX;
     
-    for (const el of [...loads, ...others]) {
-      if (!localPositions.has(el.id)) {
-        const pos = { x: snap(xOther), y: snap(yOther) };
-        localPositions.set(el.id, pos);
-        positions.set(el.id, pos);
-        xOther += NODE_W + H_SPACING;
+    // Собираем все элементы, которые ещё не размещены
+    const unplacedElements = elems.filter(e => !localPositions.has(e.id));
+    
+    for (const el of unplacedElements) {
+      const pos = { x: snap(xOther), y: snap(yOther) };
+      localPositions.set(el.id, pos);
+      positions.set(el.id, pos);
+      xOther += NODE_W + H_SPACING;
+      if (xOther > startX + 600) {
+        xOther = startX;
+        yOther += V_SPACING;
       }
     }
 
     // Вычисляем границы ТОЛЬКО по локальным позициям
-    const allX = Array.from(localPositions.values()).map(p => p.x);
-    const allY = Array.from(localPositions.values()).map(p => p.y);
+    const allPositions = Array.from(localPositions.values());
     
-    const minX = Math.min(...allX, startX);
-    const maxX = Math.max(...allX, maxX_bus) + NODE_W;
+    // Если нет элементов, возвращаем минимальные границы
+    if (allPositions.length === 0) {
+      return { 
+        minX: startX,
+        maxX: startX + NODE_W,
+        minY: startY,
+        maxY: startY + V_SPACING * 2,
+        width: NODE_W + CABINET_PAD,
+        height: V_SPACING * 2 + CABINET_PAD
+      };
+    }
+    
+    const allX = allPositions.map(p => p.x);
+    const allY = allPositions.map(p => p.y);
+    
+    // Левый край = минимум из всех позиций элементов минус половина ширины узла
+    const leftEdges = Array.from(localPositions.entries()).map(([id, p]) => {
+      const el = elems.find(e => e.id === id);
+      const w = el && isType(el.type, 'bus') ? BUS_W : NODE_W;
+      return p.x - w / 2;
+    });
+    // Правый край = максимум из всех позиций элементов плюс половина ширины узла
+    const rightEdges = Array.from(localPositions.entries()).map(([id, p]) => {
+      const el = elems.find(e => e.id === id);
+      const w = el && isType(el.type, 'bus') ? BUS_W : NODE_W;
+      return p.x + w / 2;
+    });
+    
+    const minX = Math.min(...leftEdges);
+    const maxX = Math.max(...rightEdges, lastBusRightEdge);
     const minY = Math.min(...allY, yInc);
     const finalMaxY = Math.max(...allY, maxY) + V_SPACING;
 
@@ -231,50 +287,59 @@ export function calculateLayout(elements: LayoutElement[], connections: LayoutCo
     };
   }
 
-  // КОРНЕВЫЕ
-  const roots = groups.get(null) || [];
-  groups.delete(null);
-  
-  const sortedRoots = roots.filter(e => !positions.has(e.id)).sort((a, b) => {
-    const o: Record<string, number> = { source: 0, junction: 1, breaker: 2, bus: 3, meter: 4, load: 5 };
-    return (o[a.type.toLowerCase()] || 6) - (o[b.type.toLowerCase()] || 6);
-  });
-
-  if (sortedRoots.length > 0) {
-    let x = currentX, y = currentY;
-    for (const el of sortedRoots) {
-      positions.set(el.id, { x: snap(x), y: snap(y) });
-      x += NODE_W + H_SPACING;
-      if (x > 800) { x = currentX; y += V_SPACING; }
-    }
-    currentY = y + V_SPACING * 2;
-  }
-
-  // ШКАФЫ
+  // ШКАФЫ С ДЕТЬМИ (сначала обрабатываем, чтобы знать реальные границы)
   const sortedCabs = [...groups.entries()]
     .filter((e): e is [string, LayoutElement[]] => e[0] !== null)
     .sort((a, b) => (cabinetNames.get(a[0]) || '').localeCompare(cabinetNames.get(b[0]) || ''));
 
   let globalMaxY = currentY;
+  let globalMaxX = MARGIN;
 
   for (const [cid, celems] of sortedCabs) {
     const res = layoutCabinet(celems, currentX, currentY);
     
+    const cabinetX = res.minX - CABINET_PAD / 2;
+    const cabinetY = res.minY - CABINET_PAD / 2;
+    const cabinetRight = cabinetX + res.width;
+    
     cabinetBounds.set(cid, {
-      x: res.minX - CABINET_PAD / 2,
-      y: res.minY - CABINET_PAD / 2,
+      x: cabinetX,
+      y: cabinetY,
       width: res.width,
       height: res.height,
       name: cabinetNames.get(cid) || 'Cabinet'
     });
 
     globalMaxY = Math.max(globalMaxY, res.maxY);
-    currentX = res.maxX + CABINET_GAP;  // Следующий шкаф начинается после границ текущего
+    globalMaxX = Math.max(globalMaxX, cabinetRight);
+    currentX = cabinetRight + CABINET_GAP;
 
     if (currentX > 1400) {
       currentX = MARGIN;
       currentY = globalMaxY + CABINET_GAP;
     }
+  }
+
+  // КОРНЕВЫЕ ЭЛЕМЕНТЫ (размещаем после всех шкафов с детьми)
+  const roots = groups.get(null) || [];
+  
+  const sortedRoots = roots.filter(e => !positions.has(e.id)).sort((a, b) => {
+    const o: Record<string, number> = { source: 0, junction: 1, breaker: 2, bus: 3, meter: 4, load: 5, cabinet: 6 };
+    return (o[a.type.toLowerCase()] || 7) - (o[b.type.toLowerCase()] || 7);
+  });
+
+  if (sortedRoots.length > 0) {
+    // Начинаем с новой строки после всех шкафов
+    currentX = MARGIN;
+    currentY = globalMaxY + V_SPACING * 2;
+    
+    let x = currentX, y = currentY;
+    for (const el of sortedRoots) {
+      positions.set(el.id, { x: snap(x), y: snap(y) });
+      x += NODE_W + H_SPACING;
+      if (x > 800) { x = currentX; y += V_SPACING; }
+    }
+    globalMaxY = y + V_SPACING * 2;
   }
 
   // ORPHANS

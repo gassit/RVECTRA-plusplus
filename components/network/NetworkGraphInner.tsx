@@ -422,9 +422,11 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
         size: [cb.width, cb.height],
         fill: 'transparent',
         stroke: '#374151',
-        lineWidth: 1,
+        lineWidth: 3,                    // Толще для удобного захвата
         lineDash: [8, 4],
         opacity: 0.6,
+        // Клик проходит сквозь заливку, ловится только на границе
+        pointerEvents: 'stroke',
         // Label внутри в левом верхнем углу, шрифт в 1.5 раза больше
         labelFill: '#374151',
         labelFontSize: 15,
@@ -461,10 +463,27 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
             minZoom: 0.1,
             maxZoom: 4,
           },
-          // Перетаскивание элементов
+          // Перетаскивание элементов (кроме кабинетов - они перетаскиваются только за границу)
           {
             type: 'drag-element',
-            enable: true,
+            enable: (event: any) => {
+              const targetType = event?.target?.type;
+              const nodeType = event?.target?.attributes?.nodeType;
+              // Отключаем перетаскивание cabinet-bound по клику внутри
+              // Они будут перетаскиваться только за границу через отдельный behavior
+              return nodeType !== 'cabinet-bound';
+            },
+          },
+          // Перетаскивание кабинетов только за границу (stroke)
+          {
+            type: 'drag-element',
+            key: 'drag-cabinet-border',
+            enable: (event: any) => {
+              const nodeType = event?.target?.attributes?.nodeType;
+              const isStroke = event?.target?.isStroke;
+              // Разрешаем перетаскивание cabinet только если клик по границе (stroke)
+              return nodeType === 'cabinet-bound' && isStroke === true;
+            },
           },
         ],
         transforms: ['process-parallel-edges'],

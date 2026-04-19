@@ -55,13 +55,13 @@ interface LayoutResult {
 const GRID = 40;                   // Шаг сетки
 const NODE_W = 80;                 // Ширина узла
 const NODE_H = 50;                 // Высота узла
-const H_SPACING = 50;              // Горизонтальный отступ между элементами
-const V_SPACING = 70;              // Вертикальный отступ между уровнями
+const H_SPACING = 60;              // Горизонтальный отступ (увеличен)
+const V_SPACING = 90;              // Вертикальный отступ (увеличен)
 const BUS_W = 120;                 // Ширина шины
 const BUS_H = 25;                  // Высота шины
-const BUS_GAP = 60;                // Отступ между шинами
-const CABINET_PAD = 40;            // Отступ внутри шкафа
-const CABINET_GAP = 60;            // Отступ между шкафами
+const BUS_GAP = 180;               // Отступ между шинами (увеличен для колонок)
+const CABINET_PAD = 60;            // Отступ внутри шкафа (увеличен)
+const CABINET_GAP = 80;            // Отступ между шкафами (увеличен)
 const MARGIN = 60;                 // Отступ от краёв
 
 /**

@@ -425,10 +425,14 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
         lineWidth: 1,
         lineDash: [8, 4],
         opacity: 0.6,
-        labelFill: '#6b7280',
-        labelFontSize: 10,
-        labelPlacement: 'top',
-        labelOffsetY: -cb.height / 2 - 5,
+        // Label внутри в левом верхнем углу, шрифт в 1.5 раза больше
+        labelFill: '#374151',
+        labelFontSize: 15,
+        labelFontWeight: 'bold',
+        labelPlacement: 'inner',
+        labelTextAlign: 'left',
+        labelOffsetX: -cb.width / 2 + 10,
+        labelOffsetY: -cb.height / 2 + 15,
         zIndex: -1,
       },
     }));

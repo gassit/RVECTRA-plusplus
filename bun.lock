@@ -8,6 +8,8 @@
         "@antv/g6": "^5.1.0",
         "@prisma/adapter-libsql": "^7.7.0",
         "@prisma/client": "^6.11.1",
+        "@types/dagre": "^0.7.54",
+        "dagre": "^0.8.5",
         "next": "^16.1.1",
         "prisma": "^6.11.1",
         "react": "^19.0.0",
@@ -392,6 +394,8 @@
     "@types/d3-time": ["@types/d3-time@3.0.4", "https://registry.npmjs.com/@types/d3-time/-/d3-time-3.0.4.tgz", {}, "sha512-yuzZug1nkAAaBlBBikKZTgzCeA+k1uy4ZFwWANOfKw5z5LRhV0gNA7gNkKm7HoK+HRN0wX3EkxGk0fpbWhmB7g=="],
 
     "@types/d3-timer": ["@types/d3-timer@3.0.2", "https://registry.npmjs.com/@types/d3-timer/-/d3-timer-3.0.2.tgz", {}, "sha512-Ps3T8E8dZDam6fUyNiMkekK3XUsaUEik+idO9/YjPtfj2qruF8tFBXS7XhtE4iIXBLxhmLjP3SXpLhVf21I9Lw=="],
+
+    "@types/dagre": ["@types/dagre@0.7.54", "", {}, "sha512-QjcRY+adGbYvBFS7cwv5txhVIwX1XXIUswWl+kSQTbI6NjgZydrZkEKX/etzVd7i+bCsCb40Z/xlBY5eoFuvWQ=="],
 
     "@types/estree": ["@types/estree@1.0.8", "https://registry.npmjs.com/@types/estree/-/estree-1.0.8.tgz", {}, "sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w=="],
 

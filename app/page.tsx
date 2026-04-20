@@ -208,6 +208,23 @@ export default function Home() {
     return networkData.elements.find(e => e.id === selectedNode);
   }, [selectedNode, networkData]);
 
+  // Memoize graph data to prevent unnecessary re-renders
+  const graphData = useMemo(() => {
+    return {
+      elements: (filteredData?.elements || networkData?.elements || []),
+      connections: (filteredData?.connections || networkData?.connections || []),
+      conflictElementIds: networkData?.conflictElementIds || [],
+      cabinetBounds: networkData?.cabinetBounds || [],
+    };
+  }, [
+    filteredData?.elements,
+    filteredData?.connections,
+    networkData?.elements,
+    networkData?.connections,
+    networkData?.conflictElementIds,
+    networkData?.cabinetBounds,
+  ]);
+
   return (
     <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-900 transition-colors overflow-hidden">
       {/* Header */}
@@ -429,11 +446,7 @@ export default function Home() {
             </div>
           ) : (
             <NetworkGraph
-              data={filteredData ? {
-                ...filteredData,
-                conflictElementIds: networkData?.conflictElementIds || [],
-                cabinetBounds: networkData?.cabinetBounds || [],
-              } : null}
+              data={graphData}
               isDark={theme === 'dark'}
               onNodeClick={handleNodeClick}
             />

@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
+    // Динамический импорт Prisma
+    const { prisma } = await import('@/lib/prisma');
+    
     // Подсчет элементов по типам
     const elements = await prisma.element.findMany();
     
@@ -24,11 +26,25 @@ export async function GET() {
     const transformers = await prisma.transformer.findMany();
     const sourcePower = transformers.reduce((sum, t) => sum + t.power, 0);
 
+    // Если устройств нет - оцениваем мощность по элементам
+    let calculatedSourcePower = sourcePower;
+    let calculatedLoadPower = totalPower;
+    
+    if (sourcePower === 0 && stats.sources > 0) {
+      // Оценка: 630 кВА на каждый источник (типичный трансформатор)
+      calculatedSourcePower = stats.sources * 630;
+    }
+    
+    if (totalPower === 0 && stats.loads > 0) {
+      // Оценка: 15 кВт на каждую нагрузку
+      calculatedLoadPower = stats.loads * 15;
+    }
+
     const power = {
-      total: sourcePower,
-      consumed: totalPower,
-      free: Math.max(0, sourcePower - totalPower),
-      reserve: Math.max(0, sourcePower * 0.2) // 20% резерв
+      total: calculatedSourcePower,
+      consumed: calculatedLoadPower,
+      free: Math.max(0, calculatedSourcePower - calculatedLoadPower),
+      reserve: Math.max(0, calculatedSourcePower * 0.2) // 20% резерв
     };
 
     // Подсчет соединений

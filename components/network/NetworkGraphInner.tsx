@@ -312,7 +312,14 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
       graph.setData({ nodes, edges, combos });
       
       if (!hasPositions) {
-        graph.setLayout({ type: 'dagre', rankdir: 'TB', nodesep: 60, ranksep: 80 } as any);
+        // Layout с Web Worker для ускорения расчёта
+        graph.setLayout({ 
+          type: 'dagre', 
+          rankdir: 'TB', 
+          nodesep: 60, 
+          ranksep: 80,
+          enableWorker: true,  // Web Worker для параллельных вычислений
+        } as any);
       }
       
       graph.render().then(() => {

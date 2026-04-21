@@ -16,6 +16,19 @@ const nextConfig: NextConfig = {
       ],
     },
   },
+  webpack: (config, { isServer }) => {
+    // Настройка для Web Workers (AntV G6 layout)
+    if (!isServer) {
+      config.module.rules.push({
+        test: /worker\.js$/,
+        type: 'asset/resource',
+        generator: {
+          filename: 'static/chunks/[name].[hash][ext]',
+        },
+      });
+    }
+    return config;
+  },
 };
 
 export default nextConfig;

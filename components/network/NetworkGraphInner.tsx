@@ -239,46 +239,53 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
     const conflictIds = new Set(data.conflictElementIds || []);
     const hasPositions = data.elements.some(e => e.posX != null);
 
-    // Build nodes
-    const nodes: any[] = data.elements.map(e => {
-      const colors = getNodeColors(e.type, e.electricalStatus, e.operationalStatus, conflictIds.has(e.id));
-      const size = getNodeSize(e.type);
-      
-      const node: any = {
-        id: e.id,
+    // Build nodes with combo assignment
+    const cabinetElements = data.elements.filter(e => e.type.toLowerCase() === 'cabinet');
+    const cabinetMap = new Map(cabinetElements.map(c => [c.id, c]));
+    
+    const nodes: any[] = data.elements
+      .filter(e => e.type.toLowerCase() !== 'cabinet') // Exclude cabinet elements from nodes
+      .map(e => {
+        const colors = getNodeColors(e.type, e.electricalStatus, e.operationalStatus, conflictIds.has(e.id));
+        const size = getNodeSize(e.type);
+        
+        const node: any = {
+          id: e.id,
+          data: {
+            nodeType: e.type,
+            label: e.name?.substring(0, 12) || e.id.substring(0, 8),
+            size: size,
+            fill: colors.fill,
+            stroke: colors.stroke,
+            opacity: colors.opacity,
+          },
+        };
+        
+        // Assign to combo if has parentId (cabinet)
+        if (e.parentId && cabinetMap.has(e.parentId)) {
+          node.combo = e.parentId;
+        }
+        
+        if (e.posX != null && e.posY != null) {
+          node.x = e.posX;
+          node.y = e.posY;
+        }
+        
+        return node;
+      });
+
+    // Build combos from cabinet elements
+    const combos: any[] = cabinetElements.map(c => {
+      const colors = getNodeColors('cabinet', c.electricalStatus, c.operationalStatus, false);
+      return {
+        id: c.id,
         data: {
-          nodeType: e.type,
-          label: e.name?.substring(0, 12) || e.id.substring(0, 8),
-          size: size,
+          label: c.name?.substring(0, 20) || c.id.substring(0, 8),
           fill: colors.fill,
           stroke: colors.stroke,
-          opacity: colors.opacity,
+          opacity: 0.3,
         },
       };
-      
-      if (e.posX != null && e.posY != null) {
-        node.x = e.posX;
-        node.y = e.posY;
-      }
-      
-      return node;
-    });
-
-    // Add cabinet bounds
-    (data.cabinetBounds || []).forEach((cb, i) => {
-      nodes.push({
-        id: `cabinet-bound-${i}`,
-        x: cb.x + cb.width / 2,
-        y: cb.y + cb.height / 2,
-        data: {
-          nodeType: 'cabinet-bound',
-          label: cb.name,
-          size: [cb.width, cb.height],
-          fill: 'transparent',
-          stroke: '#374151',
-          opacity: 0.6,
-        },
-      });
     });
 
     // Build edges
@@ -295,11 +302,11 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
     setNodeCount(nodes.length);
     setEdgeCount(edges.length);
 
-    console.log('[G6] Nodes:', nodes.length, 'Edges:', edges.length);
+    console.log('[G6] Nodes:', nodes.length, 'Edges:', edges.length, 'Combos:', combos.length);
 
     try {
       graph.clear();
-      graph.setData({ nodes, edges });
+      graph.setData({ nodes, edges, combos });
       
       if (!hasPositions) {
         graph.setLayout({ type: 'dagre', rankdir: 'TB', nodesep: 60, ranksep: 80 } as any);

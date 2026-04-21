@@ -105,6 +105,10 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
   const [edgeCount, setEdgeCount] = useState(0);
   const [comboCount, setComboCount] = useState(0);
   const [graphReady, setGraphReady] = useState(false);
+  const [useWorker, setUseWorker] = useState(false);
+
+  // Порог для включения Web Worker
+  const WORKER_THRESHOLD = 300;
 
   // Initialize graph once on mount
   useEffect(() => {
@@ -140,7 +144,8 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
             { type: 'collapse-expand', enable: true },
           ],
           node: {
-            type: (m: any) => getNodeShape(m.data?.nodeType || ''),
+            // Используем предвычисленный shape из data (для Worker-сериализации)
+            type: (m: any) => m.data?.shape || 'rect',
             style: {
               size: (m: any) => m.data?.size || [50, 30],
               fill: (m: any) => m.data?.fill || '#d1d5db',
@@ -245,23 +250,30 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
     const cabinetElements = data.elements.filter(e => e.type.toLowerCase() === 'cabinet');
     const cabinetMap = new Map(cabinetElements.map(c => [c.id, c]));
     
-    const nodes: any[] = data.elements
-      .filter(e => e.type.toLowerCase() !== 'cabinet') // Исключаем cabinet из nodes
-      .map(e => {
-        const colors = getNodeColors(e.type, e.electricalStatus, e.operationalStatus, conflictIds.has(e.id));
-        const size = getNodeSize(e.type);
-        
-        const node: any = {
-          id: e.id,
-          data: {
-            nodeType: e.type,
-            label: e.name?.substring(0, 12) || e.id.substring(0, 8),
-            size: size,
-            fill: colors.fill,
-            stroke: colors.stroke,
-            opacity: colors.opacity,
-          },
-        };
+    // Предвычисляем все данные узлов (нужно для Web Worker)
+    const allNodes = data.elements.filter(e => e.type.toLowerCase() !== 'cabinet');
+    const shouldUseWorker = allNodes.length >= WORKER_THRESHOLD && !hasPositions;
+    setUseWorker(shouldUseWorker);
+
+    const nodes: any[] = allNodes.map(e => {
+      const colors = getNodeColors(e.type, e.electricalStatus, e.operationalStatus, conflictIds.has(e.id));
+      const size = getNodeSize(e.type);
+      const shape = getNodeShape(e.type);
+      
+      // Предвычисляем ВСЁ для Worker-сериализации
+      const node: any = {
+        id: e.id,
+        data: {
+          nodeType: e.type,
+          label: e.name?.substring(0, 12) || e.id.substring(0, 8),
+          size: size,
+          fill: colors.fill,
+          stroke: colors.stroke,
+          opacity: colors.opacity,
+          // Предвычисляем shape для Worker
+          shape: shape,
+        },
+      };
         
         // Привязываем к combo (cabinet) если есть parentId
         if (e.parentId && cabinetMap.has(e.parentId)) {
@@ -312,13 +324,15 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
       graph.setData({ nodes, edges, combos });
       
       if (!hasPositions) {
-        // Layout без Web Worker (функции в конфигурации не сериализуются для Worker)
+        // Layout с порогом для Web Worker
         graph.setLayout({ 
           type: 'dagre', 
           rankdir: 'TB', 
           nodesep: 60, 
           ranksep: 80,
+          enableWorker: shouldUseWorker,
         } as any);
+        console.log('[G6] Layout worker:', shouldUseWorker ? 'ON' : 'OFF', `(${allNodes.length} nodes, threshold: ${WORKER_THRESHOLD})`);
       }
       
       graph.render().then(() => {
@@ -430,7 +444,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
       {/* Status badge */}
       {nodeCount > 0 && (
         <div className="absolute top-2 left-2 z-10 px-3 py-1.5 bg-white/95 dark:bg-gray-800/95 rounded-lg shadow text-xs font-medium text-green-600">
-          ✓ {nodeCount} узлов, {edgeCount} связей, {comboCount} групп
+          ✓ {nodeCount} узлов, {edgeCount} связей, {comboCount} групп{useWorker ? ' ⚡Worker' : ''}
         </div>
       )}
 

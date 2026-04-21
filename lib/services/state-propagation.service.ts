@@ -9,10 +9,16 @@
  * - LIVE через OFF не проходит
  * - Множественные входы: LIVE если хотя бы один вход от LIVE
  * - CABINET = агрегация детей (не участвует в BFS)
+ * 
+ * АВР (Автоматический Ввод Резерва):
+ * - Обрабатывается ПЕРЕД BFS
+ * - АВР меняет operationalStatus выключателей
+ * - BFS учитывает новые состояния
  */
 
 import { prisma } from '@/lib/prisma';
 import type { ElectricalStatus, OperationalStatus, PropagationResult } from '@/types';
+import { processAVRs } from './avr.service';
 
 /**
  * Распространяет электрические состояния от источников питания
@@ -20,7 +26,13 @@ import type { ElectricalStatus, OperationalStatus, PropagationResult } from '@/t
 export async function propagateStates(): Promise<PropagationResult> {
   console.log('[propagateStates] Начало распространения состояний...');
 
-  // === ЭТАП 1: Инициализация ===
+  // === ЭТАП 1: Обработка АВР ===
+  // АВР может менять operationalStatus элементов перед BFS
+  console.log('[propagateStates] ЭТАП 1: Обработка АВР...');
+  const avrResult = await processAVRs();
+  console.log(`[propagateStates] АВР обработано: ${avrResult.processed}, переключений: ${avrResult.switchovers}`);
+
+  // === ЭТАП 2: Инициализация ===
   // Установить ВСЕМ элементам и связям electricalStatus = "DEAD"
 
   const elements = await prisma.element.findMany();
@@ -48,7 +60,7 @@ export async function propagateStates(): Promise<PropagationResult> {
     operationalStatusMap.set(el.id, (el.operationalStatus as OperationalStatus) || 'ON');
   }
 
-  // === ЭТАП 2: BFS от SOURCE downstream ===
+  // === ЭТАП 3: BFS от SOURCE downstream ===
 
   // Структуры для BFS
   const outgoingConnections = new Map<string, string[]>(); // elementId -> connection ids
@@ -163,7 +175,7 @@ export async function propagateStates(): Promise<PropagationResult> {
     }
   }
 
-  // === ЭТАП 3: CABINET - пост-обработка ===
+  // === ЭТАП 4: CABINET - пост-обработка ===
   // CABINET получает LIVE если хотя бы один дочерний элемент LIVE
 
   const cabinets = elements.filter(el => el.type.toLowerCase() === 'cabinet');
@@ -191,7 +203,7 @@ export async function propagateStates(): Promise<PropagationResult> {
     }
   }
 
-  // === ЭТАП 4: Сохранение в БД ===
+  // === ЭТАП 5: Сохранение в БД ===
 
   // Обновляем элементы
   let elementsUpdated = 0;

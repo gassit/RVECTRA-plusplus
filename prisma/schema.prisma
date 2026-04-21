@@ -141,6 +141,96 @@ model Element {
   DeviceSlot                              DeviceSlot[]
   Element                                 Element?     @relation("ElementToElement", fields: [parentId], references: [id])
   other_Element                           Element[]    @relation("ElementToElement")
+  AVRInputs                               AVRInput[]   // Элементы, которые мониторит АВР
+  AVROutputs                              AVROutput[]  // Элементы, которыми управляет АВР
+}
+
+// === АВР (КОНТРОЛЛЕР УПРАВЛЕНИЯ) ===
+// АВР не находится в цепи питания, а управляет выключателями
+model AVR {
+  id                String   @id
+  name              String              // "АВР ГРЩ1"
+  description       String?             // Описание
+  
+  mode              String   @default("AUTO")  // AUTO | MANUAL | OFF
+  status            String   @default("OK")    // OK | SWITCHING | FAULT | OFF
+  
+  switchoverDelay   Float    @default(0.5)     // Задержка переключения (сек)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  inputs            AVRInput[]          // Что мониторим (входы)
+  outputs           AVROutput[]         // Чем управляем (выходы)
+  switchovers       AVRSwitchover[]     // История переключений
+  
+  @@map("avr")
+}
+
+// === ВХОДЫ АВР (мониторинг элементов) ===
+model AVRInput {
+  id              String   @id
+  avrId           String
+  
+  elementId       String              // Какой элемент мониторим (QF1, QF2...)
+  role            String              // "PRIMARY" | "SECONDARY" | "DGU" | "RESERVE"
+  priority        Int                 // Приоритет (1 = основной, 2 = резерв...)
+  
+  // Какой сигнал считаем
+  signalType      String   @default("ELECTRICAL")  // ELECTRICAL (LIVE/DEAD) | OPERATIONAL (ON/OFF)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  avr             AVR      @relation(fields: [avrId], references: [id], onDelete: Cascade)
+  element         Element  @relation(fields: [elementId], references: [id])
+  
+  @@index([avrId])
+  @@map("avr_input")
+}
+
+// === ВЫХОДЫ АВР (управление элементами) ===
+model AVROutput {
+  id              String   @id
+  avrId           String
+  
+  elementId       String              // Каким элементом управляем (QF3, QF4...)
+  role            String              // "MAIN_BREAKER" | "RESERVE_BREAKER" | "DGU_BREAKER"
+  
+  // Логика управления
+  actionOn        String   @default("CLOSE")   // "CLOSE" = включить при активации
+  actionOff       String   @default("OPEN")    // "OPEN" = отключить при деактивации
+  
+  isActive        Boolean  @default(false)     // Текущее состояние выхода
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  avr             AVR      @relation(fields: [avrId], references: [id], onDelete: Cascade)
+  element         Element  @relation(fields: [elementId], references: [id])
+  
+  @@index([avrId])
+  @@map("avr_output")
+}
+
+// === ИСТОРИЯ ПЕРЕКЛЮЧЕНИЙ АВР ===
+model AVRSwitchover {
+  id              String   @id
+  avrId           String
+  
+  triggerElement  String?             // Какой элемент вызвал переключение
+  triggerReason   String              // "PRIMARY_LOST" | "PRIMARY_RESTORED" | "MANUAL" | "ALL_SOURCES_LOST"
+  
+  actions         String              // JSON: [{elementId, elementName, fromState, toState}]
+  
+  delay           Float?              // Фактическая задержка (сек)
+  success         Boolean  @default(true)
+  
+  timestamp       DateTime @default(now())
+  
+  avr             AVR      @relation(fields: [avrId], references: [id], onDelete: Cascade)
+  
+  @@map("avr_switchover")
 }
 
 model Load {

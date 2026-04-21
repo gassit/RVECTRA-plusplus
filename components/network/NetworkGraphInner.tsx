@@ -312,13 +312,12 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
       graph.setData({ nodes, edges, combos });
       
       if (!hasPositions) {
-        // Layout с Web Worker для ускорения расчёта
+        // Layout без Web Worker (функции в конфигурации не сериализуются для Worker)
         graph.setLayout({ 
           type: 'dagre', 
           rankdir: 'TB', 
           nodesep: 60, 
           ranksep: 80,
-          enableWorker: true,  // Web Worker для параллельных вычислений
         } as any);
       }
       

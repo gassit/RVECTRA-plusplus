@@ -4,7 +4,7 @@
  * ============================================================================
  * 
  * Объединяет функционал:
- * - import-data.ts: layout, propagation, справочник кабелей
+ * - import-data.ts: propagation, справочник кабелей
  * - import-echo-data.ts: формат ЭХО, location, AVR колонки
  * - import-network.ts: АВР листы, ток/мощность, batch createMany
  * 
@@ -12,6 +12,8 @@
  * 1. Стандартный: колонки from/to + опционально state, connection, current, power, parent
  * 2. ЭХО формат: фиксированные позиции колонок (id, state, from, connection, to, protection, avr, avrState, location)
  * 3. АВР: отдельные листы AVR, AVR_Inputs, AVR_Outputs
+ * 
+ * Примечание: Расчёт позиций (layout) выполняется на frontend через AntV G6 dagre layout
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -339,121 +341,6 @@ function findExcelFile(): string | null {
   }
 
   return path.join(dir, files[0]);
-}
-
-// ============================================================================
-// РАСЧЁТ ПОЗИЦИЙ (layout)
-// ============================================================================
-
-async function calculateLayout(): Promise<void> {
-  console.log('\n=== РАСЧЁТ ПОЗИЦИЙ ===');
-
-  const elements = await prisma.element.findMany();
-  const connections = await prisma.connection.findMany();
-
-  console.log(`Элементов: ${elements.length}, связей: ${connections.length}`);
-
-  const elementMap = new Map<string, typeof elements[0]>();
-  const elementByDbId = new Map<string, typeof elements[0]>();
-
-  for (const el of elements) {
-    elementMap.set(el.elementId, el);
-    elementByDbId.set(el.id, el);
-  }
-
-  // Строим граф
-  const outgoing = new Map<string, string[]>();
-  const incoming = new Map<string, string[]>();
-
-  for (const conn of connections) {
-    const source = elementByDbId.get(conn.sourceId);
-    const target = elementByDbId.get(conn.targetId);
-    
-    if (source && target) {
-      if (!outgoing.has(source.elementId)) outgoing.set(source.elementId, []);
-      outgoing.get(source.elementId)!.push(target.elementId);
-      
-      if (!incoming.has(target.elementId)) incoming.set(target.elementId, []);
-      incoming.get(target.elementId)!.push(source.elementId);
-    }
-  }
-
-  // Параметры layout
-  const LEVEL_HEIGHT = 120;
-  const NODE_WIDTH = 80;
-  const NODE_GAP = 40;
-
-  function getLevel(el: typeof elements[0]): number {
-    switch (el.type.toLowerCase()) {
-      case 'source': return 0;
-      case 'junction': return 1;
-      case 'breaker': return 2;
-      case 'meter': return 2;
-      case 'bus': return 3;
-      case 'load': return 4;
-      case 'cabinet': return -1;
-      default: return 5;
-    }
-  }
-
-  const positions = new Map<string, { x: number; y: number }>();
-
-  // Размещаем SOURCE
-  const sources = elements.filter(el => el.type.toLowerCase() === 'source');
-  let sourceX = 100;
-
-  for (const source of sources) {
-    positions.set(source.id, { x: sourceX, y: 0 });
-    sourceX += NODE_WIDTH + NODE_GAP * 3;
-  }
-
-  // BFS для downstream
-  const queue: string[] = sources.map(s => s.elementId);
-  const visited = new Set<string>();
-
-  while (queue.length > 0) {
-    const currentId = queue.shift()!;
-    if (visited.has(currentId)) continue;
-    visited.add(currentId);
-
-    const currentEl = elementMap.get(currentId);
-    if (!currentEl) continue;
-
-    const currentPos = positions.get(currentEl.id);
-    if (!currentPos) continue;
-
-    const targets = outgoing.get(currentId) || [];
-    let offsetX = currentPos.x - ((targets.length - 1) * (NODE_WIDTH + NODE_GAP)) / 2;
-
-    for (const targetId of targets) {
-      const targetEl = elementMap.get(targetId);
-      if (!targetEl || positions.has(targetEl.id)) {
-        queue.push(targetId);
-        continue;
-      }
-
-      const targetLevel = getLevel(targetEl);
-      const y = targetLevel * LEVEL_HEIGHT;
-
-      positions.set(targetEl.id, { x: offsetX, y });
-      offsetX += NODE_WIDTH + NODE_GAP;
-      queue.push(targetId);
-    }
-  }
-
-  // Сохраняем позиции
-  let updated = 0;
-  for (const [id, pos] of positions) {
-    try {
-      await prisma.element.update({
-        where: { id },
-        data: { posX: pos.x, posY: pos.y }
-      });
-      updated++;
-    } catch {}
-  }
-
-  console.log(`Позиций назначено: ${updated}`);
 }
 
 // ============================================================================
@@ -908,11 +795,6 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   console.log('\n=== СПРАВОЧНИК КАБЕЛЕЙ ===');
   const cablesImported = await importCableReference(workbook);
   console.log(`   Импортировано: ${cablesImported}`);
-
-  // =========================================================================
-  // РАСЧЁТ ПОЗИЦИЙ
-  // =========================================================================
-  await calculateLayout();
 
   // =========================================================================
   // РАСПРОСТРАНЕНИЕ СОСТОЯНИЙ

@@ -136,6 +136,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
             },
             { type: 'zoom-canvas', enable: true, minZoom: 0.25, maxZoom: 3, sensitivity: 1 },
             { type: 'drag-element', enable: true },
+            { type: 'collapse-expand', enable: true },
           ],
           node: {
             type: (m: any) => getNodeShape(m.data?.nodeType || ''),
@@ -153,6 +154,21 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
           edge: {
             type: 'line',
             style: { stroke: '#9ca3af', lineWidth: 2, endArrow: true },
+          },
+          combo: {
+            type: 'rect',
+            style: {
+              fill: '#f0fdf4',
+              stroke: '#22c55e',
+              lineWidth: 2,
+              lineDash: [5, 5],
+              opacity: 0.3,
+              labelText: (m: any) => m.data?.label || '',
+              labelFontSize: 12,
+              labelFill: '#166534',
+              labelPosition: 'top-left',
+              padding: [30, 20, 20, 20],
+            },
           },
         });
 

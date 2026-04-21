@@ -18,8 +18,8 @@ import { PrismaClient } from '@prisma/client';
 import * as xlsx from 'xlsx';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { OperationalStatus } from '../types';
-import { propagateStates } from '../lib/services/state-propagation.service';
+import type { OperationalStatus } from '../types/index';
+import { propagateStates } from '../lib/services/state-propagation.service.js';
 
 const prisma = new PrismaClient();
 

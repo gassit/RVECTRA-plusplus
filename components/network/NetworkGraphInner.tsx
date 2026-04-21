@@ -103,6 +103,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
   const [zoom, setZoom] = useState(1);
   const [nodeCount, setNodeCount] = useState(0);
   const [edgeCount, setEdgeCount] = useState(0);
+  const [comboCount, setComboCount] = useState(0);
   const [graphReady, setGraphReady] = useState(false);
 
   // Initialize graph once on mount
@@ -240,11 +241,12 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
     const hasPositions = data.elements.some(e => e.posX != null);
 
     // Build nodes with combo assignment
+    // Cabinet элементы используются как combos, не как nodes
     const cabinetElements = data.elements.filter(e => e.type.toLowerCase() === 'cabinet');
     const cabinetMap = new Map(cabinetElements.map(c => [c.id, c]));
     
     const nodes: any[] = data.elements
-      .filter(e => e.type.toLowerCase() !== 'cabinet') // Exclude cabinet elements from nodes
+      .filter(e => e.type.toLowerCase() !== 'cabinet') // Исключаем cabinet из nodes
       .map(e => {
         const colors = getNodeColors(e.type, e.electricalStatus, e.operationalStatus, conflictIds.has(e.id));
         const size = getNodeSize(e.type);
@@ -261,7 +263,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
           },
         };
         
-        // Assign to combo if has parentId (cabinet)
+        // Привязываем к combo (cabinet) если есть parentId
         if (e.parentId && cabinetMap.has(e.parentId)) {
           node.combo = e.parentId;
         }
@@ -301,6 +303,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
     setNodeCount(nodes.length);
     setEdgeCount(edges.length);
+    setComboCount(combos.length);
 
     console.log('[G6] Nodes:', nodes.length, 'Edges:', edges.length, 'Combos:', combos.length);
 
@@ -421,7 +424,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
       {/* Status badge */}
       {nodeCount > 0 && (
         <div className="absolute top-2 left-2 z-10 px-3 py-1.5 bg-white/95 dark:bg-gray-800/95 rounded-lg shadow text-xs font-medium text-green-600">
-          ✓ {nodeCount} узлов, {edgeCount} связей
+          ✓ {nodeCount} узлов, {edgeCount} связей, {comboCount} групп
         </div>
       )}
 
@@ -454,7 +457,7 @@ export default function NetworkGraphInner({ data, isDark = false, onNodeClick }:
 
       {/* Gesture hint */}
       <div className="absolute bottom-2 right-2 z-10 px-2 py-1 bg-black/50 rounded text-xs text-white/70">
-        🖱️ Перетаскивание • 🔄 Колесо для зума
+        🖱️ Перетаскивание • 🔄 Колесо для зума • 📦 Двойной клик на группе
       </div>
 
       {/* Graph container */}

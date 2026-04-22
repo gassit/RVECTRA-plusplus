@@ -220,8 +220,8 @@ function extractCabinet(elementName: string, elementType: string): string | unde
 
   const candidates: string[] = [];
 
-  // Извлекаем из "N с.ш. CABINET_NAME"
-  const busMatch = elementName.match(/\d+\s*с\.ш\.\s*([^\s]+)/);
+  // Извлекаем из "N с.ш. CABINET_NAME" (останавливаемся на слеше - разделителе)
+  const busMatch = elementName.match(/\d+\s*с\.ш\.\s*([^\s/]+)/);
   if (busMatch) {
     candidates.push(busMatch[1]);
   }
@@ -661,8 +661,11 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   // =========================================================================
   console.log('\n=== ИЗВЛЕЧЕНИЕ CABINET ===');
 
-  // Извлекаем cabinet из имён элементов
+  // Извлекаем cabinet из имён элементов (только если parent НЕ задан явно)
   for (const [id, info] of elementsMap) {
+    // Пропускаем если parent уже задан в input - не создаём фиктивный cabinet
+    if (info.explicitParent) continue;
+    
     const cabinet = extractCabinet(info.name, info.type);
     if (cabinet && !elementsMap.has(cabinet)) {
       elementsMap.set(cabinet, { name: cabinet, type: 'cabinet' });

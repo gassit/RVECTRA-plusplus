@@ -29,7 +29,7 @@ import {
   X,
 } from 'lucide-react';
 
-import NetworkGraph from '@/components/NetworkGraph';
+import NetworkGraphG6 from '@/components/NetworkGraphG6';
 import ElementDetails from '@/components/ElementDetails';
 import ValidationPanel from '@/components/ValidationPanel';
 
@@ -388,7 +388,7 @@ export default function Home() {
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <NetworkGraph
+            <NetworkGraphG6
               data={filteredData}
               onNodeClick={handleNodeClick}
               onEdgeClick={handleEdgeClick}

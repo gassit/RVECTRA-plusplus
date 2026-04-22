@@ -135,6 +135,8 @@ function detectElementType(name: string): string {
   if (/счётчик/i.test(name) || /счетчик/i.test(name)) return 'meter';
   // ART-, PQRS - счётчики типа ART-, PQRS-
   if (/^art-/i.test(name) || /^pqrs/i.test(name)) return 'meter';
+  // Учет - узлы учета (Учет Pi, Учет Pqs, Учет Piqs и т.д.)
+  if (/^учет/i.test(name)) return 'meter';
 
   // ========== BUS — Сборные шины (проверяем ПОСЛЕ QF/QS) ==========
   if (!/точрасп/i.test(name)) {

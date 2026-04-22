@@ -232,7 +232,7 @@ export default function Home() {
         <div className="px-4 py-2 flex items-center gap-4">
           {/* Logo */}
           <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">
-            RVectrA
+            RVectrA+
           </h1>
 
           {/* Search */}

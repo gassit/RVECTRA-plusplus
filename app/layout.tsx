@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RVectrA",
+  title: "RVectrA+",
   description: "Система моделирования электрической сети",
 };
 

@@ -14,6 +14,7 @@ const counters = {
   breaker: 0,
   bus: 0,
   meter: 0,
+  junction: 0,
   // Устройства
   deviceSource: 0,
   deviceBreaker: 0,
@@ -36,6 +37,7 @@ export function resetCounters(): void {
   counters.breaker = 0;
   counters.bus = 0;
   counters.meter = 0;
+  counters.junction = 0;
   counters.deviceSource = 0;
   counters.deviceBreaker = 0;
   counters.deviceLoad = 0;
@@ -66,6 +68,7 @@ export function generateElementId(
     BUS: 'BUS',
     METER: 'MTR',
     BREAKER: 'QF',
+    JUNCTION: 'JUN',
   };
 
   const elementPrefix = prefixes[type];
@@ -229,6 +232,7 @@ export function generateElementName(type: ElementType, customName?: string): str
     BUS: `Шина ${counters.bus}`,
     METER: `Счётчик ${counters.meter}`,
     BREAKER: `Выключатель ${counters.breaker}`,
+    JUNCTION: `Узел ${counters.junction}`,
   };
   
   return names[type];

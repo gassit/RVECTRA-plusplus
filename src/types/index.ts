@@ -136,6 +136,8 @@ export interface NetworkConnection {
 // Статус элемента
 export type ElementStatus = 'ON' | 'OFF' | 'UNKNOWN';
 export type ElementLifeStatus = 'LIVE' | 'DEAD' | 'UNKNOWN';
+export type OperationalStatus = 'ON' | 'OFF';
+export type ElectricalStatus = 'LIVE' | 'DEAD' | 'UNKNOWN';
 
 // Узел графа
 export interface GraphNode {

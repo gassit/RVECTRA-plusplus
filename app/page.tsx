@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import NetworkGraph from '@/components/network/NetworkGraph';
+import NetworkGraphG6 from '@/components/NetworkGraphG6';
 import { useTheme } from '@/components/providers/ThemeProvider';
 import type { ElectricalStatus, OperationalStatus } from '@/types';
 
@@ -445,9 +445,28 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <NetworkGraph
-              data={graphData}
-              isDark={theme === 'dark'}
+            <NetworkGraphG6
+              data={filteredData ? {
+                nodes: filteredData.elements.map(e => ({
+                  id: e.id,
+                  type: e.type.toUpperCase() as any,
+                  name: e.name,
+                  posX: e.posX || 0,
+                  posY: e.posY || 0,
+                  hasIssues: false,
+                  criticalIssues: 0,
+                  status: e.operationalStatus as any,
+                  lifeStatus: e.electricalStatus as any,
+                })),
+                edges: filteredData.connections.map(c => ({
+                  id: c.id,
+                  source: c.sourceId,
+                  target: c.targetId,
+                  type: 'CABLE' as const,
+                  status: c.operationalStatus as any,
+                  lifeStatus: c.electricalStatus as any,
+                }))
+              } : null}
               onNodeClick={handleNodeClick}
             />
           )}

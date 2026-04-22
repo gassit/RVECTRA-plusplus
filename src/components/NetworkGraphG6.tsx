@@ -272,10 +272,10 @@ export default function NetworkGraphG6({
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      data: edge,
+      data: edge as any,
     }));
 
-    graph.setData({ nodes, edges });
+    graph.setData({ nodes, edges: edges as any });
     graph.render();
   }, [data]);
 
@@ -284,8 +284,9 @@ export default function NetworkGraphG6({
     const graph = graphRef.current;
     if (!graph) return;
 
-    // Снимаем выделение со всех
-    graph.getNodes().forEach(node => {
+    // Снимаем выделение со всех узлов через getData
+    const nodeData = graph.getData();
+    nodeData.nodes?.forEach((node: any) => {
       graph.setElementState(node.id, 'selected', false);
     });
 
@@ -300,8 +301,9 @@ export default function NetworkGraphG6({
     const graph = graphRef.current;
     if (!graph) return;
 
-    // Снимаем выделение со всех
-    graph.getEdges().forEach(edge => {
+    // Снимаем выделение со всех ребер
+    const edgeData = graph.getData();
+    edgeData.edges?.forEach((edge: any) => {
       graph.setElementState(edge.id, 'selected', false);
     });
 

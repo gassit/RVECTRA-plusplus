@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import * as xlsx from 'xlsx';
-import { propagateStates } from '@/lib/services/state-propagation.service';
 import type { OperationalStatus } from '@/types';
 
 /**
@@ -176,16 +175,10 @@ export async function POST(request: Request) {
       }
     }
 
-    // После импорта распространяем состояния
-    console.log('[import] Запуск propagateStates...');
-    const propagationResult = await propagateStates();
-    console.log('[import] propagateStates завершен:', propagationResult);
-
     return NextResponse.json({
       imported,
       errors,
       total: imported + errors,
-      propagation: propagationResult
     });
   } catch (error) {
     console.error('Import error:', error);

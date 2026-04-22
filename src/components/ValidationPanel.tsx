@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   AlertTriangle,
   AlertCircle,
@@ -27,7 +26,7 @@ interface ValidationPanelProps {
   compact?: boolean;
 }
 
-const severityConfig = {
+const severityConfig: Record<string, { icon: any; bg: string; border: string; text: string; badge: string; label: string }> = {
   CRITICAL: { 
     icon: XCircle, 
     bg: 'bg-red-50 dark:bg-red-900/30', 
@@ -51,6 +50,14 @@ const severityConfig = {
     text: 'text-yellow-700 dark:text-yellow-400',
     badge: 'bg-yellow-500',
     label: 'ВНИМАНИЕ' 
+  },
+  PASS: { 
+    icon: CheckCircle, 
+    bg: 'bg-green-50 dark:bg-green-900/30', 
+    border: 'border-green-200 dark:border-green-800',
+    text: 'text-green-700 dark:text-green-400',
+    badge: 'bg-green-500',
+    label: 'ОК' 
   },
 };
 

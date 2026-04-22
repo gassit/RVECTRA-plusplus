@@ -758,6 +758,95 @@ export default function NetworkGraph({
                 const isLive = node.lifeStatus === 'LIVE';
                 const hasCritical = node.criticalIssues > 0;
 
+                // Специальный рендеринг для CABINET (свернутый вид)
+                if (nodeType === 'cabinet') {
+                  const CABINET_WIDTH = 180;
+                  const CABINET_HEIGHT = 40;
+                  
+                  return (
+                    <g
+                      key={node.id}
+                      transform={`translate(${x}, ${y})`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNodeClick?.(node.id);
+                      }}
+                      onMouseEnter={() => setHoveredNode(node.id)}
+                      onMouseLeave={() => setHoveredNode(null)}
+                      style={{ cursor: 'pointer' }}
+                      filter={isHovered || isSelected ? 'url(#shadow)' : undefined}
+                    >
+                      {/* Тень под cabinet */}
+                      <rect
+                        x={2}
+                        y={3}
+                        width={CABINET_WIDTH}
+                        height={CABINET_HEIGHT}
+                        rx={4}
+                        fill="#000"
+                        opacity={isDark ? 0.3 : 0.1}
+                      />
+
+                      {/* Основной фон cabinet - горизонтальный прямоугольник */}
+                      <rect
+                        width={CABINET_WIDTH}
+                        height={CABINET_HEIGHT}
+                        rx={4}
+                        fill={nodeBgColor}
+                        stroke={isSelected ? '#3b82f6' : hasCritical ? '#ef4444' : '#B87333'}
+                        strokeWidth={isSelected || hasCritical ? 2 : 1.5}
+                        className="transition-all duration-200"
+                      />
+
+                      {/* Подпись Cabinet - левый верхний угол внутри контура, черный жирный 17 */}
+                      <text
+                        x={8}
+                        y={25}
+                        fontSize={17}
+                        fontWeight="bold"
+                        fill="#000000"
+                        opacity={isOn ? 1 : 0.5}
+                      >
+                        {node.name.length > 14 ? node.name.slice(0, 14) + '...' : node.name}
+                      </text>
+
+                      {/* Статус LIVE/DEAD справа */}
+                      <g transform="translate(140, 14)">
+                        <circle
+                          r={5}
+                          cx={5}
+                          cy={5}
+                          fill={isLive ? 'url(#liveGradient)' : '#6b7280'}
+                        />
+                        <text
+                          x={14}
+                          y={8}
+                          fontSize={7}
+                          fontWeight="bold"
+                          fill={isLive ? '#22c55e' : mutedTextColor}
+                        >
+                          {isLive ? 'LIVE' : 'DEAD'}
+                        </text>
+                      </g>
+
+                      {/* Подсветка при наведении */}
+                      {isHovered && (
+                        <rect
+                          x={-2}
+                          y={-2}
+                          width={CABINET_WIDTH + 4}
+                          height={CABINET_HEIGHT + 4}
+                          rx={6}
+                          fill="none"
+                          stroke={edgeColor}
+                          strokeWidth={2}
+                          opacity={0.5}
+                        />
+                      )}
+                    </g>
+                  );
+                }
+
                 return (
                   <g
                     key={node.id}

@@ -360,49 +360,81 @@ export default function NetworkGraphG6({
   // Выделение выбранного узла
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph || (graph as any).destroyed) return;
+    if (!graph) return;
+
+    // Проверка что граф не уничтожен и готов к работе
+    if ((graph as any).destroyed || !(graph as any).rendered) return;
 
     try {
       // Снимаем выделение со всех узлов через getData
       const nodeData = graph.getData();
-      nodeData.nodes?.forEach((node: any) => {
-        graph.setElementState(node.id, 'selected', false);
+      if (!nodeData || !nodeData.nodes) return;
+
+      nodeData.nodes.forEach((node: any) => {
+        if (node?.id && !(graph as any).destroyed) {
+          try {
+            graph.setElementState(node.id, 'selected', false);
+          } catch {
+            // Skip if element doesn't exist
+          }
+        }
       });
 
       // Выделяем выбранный
-      if (selectedNodeId) {
-        graph.setElementState(selectedNodeId, 'selected', true);
+      if (selectedNodeId && !(graph as any).destroyed) {
+        try {
+          graph.setElementState(selectedNodeId, 'selected', true);
+        } catch {
+          // Skip if element doesn't exist
+        }
       }
     } catch (e) {
-      // Graph may be destroyed
+      // Graph may be destroyed or data unavailable
     }
   }, [selectedNodeId]);
 
   // Выделение выбранного ребра
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph || (graph as any).destroyed) return;
+    if (!graph) return;
+
+    // Проверка что граф не уничтожен и готов к работе
+    if ((graph as any).destroyed || !(graph as any).rendered) return;
 
     try {
       // Снимаем выделение со всех ребер
       const edgeData = graph.getData();
-      edgeData.edges?.forEach((edge: any) => {
-        graph.setElementState(edge.id, 'selected', false);
+      if (!edgeData || !edgeData.edges) return;
+
+      edgeData.edges.forEach((edge: any) => {
+        if (edge?.id && !(graph as any).destroyed) {
+          try {
+            graph.setElementState(edge.id, 'selected', false);
+          } catch {
+            // Skip if element doesn't exist
+          }
+        }
       });
 
       // Выделяем выбранный
-      if (selectedEdgeId) {
-        graph.setElementState(selectedEdgeId, 'selected', true);
+      if (selectedEdgeId && !(graph as any).destroyed) {
+        try {
+          graph.setElementState(selectedEdgeId, 'selected', true);
+        } catch {
+          // Skip if element doesn't exist
+        }
       }
     } catch (e) {
-      // Graph may be destroyed
+      // Graph may be destroyed or data unavailable
     }
   }, [selectedEdgeId]);
 
   // Внешний zoom
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph || !externalZoom || (graph as any).destroyed) return;
+    if (!graph || !externalZoom) return;
+
+    if ((graph as any).destroyed || !(graph as any).rendered) return;
 
     try {
       graph.zoomTo(externalZoom);
@@ -413,8 +445,15 @@ export default function NetworkGraphG6({
 
   // Сброс состояния связи при выходе из режима
   useEffect(() => {
-    if (!connectionMode && pendingConnectionStart && graphRef.current) {
-      graphRef.current.setElementState(pendingConnectionStart, 'connectionSource', false);
+    const graph = graphRef.current;
+    if (!connectionMode && pendingConnectionStart && graph) {
+      if (!(graph as any).destroyed) {
+        try {
+          graph.setElementState(pendingConnectionStart, 'connectionSource', false);
+        } catch {
+          // Element may not exist
+        }
+      }
       setPendingConnectionStart(null);
     }
   }, [connectionMode]);

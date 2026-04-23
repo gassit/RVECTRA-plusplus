@@ -257,68 +257,84 @@ export default function NetworkGraphG6({
   // Обновление данных
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph || !data) return;
+    if (!graph || !data || (graph as any).destroyed) return;
 
-    // Преобразуем данные в формат G6
-    const nodes = data.nodes.map(node => ({
-      id: node.id,
-      data: {
-        ...node,
-        type: node.type.toLowerCase(),
-      },
-    }));
+    try {
+      // Преобразуем данные в формат G6
+      const nodes = data.nodes.map(node => ({
+        id: node.id,
+        data: {
+          ...node,
+          type: node.type.toLowerCase(),
+        },
+      }));
 
-    const edges = data.edges.map(edge => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      data: edge as any,
-    }));
+      const edges = data.edges.map(edge => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        data: edge as any,
+      }));
 
-    graph.setData({ nodes, edges: edges as any });
-    graph.render();
+      graph.setData({ nodes, edges: edges as any });
+      graph.render();
+    } catch (e) {
+      // Graph may be destroyed
+    }
   }, [data]);
 
   // Выделение выбранного узла
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph) return;
+    if (!graph || (graph as any).destroyed) return;
 
-    // Снимаем выделение со всех узлов через getData
-    const nodeData = graph.getData();
-    nodeData.nodes?.forEach((node: any) => {
-      graph.setElementState(node.id, 'selected', false);
-    });
+    try {
+      // Снимаем выделение со всех узлов через getData
+      const nodeData = graph.getData();
+      nodeData.nodes?.forEach((node: any) => {
+        graph.setElementState(node.id, 'selected', false);
+      });
 
-    // Выделяем выбранный
-    if (selectedNodeId) {
-      graph.setElementState(selectedNodeId, 'selected', true);
+      // Выделяем выбранный
+      if (selectedNodeId) {
+        graph.setElementState(selectedNodeId, 'selected', true);
+      }
+    } catch (e) {
+      // Graph may be destroyed
     }
   }, [selectedNodeId]);
 
   // Выделение выбранного ребра
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph) return;
+    if (!graph || (graph as any).destroyed) return;
 
-    // Снимаем выделение со всех ребер
-    const edgeData = graph.getData();
-    edgeData.edges?.forEach((edge: any) => {
-      graph.setElementState(edge.id, 'selected', false);
-    });
+    try {
+      // Снимаем выделение со всех ребер
+      const edgeData = graph.getData();
+      edgeData.edges?.forEach((edge: any) => {
+        graph.setElementState(edge.id, 'selected', false);
+      });
 
-    // Выделяем выбранный
-    if (selectedEdgeId) {
-      graph.setElementState(selectedEdgeId, 'selected', true);
+      // Выделяем выбранный
+      if (selectedEdgeId) {
+        graph.setElementState(selectedEdgeId, 'selected', true);
+      }
+    } catch (e) {
+      // Graph may be destroyed
     }
   }, [selectedEdgeId]);
 
   // Внешний zoom
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph || !externalZoom) return;
+    if (!graph || !externalZoom || (graph as any).destroyed) return;
 
-    graph.zoomTo(externalZoom);
+    try {
+      graph.zoomTo(externalZoom);
+    } catch (e) {
+      // Graph may be destroyed
+    }
   }, [externalZoom]);
 
   return (

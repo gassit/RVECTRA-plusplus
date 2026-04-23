@@ -66,7 +66,30 @@ export default function NetworkGraphG6({
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [pendingConnectionStart, setPendingConnectionStart] = useState<string | null>(null);
 
-  // Инициализация графа
+  // Refs для актуальных значений режимов (чтобы не пересоздавать граф)
+  const editModeRef = useRef(editMode);
+  const connectionModeRef = useRef(connectionMode);
+  const selectedElementTypeRef = useRef(selectedElementType);
+  const pendingConnectionRef = useRef<string | null>(null);
+
+  // Обновляем refs при изменении props
+  useEffect(() => {
+    editModeRef.current = editMode;
+  }, [editMode]);
+
+  useEffect(() => {
+    connectionModeRef.current = connectionMode;
+  }, [connectionMode]);
+
+  useEffect(() => {
+    selectedElementTypeRef.current = selectedElementType;
+  }, [selectedElementType]);
+
+  useEffect(() => {
+    pendingConnectionRef.current = pendingConnectionStart;
+  }, [pendingConnectionStart]);
+
+  // Инициализация графа (только один раз)
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -93,10 +116,10 @@ export default function NetworkGraphG6({
           type: 'collapse-expand',
           trigger: 'dblclick',
         },
-        // Drag element только в режиме редактирования
+        // Drag element - включаем всегда, но управляем через enable
         {
           type: 'drag-element',
-          enable: () => editMode && !connectionMode,
+          enable: () => editModeRef.current && !connectionModeRef.current,
         },
       ],
       layout: {
@@ -130,7 +153,7 @@ export default function NetworkGraphG6({
           shadowBlur: 10,
           shadowOffsetX: 0,
           shadowOffsetY: 4,
-          cursor: editMode ? 'move' : 'pointer',
+          cursor: 'pointer',
           // Основной текст - название
           labelText: (d: any) => {
             const name = d.data?.name || d.id;
@@ -235,17 +258,28 @@ export default function NetworkGraphG6({
     // Обработчики событий
     graph.on('node:click', (evt: any) => {
       const nodeId = evt.target.id;
+      const graph = graphRef.current;
+      if (!graph || (graph as any).destroyed) return;
 
-      // В режиме создания связи
-      if (connectionMode) {
-        if (!pendingConnectionStart) {
+      // В режиме создания связи - используем refs
+      if (connectionModeRef.current) {
+        const pending = pendingConnectionRef.current;
+        if (!pending) {
           // Начинаем связь
           setPendingConnectionStart(nodeId);
-          graph.setElementState(nodeId, 'connectionSource', true);
-        } else if (pendingConnectionStart !== nodeId) {
+          try {
+            graph.setElementState(nodeId, 'connectionSource', true);
+          } catch (e) {
+            // Element may not exist
+          }
+        } else if (pending !== nodeId) {
           // Завершаем связь
-          onConnectionCreated?.(pendingConnectionStart, nodeId);
-          graph.setElementState(pendingConnectionStart, 'connectionSource', false);
+          onConnectionCreated?.(pending, nodeId);
+          try {
+            graph.setElementState(pending, 'connectionSource', false);
+          } catch (e) {
+            // Element may not exist
+          }
           setPendingConnectionStart(null);
         }
         return;
@@ -256,24 +290,46 @@ export default function NetworkGraphG6({
 
     graph.on('node:pointerenter', (evt: any) => {
       const nodeId = evt.target.id;
+      const graph = graphRef.current;
+      if (!graph || (graph as any).destroyed) return;
+
       const nodeData = data?.nodes.find(n => n.id === nodeId);
       setHoveredNode(nodeData || null);
 
       // В режиме связи подсвечиваем потенциальную цель
-      if (connectionMode && pendingConnectionStart && pendingConnectionStart !== nodeId) {
-        graph.setElementState(nodeId, 'connectionTarget', true);
+      if (connectionModeRef.current && pendingConnectionRef.current && pendingConnectionRef.current !== nodeId) {
+        try {
+          graph.setElementState(nodeId, 'connectionTarget', true);
+        } catch (e) {
+          // Element may not exist
+        }
       } else {
-        graph.setElementState(nodeId, 'hover', true);
+        try {
+          graph.setElementState(nodeId, 'hover', true);
+        } catch (e) {
+          // Element may not exist
+        }
       }
     });
 
     graph.on('node:pointerleave', (evt: any) => {
       setHoveredNode(null);
       const nodeId = evt.target.id;
-      if (connectionMode && pendingConnectionStart) {
-        graph.setElementState(nodeId, 'connectionTarget', false);
+      const graph = graphRef.current;
+      if (!graph || (graph as any).destroyed) return;
+
+      if (connectionModeRef.current && pendingConnectionRef.current) {
+        try {
+          graph.setElementState(nodeId, 'connectionTarget', false);
+        } catch (e) {
+          // Element may not exist
+        }
       } else {
-        graph.setElementState(nodeId, 'hover', false);
+        try {
+          graph.setElementState(nodeId, 'hover', false);
+        } catch (e) {
+          // Element may not exist
+        }
       }
     });
 
@@ -284,14 +340,21 @@ export default function NetworkGraphG6({
 
     // Клик по холсту - для добавления элемента
     graph.on('canvas:click', (evt: any) => {
+      const graph = graphRef.current;
+      if (!graph || (graph as any).destroyed) return;
+
       // Отмена режима связи при клике на пустое место
-      if (connectionMode && pendingConnectionStart) {
-        graph.setElementState(pendingConnectionStart, 'connectionSource', false);
+      if (connectionModeRef.current && pendingConnectionRef.current) {
+        try {
+          graph.setElementState(pendingConnectionRef.current, 'connectionSource', false);
+        } catch (e) {
+          // Element may not exist
+        }
         setPendingConnectionStart(null);
         return;
       }
 
-      if (editMode && selectedElementType && onCanvasClick) {
+      if (editModeRef.current && selectedElementTypeRef.current && onCanvasClick) {
         // Получаем координаты клика относительно холста
         const { x, y } = evt;
         onCanvasClick(x, y);
@@ -302,7 +365,7 @@ export default function NetworkGraphG6({
 
     // Событие окончания перетаскивания узла
     graph.on('node:dragend', (evt: any) => {
-      if (editMode && onNodeDrop) {
+      if (editModeRef.current && onNodeDrop) {
         const nodeId = evt.target.id;
         const { x, y } = evt;
         onNodeDrop(nodeId, x, y);
@@ -311,22 +374,32 @@ export default function NetworkGraphG6({
 
     // Zoom событие
     graph.on('viewport:zoom', () => {
+      const graph = graphRef.current;
+      if (!graph || (graph as any).destroyed) return;
       const zoom = graph.getZoom();
       onZoomChange?.(zoom);
     });
 
     // Респонсив
     const resizeObserver = new ResizeObserver((entries) => {
+      const graph = graphRef.current;
+      if (!graph || (graph as any).destroyed) return;
       const { width: newWidth, height: newHeight } = entries[0].contentRect;
-      graph.resize(newWidth, newHeight);
+      try {
+        graph.resize(newWidth, newHeight);
+      } catch (e) {
+        // Graph may be destroyed
+      }
     });
     resizeObserver.observe(container);
 
     return () => {
       resizeObserver.disconnect();
-      graph.destroy();
+      if (graph && !(graph as any).destroyed) {
+        graph.destroy();
+      }
     };
-  }, [editMode, connectionMode, selectedElementType]);
+  }, []); // Пустой массив - граф создаётся только один раз!
 
   // Обновление данных
   useEffect(() => {
@@ -456,7 +529,7 @@ export default function NetworkGraphG6({
       }
       setPendingConnectionStart(null);
     }
-  }, [connectionMode]);
+  }, [connectionMode, pendingConnectionStart]);
 
   return (
     <div className="h-full w-full bg-slate-100 dark:bg-slate-950 relative">

@@ -72,6 +72,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body: CreateElementRequest = await request.json();
+    console.log('POST /api/elements - Creating element:', body);
     const {
       type,
       name,
@@ -91,6 +92,7 @@ export async function POST(request: NextRequest) {
 
     // Валидация
     if (!type || !name) {
+      console.log('Validation failed: missing type or name');
       return NextResponse.json(
         { success: false, error: 'Тип и название обязательны' },
         { status: 400 }
@@ -217,6 +219,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log('Element created successfully:', { id: element.id, elementId, name, type });
+
     return NextResponse.json({
       success: true,
       data: createdElement,
@@ -225,7 +229,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating element:', error);
     return NextResponse.json(
-      { success: false, error: 'Ошибка при создании элемента' },
+      { success: false, error: `Ошибка при создании элемента: ${error instanceof Error ? error.message : 'Unknown error'}` },
       { status: 500 }
     );
   }

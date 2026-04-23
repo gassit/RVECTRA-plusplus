@@ -150,20 +150,25 @@ export default function Home() {
   // Добавление элемента
   const handleAddElement = async (data: AddElementData) => {
     try {
+      console.log('Creating element with data:', data);
       const response = await fetch('/api/elements', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...data, posX: pendingElementPos.x, posY: pendingElementPos.y }),
       });
-      if (response.ok) {
+      const result = await response.json();
+      console.log('Element creation response:', result);
+      if (response.ok && result.success) {
         setShowAddElementModal(false);
         setSelectedElementType(null);
         await refreshData();
       } else {
-        const err = await response.json();
-        alert(err.error || 'Ошибка при создании элемента');
+        alert(result.error || 'Ошибка при создании элемента');
       }
-    } catch (err) { alert('Ошибка при создании элемента'); }
+    } catch (err) {
+      console.error('Error creating element:', err);
+      alert('Ошибка при создании элемента');
+    }
   };
 
   // Создание связи
@@ -175,24 +180,32 @@ export default function Home() {
 
   // Добавление связи
   const handleAddConnection = async (data: ConnectionData) => {
-    if (!connectionSource || !connectionTarget) return;
+    if (!connectionSource || !connectionTarget) {
+      console.error('Missing connection source or target');
+      return;
+    }
     try {
+      console.log('Creating connection:', { sourceId: connectionSource, targetId: connectionTarget, ...data });
       const response = await fetch('/api/connections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourceId: connectionSource, targetId: connectionTarget, ...data }),
       });
-      if (response.ok) {
+      const result = await response.json();
+      console.log('Connection creation response:', result);
+      if (response.ok && result.success) {
         setShowAddConnectionModal(false);
         setConnectionMode(false);
         setConnectionSource(null);
         setConnectionTarget(null);
         await refreshData();
       } else {
-        const err = await response.json();
-        alert(err.error || 'Ошибка при создании связи');
+        alert(result.error || 'Ошибка при создании связи');
       }
-    } catch (err) { alert('Ошибка при создании связи'); }
+    } catch (err) {
+      console.error('Error creating connection:', err);
+      alert('Ошибка при создании связи');
+    }
   };
 
   // Перемещение узла

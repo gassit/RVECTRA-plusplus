@@ -61,8 +61,11 @@ export async function POST(request: NextRequest) {
     const body: CreateConnectionRequest = await request.json();
     const { sourceId, targetId, wireType, wireSize, material, length, core } = body;
 
+    console.log('POST /api/connections - Creating connection:', { sourceId, targetId, wireType, wireSize, material, length });
+
     // Валидация
     if (!sourceId || !targetId) {
+      console.log('Validation failed: missing sourceId or targetId');
       return NextResponse.json(
         { success: false, error: 'sourceId и targetId обязательны' },
         { status: 400 }
@@ -77,9 +80,12 @@ export async function POST(request: NextRequest) {
       where: { id: targetId },
     });
 
+    console.log('Source element:', sourceElement ? sourceElement.id : 'NOT FOUND');
+    console.log('Target element:', targetElement ? targetElement.id : 'NOT FOUND');
+
     if (!sourceElement || !targetElement) {
       return NextResponse.json(
-        { success: false, error: 'Один или оба элемента не найдены' },
+        { success: false, error: `Элементы не найдены: source=${!!sourceElement}, target=${!!targetElement}` },
         { status: 404 }
       );
     }
@@ -140,6 +146,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log('Connection created successfully:', { id: connection.id, sourceId, targetId });
+
     return NextResponse.json({
       success: true,
       data: connection,
@@ -148,7 +156,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating connection:', error);
     return NextResponse.json(
-      { success: false, error: 'Ошибка при создании связи' },
+      { success: false, error: `Ошибка при создании связи: ${error instanceof Error ? error.message : 'Unknown error'}` },
       { status: 500 }
     );
   }

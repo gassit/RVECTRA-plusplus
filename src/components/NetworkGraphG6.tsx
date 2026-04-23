@@ -404,7 +404,10 @@ export default function NetworkGraphG6({
   // Обновление данных
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph || !data || (graph as any).destroyed) return;
+    if (!graph || !data) return;
+
+    // Проверка что граф не уничтожен
+    if ((graph as any).destroyed) return;
 
     try {
       // Преобразуем данные в формат G6
@@ -424,9 +427,13 @@ export default function NetworkGraphG6({
       }));
 
       graph.setData({ nodes, edges: edges as any });
-      graph.render();
+
+      // Только первый рендер, потом данные обновляются через setData
+      if (!(graph as any).rendered) {
+        graph.render();
+      }
     } catch (e) {
-      // Graph may be destroyed
+      console.error('Graph update error:', e);
     }
   }, [data]);
 

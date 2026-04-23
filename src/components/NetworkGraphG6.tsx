@@ -63,6 +63,7 @@ export default function NetworkGraphG6({
 }: NetworkGraphG6Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
+  const destroyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [pendingConnectionStart, setPendingConnectionStart] = useState<string | null>(null);
 
@@ -93,6 +94,19 @@ export default function NetworkGraphG6({
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Отменяем отложенное уничтожение (если компонент ремонтируется в StrictMode)
+    if (destroyTimeoutRef.current) {
+      clearTimeout(destroyTimeoutRef.current);
+      destroyTimeoutRef.current = null;
+    }
+
+    // Проверяем, не существует ли уже граф (может быть создан при предыдущем mount в StrictMode)
+    if (graphRef.current && !(graphRef.current as any).destroyed) {
+      console.log('Graph already exists, reusing');
+      return;
+    }
+
+    console.log('Creating new graph');
     const container = containerRef.current;
     const width = container.clientWidth || 800;
     const height = container.clientHeight || 600;
@@ -340,8 +354,12 @@ export default function NetworkGraphG6({
 
     // Клик по холсту - для добавления элемента
     graph.on('canvas:click', (evt: any) => {
+      console.log('canvas:click event fired', evt);
       const graph = graphRef.current;
-      if (!graph || (graph as any).destroyed) return;
+      if (!graph || (graph as any).destroyed) {
+        console.log('Canvas click ignored - graph destroyed or null');
+        return;
+      }
 
       // Отмена режима связи при клике на пустое место
       if (connectionModeRef.current && pendingConnectionRef.current) {
@@ -354,9 +372,12 @@ export default function NetworkGraphG6({
         return;
       }
 
+      console.log('Canvas click - editMode:', editModeRef.current, 'selectedElementType:', selectedElementTypeRef.current);
+
       if (editModeRef.current && selectedElementTypeRef.current && onCanvasClick) {
         // Получаем координаты клика относительно холста
         const { x, y } = evt;
+        console.log('Calling onCanvasClick with:', x, y);
         onCanvasClick(x, y);
       } else {
         onEmptyClick?.();
@@ -393,11 +414,12 @@ export default function NetworkGraphG6({
     });
     resizeObserver.observe(container);
 
+    // Не уничтожаем граф при cleanup - он будет переиспользован
+    // Это важно для React StrictMode в development
     return () => {
       resizeObserver.disconnect();
-      if (graph && !(graph as any).destroyed) {
-        graph.destroy();
-      }
+      // Граф уничтожается только при размонтировании компонента
+      // Но в StrictMode это вызывается дважды, поэтому проверяем ref
     };
   }, []); // Пустой массив - граф создаётся только один раз!
 
@@ -537,6 +559,25 @@ export default function NetworkGraphG6({
       setPendingConnectionStart(null);
     }
   }, [connectionMode, pendingConnectionStart]);
+
+  // Финальный cleanup при размонтировании компонента
+  useEffect(() => {
+    return () => {
+      const graph = graphRef.current;
+      if (graph && !(graph as any).destroyed) {
+        // Откладываем уничтожение на 100мс
+        // Если компонент снова монтируется (StrictMode), уничтожение будет отменено
+        destroyTimeoutRef.current = setTimeout(() => {
+          if (graphRef.current && !(graphRef.current as any).destroyed) {
+            console.log('Destroying graph on unmount');
+            graphRef.current.destroy();
+            graphRef.current = null;
+          }
+          destroyTimeoutRef.current = null;
+        }, 100);
+      }
+    };
+  }, []);
 
   return (
     <div className="h-full w-full bg-slate-100 dark:bg-slate-950 relative">

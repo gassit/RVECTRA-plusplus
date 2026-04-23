@@ -142,9 +142,14 @@ export default function Home() {
 
   // Клик по холсту
   const handleCanvasClick = (x: number, y: number) => {
-    if (!editMode || !selectedElementType) return;
+    console.log('handleCanvasClick called:', { x, y, editMode, selectedElementType });
+    if (!editMode || !selectedElementType) {
+      console.log('Canvas click ignored - editMode or selectedElementType is null');
+      return;
+    }
     setPendingElementPos({ x, y });
     setShowAddElementModal(true);
+    console.log('Opening AddElementModal');
   };
 
   // Добавление элемента

@@ -81,6 +81,19 @@ export default function Home() {
   const [selectedElementType, setSelectedElementType] = useState<ElementType | null>(null);
   const [connectionMode, setConnectionMode] = useState(false);
 
+  // Refs для надёжной передачи в callbacks
+  const editModeRef = useRef(editMode);
+  const selectedElementTypeRef = useRef(selectedElementType);
+
+  // Синхронизация refs
+  useEffect(() => {
+    editModeRef.current = editMode;
+  }, [editMode]);
+
+  useEffect(() => {
+    selectedElementTypeRef.current = selectedElementType;
+  }, [selectedElementType]);
+
   // Модальные окна
   const [showAddElementModal, setShowAddElementModal] = useState(false);
   const [showAddConnectionModal, setShowAddConnectionModal] = useState(false);
@@ -142,8 +155,8 @@ export default function Home() {
 
   // Клик по холсту
   const handleCanvasClick = (x: number, y: number) => {
-    console.log('handleCanvasClick called:', { x, y, editMode, selectedElementType });
-    if (!editMode || !selectedElementType) {
+    console.log('handleCanvasClick called:', { x, y, editMode: editModeRef.current, selectedElementType: selectedElementTypeRef.current });
+    if (!editModeRef.current || !selectedElementTypeRef.current) {
       console.log('Canvas click ignored - editMode or selectedElementType is null');
       return;
     }

@@ -354,12 +354,8 @@ export default function NetworkGraphG6({
 
     // Клик по холсту - для добавления элемента
     graph.on('canvas:click', (evt: any) => {
-      console.log('canvas:click event fired', evt);
       const graph = graphRef.current;
-      if (!graph || (graph as any).destroyed) {
-        console.log('Canvas click ignored - graph destroyed or null');
-        return;
-      }
+      if (!graph || (graph as any).destroyed) return;
 
       // Отмена режима связи при клике на пустое место
       if (connectionModeRef.current && pendingConnectionRef.current) {
@@ -372,12 +368,39 @@ export default function NetworkGraphG6({
         return;
       }
 
-      console.log('Canvas click - editMode:', editModeRef.current, 'selectedElementType:', selectedElementTypeRef.current);
-
       if (editModeRef.current && selectedElementTypeRef.current && onCanvasClick) {
-        // Получаем координаты клика относительно холста
-        const { x, y } = evt;
-        console.log('Calling onCanvasClick with:', x, y);
+        // Получаем координаты клика - пробуем разные варианты структуры события G6 v5
+        let x = 0, y = 0;
+
+        // Вариант 1: прямые свойства
+        if (evt.x !== undefined && evt.y !== undefined) {
+          x = evt.x;
+          y = evt.y;
+        }
+        // Вариант 2: canvas свойства
+        else if (evt.canvas) {
+          x = evt.canvas.x ?? 0;
+          y = evt.canvas.y ?? 0;
+        }
+        // Вариант 3: client координаты
+        else if (evt.clientX !== undefined) {
+          x = evt.clientX;
+          y = evt.clientY;
+        }
+        // Вариант 4: получаем из позиции мыши относительно контейнера
+        else {
+          try {
+            const point = graph.getPointByClient(evt.clientX ?? 0, evt.clientY ?? 0);
+            x = point.x;
+            y = point.y;
+          } catch {
+            // Fallback - используем центр
+            x = 400;
+            y = 300;
+          }
+        }
+
+        console.log('Canvas click coordinates:', { x, y, evt });
         onCanvasClick(x, y);
       } else {
         onEmptyClick?.();

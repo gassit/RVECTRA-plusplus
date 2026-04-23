@@ -2,17 +2,11 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import NetworkGraphG6 from '@/components/NetworkGraphG6';
+import ElementPalette from '@/components/ElementPalette';
+import AddElementModal, { type AddElementData } from '@/components/AddElementModal';
+import AddConnectionModal, { type ConnectionData } from '@/components/AddConnectionModal';
 import { useTheme } from '@/components/providers/ThemeProvider';
-import type { ElectricalStatus, OperationalStatus } from '@/types';
-
-interface CabinetBound {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+import type { ElectricalStatus, OperationalStatus, ElementType } from '@/types';
 
 interface NetworkData {
   elements: Array<{
@@ -35,8 +29,6 @@ interface NetworkData {
     source: { elementId: string; name: string; type: string };
     target: { elementId: string; name: string; type: string };
   }>;
-  conflictElementIds?: string[];
-  cabinetBounds?: CabinetBound[];
 }
 
 interface Stats {
@@ -52,12 +44,7 @@ interface Stats {
     dead: number;
     off: number;
   };
-  power: {
-    total: number;
-    consumed: number;
-    free: number;
-    reserve: number;
-  };
+  power: { total: number; consumed: number; free: number; reserve: number; };
   connections: number;
 }
 
@@ -67,19 +54,12 @@ interface ValidationResult {
   elementName: string;
   status: 'error' | 'warning' | 'pass';
   message: string;
-  value?: number;
-  limit?: number;
 }
 
 interface ValidationData {
   rules: Array<{ name: string; description: string }>;
   issues: ValidationResult[];
-  stats: {
-    total: number;
-    errors: number;
-    warnings: number;
-    passed: number;
-  };
+  stats: { total: number; errors: number; warnings: number; passed: number; };
 }
 
 export default function Home() {
@@ -96,27 +76,32 @@ export default function Home() {
   const { theme, toggleTheme } = useTheme();
   const dataLoadedRef = useRef(false);
 
-  // Load data once on mount
+  // Режим редактирования
+  const [editMode, setEditMode] = useState(false);
+  const [selectedElementType, setSelectedElementType] = useState<ElementType | null>(null);
+  const [connectionMode, setConnectionMode] = useState(false);
+
+  // Модальные окна
+  const [showAddElementModal, setShowAddElementModal] = useState(false);
+  const [showAddConnectionModal, setShowAddConnectionModal] = useState(false);
+  const [pendingElementPos, setPendingElementPos] = useState({ x: 0, y: 0 });
+  const [connectionSource, setConnectionSource] = useState<string | null>(null);
+  const [connectionTarget, setConnectionTarget] = useState<string | null>(null);
+
   useEffect(() => {
     if (dataLoadedRef.current) return;
     dataLoadedRef.current = true;
-
     const load = async () => {
       try {
         setLoading(true);
         const [networkRes, statsRes, validationRes] = await Promise.all([
-          fetch('/api/network'),
-          fetch('/api/stats'),
-          fetch('/api/validation'),
+          fetch('/api/network'), fetch('/api/stats'), fetch('/api/validation'),
         ]);
         if (networkRes.ok) setNetworkData(await networkRes.json());
         if (statsRes.ok) setStats(await statsRes.json());
         if (validationRes.ok) setValidation(await validationRes.json());
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error');
-      } finally {
-        setLoading(false);
-      }
+      } catch (err) { setError(err instanceof Error ? err.message : 'Error'); }
+      finally { setLoading(false); }
     };
     load();
   }, []);
@@ -125,599 +110,263 @@ export default function Home() {
     setLoading(true);
     try {
       const [networkRes, statsRes, validationRes] = await Promise.all([
-        fetch('/api/network'),
-        fetch('/api/stats'),
-        fetch('/api/validation'),
+        fetch('/api/network'), fetch('/api/stats'), fetch('/api/validation'),
       ]);
       if (networkRes.ok) setNetworkData(await networkRes.json());
       if (statsRes.ok) setStats(await statsRes.json());
       if (validationRes.ok) setValidation(await validationRes.json());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error');
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Error'); }
+    finally { setLoading(false); }
   };
 
-  const handleNodeClick = useCallback((nodeId: string) => {
-    setSelectedNode(nodeId);
-  }, []);
+  const handleNodeClick = useCallback((nodeId: string) => setSelectedNode(nodeId), []);
 
-  // Calculate layout positions
+  // Переключение режима редактирования
+  const handleEditModeToggle = () => {
+    setEditMode(!editMode);
+    if (editMode) { setSelectedElementType(null); setConnectionMode(false); }
+  };
+
+  // Переключение режима связи
+  const handleConnectionModeToggle = () => {
+    if (!editMode) return;
+    setConnectionMode(!connectionMode);
+    setSelectedElementType(null);
+  };
+
+  // Выбор типа элемента
+  const handleElementTypeSelect = (type: ElementType) => {
+    setSelectedElementType(selectedElementType === type ? null : type);
+    setConnectionMode(false);
+  };
+
+  // Клик по холсту
+  const handleCanvasClick = (x: number, y: number) => {
+    if (!editMode || !selectedElementType) return;
+    setPendingElementPos({ x, y });
+    setShowAddElementModal(true);
+  };
+
+  // Добавление элемента
+  const handleAddElement = async (data: AddElementData) => {
+    try {
+      const response = await fetch('/api/elements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, posX: pendingElementPos.x, posY: pendingElementPos.y }),
+      });
+      if (response.ok) {
+        setShowAddElementModal(false);
+        setSelectedElementType(null);
+        await refreshData();
+      } else {
+        const err = await response.json();
+        alert(err.error || 'Ошибка при создании элемента');
+      }
+    } catch (err) { alert('Ошибка при создании элемента'); }
+  };
+
+  // Создание связи
+  const handleConnectionCreated = (sourceId: string, targetId: string) => {
+    setConnectionSource(sourceId);
+    setConnectionTarget(targetId);
+    setShowAddConnectionModal(true);
+  };
+
+  // Добавление связи
+  const handleAddConnection = async (data: ConnectionData) => {
+    if (!connectionSource || !connectionTarget) return;
+    try {
+      const response = await fetch('/api/connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId: connectionSource, targetId: connectionTarget, ...data }),
+      });
+      if (response.ok) {
+        setShowAddConnectionModal(false);
+        setConnectionMode(false);
+        setConnectionSource(null);
+        setConnectionTarget(null);
+        await refreshData();
+      } else {
+        const err = await response.json();
+        alert(err.error || 'Ошибка при создании связи');
+      }
+    } catch (err) { alert('Ошибка при создании связи'); }
+  };
+
+  // Перемещение узла
+  const handleNodeDrop = async (nodeId: string, x: number, y: number) => {
+    try {
+      await fetch('/api/elements', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: nodeId, posX: x, posY: y }),
+      });
+    } catch (err) { console.error('Error updating element position:', err); }
+  };
+
+  // Calculate layout
   const calculateLayout = async () => {
     setLayoutLoading(true);
     try {
       const response = await fetch('/api/layout', { method: 'POST' });
-      if (response.ok) {
-        const result = await response.json();
-        console.log('Layout calculated:', result);
-        // Refresh data to get new positions
-        await refreshData();
-      } else {
-        console.error('Layout calculation failed');
-      }
-    } catch (err) {
-      console.error('Layout calculation error:', err);
-    } finally {
-      setLayoutLoading(false);
-    }
+      if (response.ok) await refreshData();
+    } catch (err) { console.error('Layout error:', err); }
+    finally { setLayoutLoading(false); }
   };
 
-  // Filter data based on search
+  // Filter data
   const filteredData = useMemo(() => {
     if (!networkData || !searchQuery.trim()) return networkData;
-
     const query = searchQuery.toLowerCase();
-    const matchedElementIds = new Set(
-      networkData.elements
-        .filter(el => el.name.toLowerCase().includes(query))
-        .map(el => el.id)
-    );
-
-    const filteredElements = networkData.elements.filter(el =>
-      el.name.toLowerCase().includes(query)
-    );
-
-    const filteredConnections = networkData.connections.filter(conn =>
-      matchedElementIds.has(conn.sourceId) || matchedElementIds.has(conn.targetId)
-    );
-
+    const matchedIds = new Set(networkData.elements.filter(el => el.name.toLowerCase().includes(query)).map(el => el.id));
     return {
-      elements: filteredElements,
-      connections: filteredConnections,
+      elements: networkData.elements.filter(el => el.name.toLowerCase().includes(query)),
+      connections: networkData.connections.filter(conn => matchedIds.has(conn.sourceId) || matchedIds.has(conn.targetId)),
     };
   }, [networkData, searchQuery]);
 
-  // Calculate status stats
   const statusStats = useMemo(() => {
     if (!networkData) return { live: 0, dead: 0, off: 0 };
-    const elements = networkData.elements;
+    const el = networkData.elements;
     return {
-      live: elements.filter(e => e.operationalStatus === 'ON' && e.electricalStatus === 'LIVE').length,
-      dead: elements.filter(e => e.electricalStatus === 'DEAD').length,
-      off: elements.filter(e => e.operationalStatus === 'OFF').length,
+      live: el.filter(e => e.operationalStatus === 'ON' && e.electricalStatus === 'LIVE').length,
+      dead: el.filter(e => e.electricalStatus === 'DEAD').length,
+      off: el.filter(e => e.operationalStatus === 'OFF').length,
     };
   }, [networkData]);
 
   const errorCount = validation?.stats.errors || 0;
   const warningCount = validation?.stats.warnings || 0;
+  const selectedElement = useMemo(() => networkData?.elements.find(e => e.id === selectedNode) || null, [selectedNode, networkData]);
+  const connectionSourceName = networkData?.elements.find(e => e.id === connectionSource)?.name || '';
+  const connectionTargetName = networkData?.elements.find(e => e.id === connectionTarget)?.name || '';
 
-  // Find selected element details
-  const selectedElement = useMemo(() => {
-    if (!selectedNode || !networkData) return null;
-    return networkData.elements.find(e => e.id === selectedNode);
-  }, [selectedNode, networkData]);
-
-  // Memoize graph data to prevent unnecessary re-renders
-  const graphData = useMemo(() => {
-    return {
-      elements: (filteredData?.elements || networkData?.elements || []),
-      connections: (filteredData?.connections || networkData?.connections || []),
-      conflictElementIds: networkData?.conflictElementIds || [],
-      cabinetBounds: networkData?.cabinetBounds || [],
-    };
-  }, [
-    filteredData?.elements,
-    filteredData?.connections,
-    networkData?.elements,
-    networkData?.connections,
-    networkData?.conflictElementIds,
-    networkData?.cabinetBounds,
-  ]);
+  const graphData = useMemo(() => ({
+    nodes: (filteredData?.elements || networkData?.elements || []).map(e => ({
+      id: e.id, type: e.type.toUpperCase() as any, name: e.name, posX: e.posX || 0, posY: e.posY || 0,
+      hasIssues: false, criticalIssues: 0, status: e.operationalStatus as any, lifeStatus: e.electricalStatus as any,
+    })),
+    edges: (filteredData?.connections || networkData?.connections || []).map(c => ({
+      id: c.id, source: c.sourceId, target: c.targetId, type: 'CABLE' as const,
+      status: c.operationalStatus as any, lifeStatus: c.electricalStatus as any,
+    })),
+  }), [filteredData, networkData]);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-900 transition-colors overflow-hidden">
-      {/* Header */}
-      <header className="flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
-        <div className="px-4 py-2 flex items-center gap-4">
-          {/* Logo */}
-          <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">
-            RVectrA+
-          </h1>
+    <div className="h-screen flex bg-gray-100 dark:bg-gray-900 overflow-hidden">
+      {/* Sidebar - Palette */}
+      <ElementPalette
+        selectedType={selectedElementType}
+        onTypeSelect={handleElementTypeSelect}
+        editMode={editMode}
+        onEditModeToggle={handleEditModeToggle}
+        connectionMode={connectionMode}
+        onConnectionModeToggle={handleConnectionModeToggle}
+      />
 
-          {/* Search */}
-          <div className="flex-1 max-w-md">
-            <div className="relative">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Поиск по элементам..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <header className="flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="px-4 py-2 flex items-center gap-4">
+            <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">RVectrA+</h1>
+            <div className="flex-1 max-w-md">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text" placeholder="Поиск по элементам..." value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Status Stats - Compact */}
-          <div className="flex items-center gap-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg text-xs">
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500"></span>
-              <span className="font-medium text-green-600 dark:text-green-400">{statusStats.live}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-gray-400 opacity-50"></span>
-              <span className="font-medium text-gray-500">{statusStats.dead}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-red-500 opacity-35"></span>
-              <span className="font-medium text-red-500">{statusStats.off}</span>
-            </div>
-          </div>
-
-          {/* Power Stats - Compact */}
-          {(stats?.power.total || stats?.power.consumed || stats?.power.free || stats?.power.reserve) ? (
+            {/* Status Stats */}
             <div className="flex items-center gap-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg text-xs">
-              <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
-              </svg>
-              <span className="font-semibold text-gray-700 dark:text-gray-300">{stats?.power.total?.toFixed(0) || '0'}</span>
-              <span className="text-gray-400">/</span>
-              <span className="text-blue-600 dark:text-blue-400">{stats?.power.consumed?.toFixed(0) || '0'}</span>
-              <span className="text-gray-400">/</span>
-              <span className="text-green-600 dark:text-green-400">{stats?.power.free?.toFixed(0) || '0'}</span>
-              <span className="text-gray-400">/</span>
-              <span className="text-purple-600 dark:text-purple-400">{stats?.power.reserve?.toFixed(0) || '0'}</span>
-              <span className="text-gray-400 ml-1">кВА</span>
+              <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span><span className="font-medium text-green-600">{statusStats.live}</span></div>
+              <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-400 opacity-50"></span><span className="font-medium text-gray-500">{statusStats.dead}</span></div>
+              <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 opacity-35"></span><span className="font-medium text-red-500">{statusStats.off}</span></div>
             </div>
-          ) : null}
 
-          {/* Actions */}
-          <div className="flex items-center gap-2">
-            {/* Validation Status */}
-            <button
-              onClick={() => setShowValidation(!showValidation)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all shadow-sm ${
-                errorCount > 0
-                  ? 'bg-red-500 text-white hover:bg-red-600'
-                  : warningCount > 0
-                  ? 'bg-yellow-500 text-white hover:bg-yellow-600'
-                  : 'bg-green-500 text-white hover:bg-green-600'
-              }`}
-            >
-              {errorCount > 0 ? (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  {errorCount}
-                </>
-              ) : warningCount > 0 ? (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  {warningCount}
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  OK
-                </>
-              )}
-            </button>
-
-            {/* Stats Toggle */}
-            <button
-              onClick={() => setShowStats(!showStats)}
-              className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="Статистика"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </button>
-
-            {/* Calculate Layout */}
-            <button
-              onClick={calculateLayout}
-              disabled={layoutLoading}
-              className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-              title="Рассчитать позиции"
-            >
-              {layoutLoading ? (
-                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-                </svg>
-              )}
-            </button>
-
-            {/* Refresh */}
-            <button
-              onClick={refreshData}
-              className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="Обновить"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-
-            {/* Theme Toggle */}
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title={theme === 'light' ? 'Тёмная тема' : 'Светлая тема'}
-            >
-              {theme === 'light' ? (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              )}
-            </button>
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowValidation(!showValidation)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${errorCount > 0 ? 'bg-red-500 text-white' : warningCount > 0 ? 'bg-yellow-500 text-white' : 'bg-green-500 text-white'}`}>
+                {errorCount > 0 ? `✗ ${errorCount}` : warningCount > 0 ? `⚠ ${warningCount}` : '✓ OK'}
+              </button>
+              <button onClick={() => setShowStats(!showStats)} className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="Статистика">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+              </button>
+              <button onClick={calculateLayout} disabled={layoutLoading} className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50" title="Рассчитать позиции">
+                {layoutLoading ? <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z" /></svg>}
+              </button>
+              <button onClick={refreshData} className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="Обновить">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+              </button>
+              <button onClick={toggleTheme} className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title={theme === 'light' ? 'Тёмная тема' : 'Светлая тема'}>
+                {theme === 'light' ? <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>}
+              </button>
+            </div>
           </div>
-        </div>
+          <div className="px-4 py-1 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700">
+            <span>{filteredData?.elements.length || 0} / {stats?.elements.total || 0} элементов</span>
+            <span className="text-gray-300 dark:text-gray-600">|</span>
+            <span>{filteredData?.connections.length || 0} связей</span>
+          </div>
+        </header>
 
-        {/* Status Bar */}
-        <div className="px-4 py-1 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700">
-          <span className="flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            {filteredData?.elements.length || 0} / {stats?.elements.total || 0} элементов
-          </span>
-          <span className="text-gray-300 dark:text-gray-600">|</span>
-          <span className="flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-            </svg>
-            {filteredData?.connections.length || 0} связей
-          </span>
-          {searchQuery && (
-            <>
-              <span className="text-gray-300 dark:text-gray-600">|</span>
-              <span className="text-blue-500 dark:text-blue-400">
-                Фильтр: &quot;{searchQuery}&quot;
-              </span>
-            </>
-          )}
-        </div>
-      </header>
-
-      {/* Main Content - Graph takes priority */}
-      <main className="flex-1 relative overflow-hidden">
-        {/* Network Graph - Full Size */}
-        <div className="absolute inset-0 overflow-auto">
+        {/* Main Content - Graph */}
+        <main className="flex-1 relative overflow-hidden">
           {loading ? (
-            <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-gray-900">
-              <div className="flex flex-col items-center gap-4">
-                <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
-                <span className="text-lg text-gray-500 dark:text-gray-400">Загрузка данных сети...</span>
-              </div>
-            </div>
+            <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div></div>
           ) : error ? (
-            <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-gray-900">
-              <div className="flex flex-col items-center gap-4 p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-                <svg className="w-16 h-16 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <span className="text-lg font-medium text-gray-700 dark:text-gray-300">Ошибка загрузки</span>
-                <span className="text-sm text-gray-500 dark:text-gray-400">{error}</span>
-                <button
-                  onClick={refreshData}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                >
-                  Попробовать снова
-                </button>
-              </div>
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center"><span className="text-red-500">{error}</span><button onClick={refreshData} className="ml-4 px-4 py-2 bg-blue-500 text-white rounded-lg">Повторить</button></div>
             </div>
           ) : (
             <NetworkGraphG6
-              data={filteredData ? {
-                nodes: filteredData.elements.map(e => ({
-                  id: e.id,
-                  type: e.type.toUpperCase() as any,
-                  name: e.name,
-                  posX: e.posX || 0,
-                  posY: e.posY || 0,
-                  hasIssues: false,
-                  criticalIssues: 0,
-                  status: e.operationalStatus as any,
-                  lifeStatus: e.electricalStatus as any,
-                })),
-                edges: filteredData.connections.map(c => ({
-                  id: c.id,
-                  source: c.sourceId,
-                  target: c.targetId,
-                  type: 'CABLE' as const,
-                  status: c.operationalStatus as any,
-                  lifeStatus: c.electricalStatus as any,
-                }))
-              } : null}
+              data={graphData}
               onNodeClick={handleNodeClick}
+              editMode={editMode}
+              selectedElementType={selectedElementType}
+              onCanvasClick={handleCanvasClick}
+              onNodeDrop={handleNodeDrop}
+              connectionMode={connectionMode}
+              onConnectionCreated={handleConnectionCreated}
             />
           )}
-        </div>
 
-        {/* Floating Stats Panel */}
-        {showStats && stats && (
-          <div className="absolute top-16 left-4 w-52 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden z-20">
-            <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-700/50">
-              <h3 className="text-xs font-semibold text-gray-700 dark:text-gray-300">Статистика сети</h3>
-              <button
-                onClick={() => setShowStats(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-2 space-y-2">
-              {/* Status Stats */}
-              <div>
-                <h4 className="text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Статусы</h4>
-                <div className="grid grid-cols-3 gap-1">
-                  <div className="flex flex-col items-center p-1 bg-green-50 dark:bg-green-900/20 rounded">
-                    <span className="text-sm font-bold text-green-600 dark:text-green-400">{statusStats.live}</span>
-                    <span className="text-[9px] text-gray-500 dark:text-gray-400">LIVE</span>
-                  </div>
-                  <div className="flex flex-col items-center p-1 bg-gray-100 dark:bg-gray-700 rounded">
-                    <span className="text-sm font-bold text-gray-500">{statusStats.dead}</span>
-                    <span className="text-[9px] text-gray-500 dark:text-gray-400">DEAD</span>
-                  </div>
-                  <div className="flex flex-col items-center p-1 bg-red-50 dark:bg-red-900/20 rounded">
-                    <span className="text-sm font-bold text-red-500">{statusStats.off}</span>
-                    <span className="text-[9px] text-gray-500 dark:text-gray-400">OFF</span>
-                  </div>
+          {/* Selected Node Info */}
+          {selectedNode && selectedElement && (
+            <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-4 w-80 border border-gray-200 dark:border-gray-700 z-20">
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{selectedElement.name}</h3>
+                  <p className="text-xs text-gray-500">ID: {selectedElement.elementId} | Тип: {selectedElement.type}</p>
                 </div>
+                <button onClick={() => setSelectedNode(null)} className="text-gray-400 hover:text-gray-600">✕</button>
               </div>
-              <div>
-                <h4 className="text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Элементы</h4>
-                <div className="grid grid-cols-3 gap-1">
-                  <div className="flex flex-col items-center p-1 bg-yellow-50 dark:bg-yellow-900/20 rounded">
-                    <span className="text-sm font-bold text-yellow-600 dark:text-yellow-400">{stats.elements.sources}</span>
-                    <span className="text-[9px] text-gray-500 dark:text-gray-400">SOURCE</span>
-                  </div>
-                  <div className="flex flex-col items-center p-1 bg-amber-50 dark:bg-amber-900/20 rounded">
-                    <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{stats.elements.buses}</span>
-                    <span className="text-[9px] text-gray-500 dark:text-gray-400">BUS</span>
-                  </div>
-                  <div className="flex flex-col items-center p-1 bg-gray-100 dark:bg-gray-700 rounded">
-                    <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{stats.elements.breakers}</span>
-                    <span className="text-[9px] text-gray-500 dark:text-gray-400">BREAKER</span>
-                  </div>
-                  <div className="flex flex-col items-center p-1 bg-blue-50 dark:bg-blue-900/20 rounded">
-                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{stats.elements.meters}</span>
-                    <span className="text-[9px] text-gray-500 dark:text-gray-400">METER</span>
-                  </div>
-                  <div className="flex flex-col items-center p-1 bg-gray-800 dark:bg-gray-600 rounded">
-                    <span className="text-sm font-bold text-white">{stats.elements.loads}</span>
-                    <span className="text-[9px] text-gray-400">LOAD</span>
-                  </div>
-                  <div className="flex flex-col items-center p-1 bg-gray-100 dark:bg-gray-700 rounded">
-                    <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{stats.elements.junctions}</span>
-                    <span className="text-[9px] text-gray-500 dark:text-gray-400">JUNCTION</span>
-                  </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className={`p-2 rounded-lg text-center ${selectedElement.electricalStatus === 'LIVE' ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-100 dark:bg-gray-700'}`}>
+                  <div className={`text-sm font-medium ${selectedElement.electricalStatus === 'LIVE' ? 'text-green-600' : 'text-gray-500'}`}>{selectedElement.electricalStatus}</div>
+                  <div className="text-xs text-gray-400">Электрический</div>
                 </div>
-              </div>
-              <div>
-                <h4 className="text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Мощность</h4>
-                <div className="space-y-1">
-                  <div className="flex justify-between items-center p-1 bg-gray-50 dark:bg-gray-700/50 rounded">
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400">Полная</span>
-                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{stats.power.total?.toFixed(1) || '0'} кВА</span>
-                  </div>
-                  <div className="flex justify-between items-center p-1 bg-blue-50 dark:bg-blue-900/20 rounded">
-                    <span className="text-[10px] text-blue-600 dark:text-blue-400">Потребл.</span>
-                    <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">{stats.power.consumed?.toFixed(1) || '0'} кВА</span>
-                  </div>
-                  <div className="flex justify-between items-center p-1 bg-green-50 dark:bg-green-900/20 rounded">
-                    <span className="text-[10px] text-green-600 dark:text-green-400">Свободно</span>
-                    <span className="text-xs font-semibold text-green-700 dark:text-green-300">{stats.power.free?.toFixed(1) || '0'} кВА</span>
-                  </div>
-                  <div className="flex justify-between items-center p-1 bg-purple-50 dark:bg-purple-900/20 rounded">
-                    <span className="text-[10px] text-purple-600 dark:text-purple-400">Резерв</span>
-                    <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">{stats.power.reserve?.toFixed(1) || '0'} кВА</span>
-                  </div>
+                <div className={`p-2 rounded-lg text-center ${selectedElement.operationalStatus === 'OFF' ? 'bg-red-50 dark:bg-red-900/20' : 'bg-blue-50 dark:bg-blue-900/20'}`}>
+                  <div className={`text-sm font-medium ${selectedElement.operationalStatus === 'OFF' ? 'text-red-500' : 'text-blue-600'}`}>{selectedElement.operationalStatus}</div>
+                  <div className="text-xs text-gray-400">Оперативный</div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </main>
+      </div>
 
-        {/* Floating Validation Panel */}
-        {showValidation && validation && (
-          <div className="absolute top-16 right-4 w-80 max-h-[calc(100%-6rem)] bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden z-20">
-            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-700/50">
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Валидация сети</h3>
-              <button
-                onClick={() => setShowValidation(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-4 overflow-y-auto max-h-96">
-              <div className="flex gap-2 mb-4">
-                {validation.stats.errors > 0 && (
-                  <span className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-full text-sm font-medium">
-                    {validation.stats.errors} ошибок
-                  </span>
-                )}
-                {validation.stats.warnings > 0 && (
-                  <span className="px-3 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-full text-sm font-medium">
-                    {validation.stats.warnings} предупреждений
-                  </span>
-                )}
-                {validation.stats.errors === 0 && validation.stats.warnings === 0 && (
-                  <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm font-medium">
-                    Нарушений не найдено
-                  </span>
-                )}
-              </div>
-              {validation.issues.length > 0 && (
-                <div className="space-y-3">
-                  {validation.issues.map((issue, idx) => (
-                    <div key={idx} className={`p-3 rounded-lg border ${
-                      issue.status === 'error'
-                        ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                        : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
-                    }`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={issue.status === 'error' ? 'text-red-500' : 'text-yellow-500'}>
-                          {issue.status === 'error' ? '✗' : '⚠'}
-                        </span>
-                        <span className="font-medium text-gray-700 dark:text-gray-300 text-sm">
-                          {issue.elementName}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">{issue.message}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Selected Node Info */}
-        {selectedNode && selectedElement && (
-          <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-4 w-80 border border-gray-200 dark:border-gray-700 z-20">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{selectedElement.name}</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  ID: {selectedElement.elementId} | Тип: {selectedElement.type}
-                </p>
-              </div>
-              <button
-                onClick={() => setSelectedNode(null)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className={`p-2 rounded-lg text-center ${
-                selectedElement.electricalStatus === 'LIVE'
-                  ? 'bg-green-50 dark:bg-green-900/20'
-                  : 'bg-gray-100 dark:bg-gray-700'
-              }`}>
-                <div className={`text-sm font-medium ${
-                  selectedElement.electricalStatus === 'LIVE'
-                    ? 'text-green-600 dark:text-green-400'
-                    : 'text-gray-500'
-                }`}>
-                  {selectedElement.electricalStatus}
-                </div>
-                <div className="text-xs text-gray-400">Электрический</div>
-              </div>
-              <div className={`p-2 rounded-lg text-center ${
-                selectedElement.operationalStatus === 'OFF'
-                  ? 'bg-red-50 dark:bg-red-900/20'
-                  : 'bg-blue-50 dark:bg-blue-900/20'
-              }`}>
-                <div className={`text-sm font-medium ${
-                  selectedElement.operationalStatus === 'OFF'
-                    ? 'text-red-500'
-                    : 'text-blue-600 dark:text-blue-400'
-                }`}>
-                  {selectedElement.operationalStatus}
-                </div>
-                <div className="text-xs text-gray-400">Оперативный</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Legend */}
-        <div className="absolute bottom-4 left-4 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-md p-2 text-[10px] z-20">
-          {/* Status Legend */}
-          <div className="mb-1.5 pb-1.5 border-b border-gray-200 dark:border-gray-700">
-            <div className="text-[9px] text-gray-400 mb-1">Статусы:</div>
-            <div className="grid grid-cols-3 gap-x-2 gap-y-0.5">
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-green-500 border border-green-600"></span>
-                <span className="text-gray-600 dark:text-gray-400">LIVE</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-gray-400 border border-gray-500 opacity-50"></span>
-                <span className="text-gray-600 dark:text-gray-400">DEAD</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-gray-300 border border-red-500 opacity-35"></span>
-                <span className="text-red-500">OFF</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Type Legend */}
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-            <div className="flex items-center gap-1">
-              <div className="w-5 h-3 rounded border-2 border-yellow-400 bg-yellow-50 dark:bg-yellow-900/30"></div>
-              <span className="text-gray-600 dark:text-gray-400">SOURCE</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-5 h-3 rounded border-2 border-gray-800 bg-white dark:bg-gray-700"></div>
-              <span className="text-gray-600 dark:text-gray-400">BREAKER</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-5 h-3 rounded border-2 border-white bg-gray-700"></div>
-              <span className="text-gray-600 dark:text-gray-400">LOAD</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-5 h-3 rounded border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/30"></div>
-              <span className="text-gray-600 dark:text-gray-400">METER</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-6 h-2.5 rounded border-2 border-amber-600 bg-amber-50 dark:bg-amber-900/30"></div>
-              <span className="text-gray-600 dark:text-gray-400">BUS</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-full border-2 border-gray-400 bg-gray-100 dark:bg-gray-700"></div>
-              <span className="text-gray-600 dark:text-gray-400">JUNCTION</span>
-            </div>
-          </div>
-        </div>
-      </main>
+      {/* Modals */}
+      <AddElementModal isOpen={showAddElementModal} onClose={() => setShowAddElementModal(false)} onSubmit={handleAddElement} elementType={selectedElementType} posX={pendingElementPos.x} posY={pendingElementPos.y} />
+      <AddConnectionModal isOpen={showAddConnectionModal} onClose={() => { setShowAddConnectionModal(false); setConnectionSource(null); setConnectionTarget(null); }} onSubmit={handleAddConnection} sourceName={connectionSourceName} targetName={connectionTargetName} />
     </div>
   );
 }

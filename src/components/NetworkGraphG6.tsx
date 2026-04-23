@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Graph } from '@antv/g6';
-import type { GraphData, GraphNode, GraphEdge } from '@/types';
+import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -15,6 +15,15 @@ interface NetworkGraphG6Props {
   onZoomChange?: (zoom: number) => void;
   collapsedTypes?: Set<string>;
   onCollapsedTypesChange?: (types: Set<string>) => void;
+  // Режим редактирования
+  editMode?: boolean;
+  selectedElementType?: ElementType | null;
+  onCanvasClick?: (x: number, y: number) => void;
+  onNodeDrop?: (nodeId: string, x: number, y: number) => void;
+  // Режим создания связи
+  connectionMode?: boolean;
+  connectionStartId?: string | null;
+  onConnectionCreated?: (sourceId: string, targetId: string) => void;
 }
 
 // ============================================================================
@@ -32,17 +41,6 @@ const TYPE_COLORS: Record<string, { primary: string; gradient: string }> = {
   cabinet: { primary: '#d97706', gradient: 'l(0) 0:#B87333 0.5:#CD7F32 1:#B87333' },
 };
 
-// Английские названия типов
-const TYPE_LABELS: Record<string, string> = {
-  source: 'SOURCE',
-  breaker: 'BREAKER',
-  load: 'LOAD',
-  meter: 'METER',
-  bus: 'BUS',
-  junction: 'JUNCTION',
-  cabinet: 'CABINET',
-};
-
 // ============================================================================
 // ОСНОВНОЙ КОМПОНЕНТ
 // ============================================================================
@@ -56,10 +54,17 @@ export default function NetworkGraphG6({
   selectedEdgeId,
   zoom: externalZoom,
   onZoomChange,
+  editMode = false,
+  selectedElementType,
+  onCanvasClick,
+  onNodeDrop,
+  connectionMode = false,
+  onConnectionCreated,
 }: NetworkGraphG6Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
+  const [pendingConnectionStart, setPendingConnectionStart] = useState<string | null>(null);
 
   // Инициализация графа
   useEffect(() => {
@@ -87,6 +92,11 @@ export default function NetworkGraphG6({
         {
           type: 'collapse-expand',
           trigger: 'dblclick',
+        },
+        // Drag element только в режиме редактирования
+        {
+          type: 'drag-element',
+          enable: () => editMode && !connectionMode,
         },
       ],
       layout: {
@@ -120,6 +130,7 @@ export default function NetworkGraphG6({
           shadowBlur: 10,
           shadowOffsetX: 0,
           shadowOffsetY: 4,
+          cursor: editMode ? 'move' : 'pointer',
           // Основной текст - название
           labelText: (d: any) => {
             const name = d.data?.name || d.id;
@@ -156,6 +167,20 @@ export default function NetworkGraphG6({
             stroke: '#60a5fa',
             lineWidth: 3,
             shadowColor: 'rgba(96, 165, 250, 0.3)',
+            shadowBlur: 15,
+          },
+          // Состояние для начала связи
+          connectionSource: {
+            stroke: '#22c55e',
+            lineWidth: 4,
+            shadowColor: 'rgba(34, 197, 94, 0.5)',
+            shadowBlur: 20,
+          },
+          // Состояние для потенциальной цели связи
+          connectionTarget: {
+            stroke: '#f59e0b',
+            lineWidth: 3,
+            shadowColor: 'rgba(245, 158, 11, 0.4)',
             shadowBlur: 15,
           },
         },
@@ -210,6 +235,22 @@ export default function NetworkGraphG6({
     // Обработчики событий
     graph.on('node:click', (evt: any) => {
       const nodeId = evt.target.id;
+
+      // В режиме создания связи
+      if (connectionMode) {
+        if (!pendingConnectionStart) {
+          // Начинаем связь
+          setPendingConnectionStart(nodeId);
+          graph.setElementState(nodeId, 'connectionSource', true);
+        } else if (pendingConnectionStart !== nodeId) {
+          // Завершаем связь
+          onConnectionCreated?.(pendingConnectionStart, nodeId);
+          graph.setElementState(pendingConnectionStart, 'connectionSource', false);
+          setPendingConnectionStart(null);
+        }
+        return;
+      }
+
       onNodeClick?.(nodeId);
     });
 
@@ -217,13 +258,23 @@ export default function NetworkGraphG6({
       const nodeId = evt.target.id;
       const nodeData = data?.nodes.find(n => n.id === nodeId);
       setHoveredNode(nodeData || null);
-      graph.setElementState(nodeId, 'hover', true);
+
+      // В режиме связи подсвечиваем потенциальную цель
+      if (connectionMode && pendingConnectionStart && pendingConnectionStart !== nodeId) {
+        graph.setElementState(nodeId, 'connectionTarget', true);
+      } else {
+        graph.setElementState(nodeId, 'hover', true);
+      }
     });
 
     graph.on('node:pointerleave', (evt: any) => {
       setHoveredNode(null);
       const nodeId = evt.target.id;
-      graph.setElementState(nodeId, 'hover', false);
+      if (connectionMode && pendingConnectionStart) {
+        graph.setElementState(nodeId, 'connectionTarget', false);
+      } else {
+        graph.setElementState(nodeId, 'hover', false);
+      }
     });
 
     graph.on('edge:click', (evt: any) => {
@@ -231,8 +282,31 @@ export default function NetworkGraphG6({
       onEdgeClick?.(edgeId);
     });
 
-    graph.on('canvas:click', () => {
-      onEmptyClick?.();
+    // Клик по холсту - для добавления элемента
+    graph.on('canvas:click', (evt: any) => {
+      // Отмена режима связи при клике на пустое место
+      if (connectionMode && pendingConnectionStart) {
+        graph.setElementState(pendingConnectionStart, 'connectionSource', false);
+        setPendingConnectionStart(null);
+        return;
+      }
+
+      if (editMode && selectedElementType && onCanvasClick) {
+        // Получаем координаты клика относительно холста
+        const { x, y } = evt;
+        onCanvasClick(x, y);
+      } else {
+        onEmptyClick?.();
+      }
+    });
+
+    // Событие окончания перетаскивания узла
+    graph.on('node:dragend', (evt: any) => {
+      if (editMode && onNodeDrop) {
+        const nodeId = evt.target.id;
+        const { x, y } = evt;
+        onNodeDrop(nodeId, x, y);
+      }
     });
 
     // Zoom событие
@@ -252,7 +326,7 @@ export default function NetworkGraphG6({
       resizeObserver.disconnect();
       graph.destroy();
     };
-  }, []);
+  }, [editMode, connectionMode, selectedElementType]);
 
   // Обновление данных
   useEffect(() => {
@@ -337,12 +411,34 @@ export default function NetworkGraphG6({
     }
   }, [externalZoom]);
 
+  // Сброс состояния связи при выходе из режима
+  useEffect(() => {
+    if (!connectionMode && pendingConnectionStart && graphRef.current) {
+      graphRef.current.setElementState(pendingConnectionStart, 'connectionSource', false);
+      setPendingConnectionStart(null);
+    }
+  }, [connectionMode]);
+
   return (
     <div className="h-full w-full bg-slate-100 dark:bg-slate-950 relative">
       <div
         ref={containerRef}
         className="h-full w-full"
       />
+
+      {/* Индикатор режима редактирования */}
+      {editMode && (
+        <div className="absolute top-4 left-4 px-3 py-1.5 bg-amber-500 text-white text-sm font-medium rounded-lg shadow-lg z-10">
+          ✏️ Режим редактирования
+        </div>
+      )}
+
+      {/* Индикатор режима связи */}
+      {connectionMode && (
+        <div className="absolute top-4 left-4 px-3 py-1.5 bg-green-500 text-white text-sm font-medium rounded-lg shadow-lg z-10">
+          🔗 {pendingConnectionStart ? 'Выберите целевой элемент' : 'Выберите начальный элемент'}
+        </div>
+      )}
 
       {/* Подсказка при наведении на узел */}
       {hoveredNode && (

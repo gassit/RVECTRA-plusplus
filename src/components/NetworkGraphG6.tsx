@@ -135,6 +135,14 @@ export default function NetworkGraphG6({
           type: 'drag-element',
           enable: () => editModeRef.current && !connectionModeRef.current,
         },
+        // Drag combo - перетаскивание групп (cabinets)
+        {
+          type: 'drag-element',
+          enable: (evt: any) => {
+            // Разрешаем drag combo всегда в режиме редактирования
+            return editModeRef.current && !connectionModeRef.current;
+          },
+        },
       ],
       layout: {
         type: 'dagre',
@@ -262,6 +270,38 @@ export default function NetworkGraphG6({
           hover: {
             stroke: '#60a5fa',
             lineWidth: 3,
+          },
+        },
+      },
+      combo: {
+        type: 'rect',
+        style: {
+          radius: 8,
+          fill: '#f8fafc',
+          stroke: '#d97706',
+          lineWidth: 2,
+          lineDash: [5, 5],
+          opacity: 0.9,
+          labelText: (d: any) => d.data?.name || '',
+          labelFill: '#92400e',
+          labelFontSize: 12,
+          labelFontWeight: 'bold',
+          labelPlacement: 'top',
+          labelOffsetY: -5,
+          padding: [30, 20, 20, 20],
+        },
+        state: {
+          selected: {
+            stroke: '#f59e0b',
+            lineWidth: 3,
+          },
+          hover: {
+            stroke: '#fbbf24',
+            lineWidth: 2,
+          },
+          collapsed: {
+            fill: '#fef3c7',
+            lineDash: [],
           },
         },
       },
@@ -451,6 +491,7 @@ export default function NetworkGraphG6({
       // Преобразуем данные в формат G6
       const nodes = data.nodes.map(node => ({
         id: node.id,
+        combo: (node as any).combo || undefined, // Привязка к combo (cabinet)
         data: {
           ...node,
           type: node.type.toLowerCase(),
@@ -464,7 +505,13 @@ export default function NetworkGraphG6({
         data: edge as any,
       }));
 
-      graph.setData({ nodes, edges: edges as any });
+      // Преобразуем combos если есть
+      const combos = data.combos?.map(combo => ({
+        id: combo.id,
+        data: combo.data,
+      })) || [];
+
+      graph.setData({ nodes, edges: edges as any, combos });
 
       // Только первый рендер, потом данные обновляются через setData
       if (!(graph as any).rendered) {

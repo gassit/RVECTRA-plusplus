@@ -50,6 +50,11 @@ interface NetworkData {
     source: { elementId: string; name: string; type: string };
     target: { elementId: string; name: string; type: string };
   }>;
+  combos?: Array<{
+    id: string;
+    label: string;
+    data: { type: string; name: string };
+  }>;
 }
 
 interface Stats {
@@ -332,20 +337,28 @@ export default function Home() {
   const connectionSourceName = networkData?.elements.find(e => e.id === connectionSource)?.name || '';
   const connectionTargetName = networkData?.elements.find(e => e.id === connectionTarget)?.name || '';
 
-  const graphData = useMemo(() => ({
-    nodes: (filteredData?.elements || networkData?.elements || []).map(e => ({
-      id: e.id, type: e.type.toUpperCase() as any, name: e.name, posX: e.posX || 0, posY: e.posY || 0,
-      hasIssues: false, criticalIssues: 0, status: e.operationalStatus as any, lifeStatus: e.electricalStatus as any,
-    })),
-    edges: (filteredData?.connections || networkData?.connections || []).map(c => ({
-      id: c.id, source: c.sourceId, target: c.targetId, type: 'CABLE' as const,
-      status: c.operationalStatus as any, lifeStatus: c.electricalStatus as any,
-      wireType: c.cable?.name?.split(' ')[0] || '',
-      wireSize: c.cable?.section || 0,
-      length: c.cable?.length || 0,
-      cable: c.cable,
-    })),
-  }), [filteredData, networkData]);
+  const graphData = useMemo(() => {
+    const allElements = filteredData?.elements || networkData?.elements || [];
+    // Фильтруем: cabinet-ы не показываем как nodes (они combos)
+    const nonCabinetElements = allElements.filter(e => e.type.toLowerCase() !== 'cabinet');
+    
+    return {
+      nodes: nonCabinetElements.map(e => ({
+        id: e.id, type: e.type.toUpperCase() as any, name: e.name, posX: e.posX || 0, posY: e.posY || 0,
+        hasIssues: false, criticalIssues: 0, status: e.operationalStatus as any, lifeStatus: e.electricalStatus as any,
+        combo: e.parentId || undefined, // Привязка к cabinet (combo)
+      })),
+      edges: (filteredData?.connections || networkData?.connections || []).map(c => ({
+        id: c.id, source: c.sourceId, target: c.targetId, type: 'CABLE' as const,
+        status: c.operationalStatus as any, lifeStatus: c.electricalStatus as any,
+        wireType: c.cable?.name?.split(' ')[0] || '',
+        wireSize: c.cable?.section || 0,
+        length: c.cable?.length || 0,
+        cable: c.cable,
+      })),
+      combos: networkData?.combos || [],
+    };
+  }, [filteredData, networkData]);
 
   return (
     <div className="h-screen flex bg-gray-100 dark:bg-gray-900 overflow-hidden">

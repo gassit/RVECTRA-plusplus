@@ -185,6 +185,17 @@ export interface GraphEdge {
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  combos?: GraphCombo[];
+}
+
+// Combo (группа узлов) для G6
+export interface GraphCombo {
+  id: string;
+  label: string;
+  data: {
+    type: string;
+    name: string;
+  };
 }
 
 // ============================================================================

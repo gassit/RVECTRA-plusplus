@@ -62,6 +62,12 @@ export async function GET() {
     // Создаем мапу элементов для быстрого поиска
     const elementMap = new Map(elements.map(e => [e.id, e]));
 
+    // Находим все cabinets для группировки (combo)
+    const cabinets = elements.filter(e => e.type.toLowerCase() === 'cabinet');
+
+    // Создаём мапу: parentId -> cabinet info
+    const cabinetMap = new Map(cabinets.map(c => [c.id, c]));
+
     // Добавляем информацию об элементах в связи
     const connectionsWithInfo = connections.map(conn => ({
       id: conn.id,
@@ -97,9 +103,20 @@ export async function GET() {
         : { elementId: '', name: 'Unknown', type: 'unknown' },
     }));
 
+    // Формируем combos для G6 (cabinets как группы)
+    const combos = cabinets.map(cabinet => ({
+      id: cabinet.id,
+      label: cabinet.name,
+      data: {
+        type: 'cabinet',
+        name: cabinet.name,
+      },
+    }));
+
     return NextResponse.json({ 
       elements, 
       connections: connectionsWithInfo,
+      combos,
     });
   } catch (error) {
     console.error('Error fetching network:', error);

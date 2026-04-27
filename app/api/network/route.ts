@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    // Получаем элементы со статусами
+    // Получаем элементы со статусами и устройствами
     const elements = await prisma.element.findMany({
       select: {
         id: true,
@@ -13,12 +13,25 @@ export async function GET() {
         posX: true,
         posY: true,
         parentId: true,
+        voltageLevel: true,
         electricalStatus: true,
         operationalStatus: true,
+        DeviceSlot: {
+          include: {
+            Device: {
+              include: {
+                Load: true,
+                Breaker: true,
+                Meter: true,
+                Transformer: true,
+              },
+            },
+          },
+        },
       }
     });
 
-    // Получаем связи со статусами
+    // Получаем связи со статусами и данными кабеля
     const connections = await prisma.connection.findMany({
       select: {
         id: true,
@@ -26,6 +39,23 @@ export async function GET() {
         targetId: true,
         electricalStatus: true,
         operationalStatus: true,
+        Cable: {
+          select: {
+            id: true,
+            cableId: true,
+            name: true,
+            length: true,
+            section: true,
+            material: true,
+            iDop: true,
+            CableReference: {
+              select: {
+                r0: true,
+                x0: true,
+              },
+            },
+          },
+        },
       }
     });
 
@@ -39,6 +69,18 @@ export async function GET() {
       targetId: conn.targetId,
       electricalStatus: conn.electricalStatus,
       operationalStatus: conn.operationalStatus,
+      // Данные кабеля
+      cable: conn.Cable ? {
+        id: conn.Cable.id,
+        name: conn.Cable.name,
+        length: conn.Cable.length,
+        section: conn.Cable.section,
+        material: conn.Cable.material,
+        iDop: conn.Cable.iDop,
+        // Справочные данные для точного расчёта
+        r0: conn.Cable.CableReference?.r0 ?? null,
+        x0: conn.Cable.CableReference?.x0 ?? null,
+      } : null,
       source: elementMap.get(conn.sourceId)
         ? {
             elementId: elementMap.get(conn.sourceId)!.elementId,

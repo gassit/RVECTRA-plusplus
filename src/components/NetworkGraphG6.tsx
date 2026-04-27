@@ -387,17 +387,10 @@ export default function NetworkGraphG6({
           x = evt.clientX;
           y = evt.clientY;
         }
-        // Вариант 4: получаем из позиции мыши относительно контейнера
+        // Вариант 4: fallback - используем центр
         else {
-          try {
-            const point = graph.getPointByClient(evt.clientX ?? 0, evt.clientY ?? 0);
-            x = point.x;
-            y = point.y;
-          } catch {
-            // Fallback - используем центр
-            x = 400;
-            y = 300;
-          }
+          x = 400;
+          y = 300;
         }
 
         console.log('Canvas click coordinates:', { x, y, evt });

@@ -4,6 +4,94 @@
 
 import type { MaterialType } from '@/types';
 
+// ============================================================================
+// КОНСТАНТЫ УДЕЛЬНОГО СОПРОТИВЛЕНИЯ
+// ============================================================================
+
+/**
+ * Удельное сопротивление материалов (Ом·мм²/м) при 20°C
+ */
+export const RESISTIVITY = {
+  Cu: 0.018,   // Медь
+  Al: 0.029,   // Алюминий
+} as const;
+
+/**
+ * Удельное реактивное сопротивление кабелей (Ом/км) - приближённые значения
+ */
+export const REACTANCE_PER_KM = {
+  copper: 0.08,
+  aluminum: 0.09,
+} as const;
+
+// ============================================================================
+// УПРОЩЁННЫЙ РАСЧЁТ (без справочника R₀/X₀)
+// ============================================================================
+
+/**
+ * Упрощённый расчёт потери напряжения через ρ и S
+ * 
+ * Формула: ΔU = (Rлин * P) / (Uc * cosφ)
+ * где Rлин = (ρ * L) / S
+ */
+export function calculateVoltageDropSimple(
+  powerKw: number,
+  lengthM: number,
+  sectionMm2: number,
+  material: MaterialType,
+  voltageV: number,
+  cosPhi: number = 0.92
+): number {
+  const rho = RESISTIVITY[material] ?? RESISTIVITY.Cu;
+  const rLine = (rho * lengthM) / sectionMm2;
+  const deltaU_V = (rLine * powerKw * 1000) / (voltageV * cosPhi);
+  const deltaU_Percent = (deltaU_V * 100) / voltageV;
+  return deltaU_Percent;
+}
+
+/**
+ * Автоматический выбор метода расчёта падения напряжения
+ * 
+ * 1. Если есть R₀/X₀ из справочника → точный расчёт
+ * 2. Если нет → упрощённая формула через ρ и S
+ */
+export function calculateVoltageDropAuto(params: {
+  powerKw: number;
+  lengthM: number;
+  sectionMm2: number;
+  material: MaterialType;
+  voltageV: number;
+  cosPhi?: number;
+  r0OhmPerKm?: number | null;
+  x0OhmPerKm?: number | null;
+  qKvar?: number;
+}): number {
+  const {
+    powerKw,
+    lengthM,
+    sectionMm2,
+    material,
+    voltageV,
+    cosPhi = 0.92,
+    r0OhmPerKm,
+    x0OhmPerKm,
+  } = params;
+
+  if (r0OhmPerKm !== null && r0OhmPerKm !== undefined && r0OhmPerKm > 0) {
+    // ТОЧНЫЙ РАСЧЁТ (со справочником)
+    const lengthKm = lengthM / 1000;
+    const rOhm = r0OhmPerKm * lengthKm;
+    const xOhm = (x0OhmPerKm ?? REACTANCE_PER_KM[material === 'Cu' ? 'copper' : 'aluminum']) * lengthKm;
+    const current = (powerKw * 1000) / (Math.sqrt(3) * voltageV * cosPhi);
+    const sinPhi = Math.sqrt(1 - cosPhi * cosPhi);
+    const deltaU = (Math.sqrt(3) * current * (rOhm * cosPhi + xOhm * sinPhi) / voltageV) * 100;
+    return deltaU;
+  } else {
+    // УПРОЩЁННЫЙ РАСЧЁТ (без справочника)
+    return calculateVoltageDropSimple(powerKw, lengthM, sectionMm2, material, voltageV, cosPhi);
+  }
+}
+
 /**
  * Расчёт потери напряжения в линии
  * 

@@ -27,15 +27,24 @@ export default function RootLayout({
     <html
       lang="ru"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.addEventListener('unhandledrejection', function(e) { e.preventDefault(); });`,
+            __html: `
+              (function() {
+                var theme = localStorage.getItem('theme') || 'light';
+                if (theme === 'dark') {
+                  document.documentElement.classList.add('dark');
+                }
+              })();
+              window.addEventListener('unhandledrejection', function(e) { e.preventDefault(); });
+            `,
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col bg-gray-100 dark:bg-gray-900 transition-colors">
         <ThemeProvider>
           {children}
         </ThemeProvider>

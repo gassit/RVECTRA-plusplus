@@ -157,17 +157,28 @@ export default function Home() {
     load();
   }, []);
 
-  const refreshData = async () => {
-    setLoading(true);
+  const refreshData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
+      console.log('refreshData - Fetching fresh data...');
       const [networkRes, statsRes, validationRes] = await Promise.all([
         fetch('/api/network'), fetch('/api/stats'), fetch('/api/validation'),
       ]);
-      if (networkRes.ok) setNetworkData(await networkRes.json());
+      
+      if (networkRes.ok) {
+        const networkDataResult = await networkRes.json();
+        console.log('refreshData - Network data received, elements count:', networkDataResult?.elements?.length);
+        setNetworkData(networkDataResult);
+      }
       if (statsRes.ok) setStats(await statsRes.json());
       if (validationRes.ok) setValidation(await validationRes.json());
-    } catch (err) { setError(err instanceof Error ? err.message : 'Error'); }
-    finally { setLoading(false); }
+    } catch (err) { 
+      console.error('refreshData error:', err);
+      setError(err instanceof Error ? err.message : 'Error'); 
+    }
+    finally { 
+      if (showLoading) setLoading(false); 
+    }
   };
 
   const handleNodeClick = useCallback((nodeId: string) => {
@@ -302,8 +313,9 @@ export default function Home() {
       console.log('handleDeleteNode - Response result:', result);
       
       if (response.ok && result.success) {
-        console.log('Element deleted successfully');
-        await refreshData();
+        console.log('Element deleted successfully, refreshing data...');
+        // Не показываем loading spinner, чтобы не размонтировать граф
+        await refreshData(false);
       } else {
         alert(result.error || 'Ошибка при удалении элемента');
       }

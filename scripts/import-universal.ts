@@ -951,6 +951,13 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   }
 
   // =========================================================================
+  // ИМПОРТ СПРАВОЧНИКА КАБЕЛЕЙ (ДО связей - нужен для R₀/X₀)
+  // =========================================================================
+  console.log('\n=== СПРАВОЧНИК КАБЕЛЕЙ ===');
+  const cablesImported = await importCableReference(workbook);
+  console.log(`   Импортировано: ${cablesImported}`);
+
+  // =========================================================================
   // ИМПОРТ СВЯЗЕЙ
   // =========================================================================
   console.log('\n=== ИМПОРТ СВЯЗЕЙ ===');
@@ -1202,13 +1209,6 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   console.log('\n=== ИМПОРТ АВР ===');
   const avrResult = await importAVR(workbook, elementIdToDbId);
   console.log(`   АВР: ${avrResult.avrs}, входов: ${avrResult.inputs}, выходов: ${avrResult.outputs}`);
-
-  // =========================================================================
-  // ИМПОРТ СПРАВОЧНИКА КАБЕЛЕЙ
-  // =========================================================================
-  console.log('\n=== СПРАВОЧНИК КАБЕЛЕЙ ===');
-  const cablesImported = await importCableReference(workbook);
-  console.log(`   Импортировано: ${cablesImported}`);
 
   // =========================================================================
   // РАСПРОСТРАНЕНИЕ СОСТОЯНИЙ

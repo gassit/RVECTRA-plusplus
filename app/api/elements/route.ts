@@ -309,10 +309,7 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
-    console.log('DELETE /api/elements - Received ID:', id);
-
     if (!id) {
-      console.log('DELETE - Missing ID parameter');
       return NextResponse.json(
         { success: false, error: 'ID элемента обязателен' },
         { status: 400 }
@@ -324,10 +321,7 @@ export async function DELETE(request: NextRequest) {
       where: { id },
     });
 
-    console.log('DELETE - Element exists:', !!existingElement, existingElement?.name);
-
     if (!existingElement) {
-      console.log('DELETE - Element not found with ID:', id);
       return NextResponse.json(
         { success: false, error: 'Элемент не найден' },
         { status: 404 }
@@ -335,18 +329,16 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Сначала удаляем связи
-    const deletedConnections = await prisma.connection.deleteMany({
+    await prisma.connection.deleteMany({
       where: {
         OR: [{ sourceId: id }, { targetId: id }],
       },
     });
-    console.log('DELETE - Deleted connections count:', deletedConnections.count);
 
     // Удаляем DeviceSlots и связанные Devices
     const slots = await prisma.deviceSlot.findMany({
       where: { elementId: id },
     });
-    console.log('DELETE - Found slots to delete:', slots.length);
 
     for (const slot of slots) {
       // Удаляем связанные записи из специфичных таблиц
@@ -372,12 +364,10 @@ export async function DELETE(request: NextRequest) {
       where: { elementId: id },
     });
 
-    // Теперь удаляем сам элемент
+    // Удаляем сам элемент
     await prisma.element.delete({
       where: { id },
     });
-
-    console.log('DELETE - Element deleted successfully:', id);
 
     return NextResponse.json({
       success: true,

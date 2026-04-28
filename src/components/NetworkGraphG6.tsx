@@ -503,8 +503,6 @@ export default function NetworkGraphG6({
     // Проверка что граф не уничтожен
     if ((graph as any).destroyed) return;
 
-    console.log('NetworkGraphG6 - Updating graph data, nodes:', data.nodes?.length, 'edges:', data.edges?.length);
-
     try {
       // Преобразуем данные в формат G6
       const nodes = data.nodes.map(node => ({
@@ -529,18 +527,14 @@ export default function NetworkGraphG6({
         data: combo.data,
       })) || [];
 
-      console.log('NetworkGraphG6 - Setting graph data:', { nodes: nodes.length, edges: edges.length, combos: combos.length });
-      
       graph.setData({ nodes, edges: edges as any, combos });
 
       // Только первый рендер, потом данные обновляются через setData
       if (!(graph as any).rendered) {
-        console.log('NetworkGraphG6 - First render');
         graph.render();
         (graph as any).rendered = true;
       } else {
         // Обновляем граф при изменении данных
-        console.log('NetworkGraphG6 - Refreshing graph after data update');
         graph.render();
       }
     } catch (e) {

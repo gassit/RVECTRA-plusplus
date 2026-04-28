@@ -160,16 +160,11 @@ export default function Home() {
   const refreshData = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      console.log('refreshData - Fetching fresh data...');
       const [networkRes, statsRes, validationRes] = await Promise.all([
         fetch('/api/network'), fetch('/api/stats'), fetch('/api/validation'),
       ]);
       
-      if (networkRes.ok) {
-        const networkDataResult = await networkRes.json();
-        console.log('refreshData - Network data received, elements count:', networkDataResult?.elements?.length);
-        setNetworkData(networkDataResult);
-      }
+      if (networkRes.ok) setNetworkData(await networkRes.json());
       if (statsRes.ok) setStats(await statsRes.json());
       if (validationRes.ok) setValidation(await validationRes.json());
     } catch (err) { 
@@ -297,23 +292,12 @@ export default function Home() {
   // Удаление элемента
   const handleDeleteNode = async (nodeId: string) => {
     try {
-      console.log('handleDeleteNode - Deleting element with nodeId:', nodeId);
-      console.log('handleDeleteNode - nodeId type:', typeof nodeId);
-      console.log('handleDeleteNode - nodeId length:', nodeId?.length);
-      
-      const url = `/api/elements?id=${encodeURIComponent(nodeId)}`;
-      console.log('handleDeleteNode - Fetch URL:', url);
-      
-      const response = await fetch(url, {
+      const response = await fetch(`/api/elements?id=${encodeURIComponent(nodeId)}`, {
         method: 'DELETE',
       });
       const result = await response.json();
       
-      console.log('handleDeleteNode - Response status:', response.status);
-      console.log('handleDeleteNode - Response result:', result);
-      
       if (response.ok && result.success) {
-        console.log('Element deleted successfully, refreshing data...');
         // Не показываем loading spinner, чтобы не размонтировать граф
         await refreshData(false);
       } else {

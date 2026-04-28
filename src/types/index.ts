@@ -39,17 +39,21 @@ export interface CableReferenceData {
   iGround: number;         // Допустимый ток в земле (А)
 }
 
+// Тип выключателя
+export type BreakerType = 'MCB' | 'MCCB' | 'RCD' | 'RCBO';
+
 // Данные выключателя из справочника
 export interface BreakerReferenceData {
   id: string;
   manufacturer: string;    // Производитель
   model: string;           // Модель
-  type: 'MCB' | 'MCCB' | 'ACB';  // Тип выключателя
+  breakerType: BreakerType;  // Тип: MCB, MCCB, RCD, RCBO
   inRatings: number[];     // Доступные номинальные токи (А)
   poles: number;           // Количество полюсов
   voltage: number;         // Номинальное напряжение (В)
   breakingCapacity: number; // Отключающая способность (кА)
   trippingChars: string[]; // Характеристики расцепителя (B, C, D)
+  leakageCurrent?: number; // Ток утечки (мА) - для RCD/RCBO
 }
 
 // Данные трансформатора из справочника
@@ -109,6 +113,9 @@ export interface NetworkDevice {
   poles?: number;
   trippingChar?: string;
   inRating?: number;
+  // Для выключателей
+  breakerType?: BreakerType;   // MCB | MCCB | RCD | RCBO
+  leakageCurrent?: number;     // Ток утечки (мА)
 }
 
 // Связь

@@ -33,9 +33,9 @@ interface NetworkData {
     operationalStatus: OperationalStatus;
     DeviceSlot?: Array<{
       slotId: string;
-      Device?: {
+      Device?: Array<{
         id: string;
-        type: string;
+        deviceType: string;
         model?: string | null;
         manufacturer?: string | null;
         Load?: { powerP: number; powerQ: number; cosPhi: number } | null;
@@ -49,7 +49,7 @@ interface NetworkData {
         } | null;
         Meter?: { currentNom: number | null } | null;
         Transformer?: { powerKva: number | null } | null;
-      } | null;
+      }>;
     }>;
   }>;
   connections: Array<{
@@ -340,22 +340,25 @@ export default function Home() {
         voltageLevel: e.voltageLevel || undefined,
         combo: e.parentId || undefined,
         // Преобразуем DeviceSlot в формат devices для tooltip
-        devices: e.DeviceSlot?.map(slot => ({
-          id: slot.Device?.id || '',
-          type: slot.Device?.type || '',
-          slotId: slot.slotId || '',
-          model: slot.Device?.model || undefined,
-          manufacturer: slot.Device?.manufacturer || undefined,
-          currentNom: slot.Device?.Breaker?.ratedCurrent || slot.Device?.Meter?.currentNom || undefined,
-          pKw: slot.Device?.Load?.powerP || undefined,
-          qKvar: slot.Device?.Load?.powerQ || undefined,
-          cosPhi: slot.Device?.Load?.cosPhi || undefined,
-          breakerType: slot.Device?.Breaker?.breakerType || undefined,
-          breakingCapacity: slot.Device?.Breaker?.breakingCapacity || undefined,
-          curve: slot.Device?.Breaker?.curve || undefined,
-          leakageCurrent: slot.Device?.Breaker?.leakageCurrent || undefined,
-          poles: slot.Device?.Breaker?.poles || undefined,
-        } as any)).filter(d => d.type) || [],
+        devices: e.DeviceSlot?.flatMap(slot => {
+          const devices = slot.Device || [];
+          return devices.map(d => ({
+            id: d.id || '',
+            type: d.deviceType || '',
+            slotId: slot.slotId || '',
+            model: d.model || undefined,
+            manufacturer: d.manufacturer || undefined,
+            currentNom: d.Breaker?.ratedCurrent || d.Meter?.currentNom || undefined,
+            pKw: d.Load?.powerP || undefined,
+            qKvar: d.Load?.powerQ || undefined,
+            cosPhi: d.Load?.cosPhi || undefined,
+            breakerType: d.Breaker?.breakerType || undefined,
+            breakingCapacity: d.Breaker?.breakingCapacity || undefined,
+            curve: d.Breaker?.curve || undefined,
+            leakageCurrent: d.Breaker?.leakageCurrent || undefined,
+            poles: d.Breaker?.poles || undefined,
+          } as any));
+        }).filter(d => d.type) || [],
       })),
       edges: (filteredData?.connections || networkData?.connections || []).map(c => ({
         id: c.id, source: c.sourceId, target: c.targetId, type: 'CABLE' as const,

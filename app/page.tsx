@@ -7,7 +7,6 @@ import AddElementModal, { type AddElementData } from '@/components/AddElementMod
 import AddConnectionModal, { type ConnectionData } from '@/components/AddConnectionModal';
 import { useTheme } from '@/components/providers/ThemeProvider';
 import type { ElectricalStatus, OperationalStatus, ElementType } from '@/types';
-import { calculateVoltageDropAuto } from '@/lib/calculations/voltageDrop';
 
 interface CableData {
   id: string;
@@ -94,8 +93,7 @@ export default function Home() {
   const [validation, setValidation] = useState<ValidationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+
   const [showStats, setShowStats] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -160,13 +158,13 @@ export default function Home() {
   };
 
   const handleNodeClick = useCallback((nodeId: string) => {
-    setSelectedNode(nodeId);
-    setSelectedEdge(null);
+    // Клик по узлу - можно добавить функционал при необходимости
+    console.log('Node clicked:', nodeId);
   }, []);
 
   const handleEdgeClick = useCallback((edgeId: string) => {
-    setSelectedEdge(edgeId);
-    setSelectedNode(null);
+    // Клик по ребру - можно добавить функционал при необходимости
+    console.log('Edge clicked:', edgeId);
   }, []);
 
   // Переключение режима редактирования
@@ -305,35 +303,8 @@ export default function Home() {
 
   const errorCount = validation?.stats.errors || 0;
   const warningCount = validation?.stats.warnings || 0;
-  const selectedElement = useMemo(() => networkData?.elements.find(e => e.id === selectedNode) || null, [selectedNode, networkData]);
-  const selectedConnection = useMemo(() => networkData?.connections.find(c => c.id === selectedEdge) || null, [selectedEdge, networkData]);
 
-  // Расчёт потери напряжения для связи (автовыбор метода)
-  const calculateVoltageDropDisplay = useCallback((connection: typeof selectedConnection) => {
-    if (!connection?.cable) return null;
-    const cable = connection.cable;
-    const length = cable.length;
-    const section = cable.section;
-    const material = cable.material === 'aluminum' ? 'Al' : 'Cu' as 'Cu' | 'Al';
-    const targetElement = networkData?.elements.find(e => e.id === connection.targetId);
-    const deviceSlot = (targetElement as any)?.DeviceSlot?.[0];
-    const load = deviceSlot?.Device?.Load;
-    if (!load) return null;
-    const P = load.powerP;
-    const cosPhi = load.cosPhi || 0.92;
-    const U = targetElement?.voltageLevel || 380;
-    const voltageDrop = calculateVoltageDropAuto({
-      powerKw: P,
-      lengthM: length,
-      sectionMm2: section,
-      material: material,
-      voltageV: U,
-      cosPhi: cosPhi,
-      r0OhmPerKm: cable.r0,
-      x0OhmPerKm: cable.x0,
-    });
-    return voltageDrop.toFixed(2);
-  }, [networkData]);
+
   const connectionSourceName = networkData?.elements.find(e => e.id === connectionSource)?.name || '';
   const connectionTargetName = networkData?.elements.find(e => e.id === connectionTarget)?.name || '';
 
@@ -437,8 +408,6 @@ export default function Home() {
               data={graphData}
               onNodeClick={handleNodeClick}
               onEdgeClick={handleEdgeClick}
-              selectedNodeId={selectedNode}
-              selectedEdgeId={selectedEdge}
               editMode={editMode}
               selectedElementType={selectedElementType}
               onCanvasClick={handleCanvasClick}
@@ -448,71 +417,7 @@ export default function Home() {
             />
           )}
 
-          {/* Selected Node Info */}
-          {selectedNode && selectedElement && (
-            <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-4 w-80 border border-gray-200 dark:border-gray-700 z-20">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{selectedElement.name}</h3>
-                  <p className="text-xs text-gray-500">ID: {selectedElement.elementId} | Тип: {selectedElement.type}</p>
-                </div>
-                <button onClick={() => setSelectedNode(null)} className="text-gray-400 hover:text-gray-600">✕</button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className={`p-2 rounded-lg text-center ${selectedElement.electricalStatus === 'LIVE' ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-100 dark:bg-gray-700'}`}>
-                  <div className={`text-sm font-medium ${selectedElement.electricalStatus === 'LIVE' ? 'text-green-600' : 'text-gray-500'}`}>{selectedElement.electricalStatus}</div>
-                  <div className="text-xs text-gray-400">Электрический</div>
-                </div>
-                <div className={`p-2 rounded-lg text-center ${selectedElement.operationalStatus === 'OFF' ? 'bg-red-50 dark:bg-red-900/20' : 'bg-blue-50 dark:bg-blue-900/20'}`}>
-                  <div className={`text-sm font-medium ${selectedElement.operationalStatus === 'OFF' ? 'text-red-500' : 'text-blue-600'}`}>{selectedElement.operationalStatus}</div>
-                  <div className="text-xs text-gray-400">Оперативный</div>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* Selected Edge Info */}
-          {selectedEdge && selectedConnection && (
-            <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-4 w-80 border border-gray-200 dark:border-gray-700 z-20">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">🔗 Связь</h3>
-                  <p className="text-xs text-gray-500">{selectedConnection.source?.name} → {selectedConnection.target?.name}</p>
-                </div>
-                <button onClick={() => setSelectedEdge(null)} className="text-gray-400 hover:text-gray-600">✕</button>
-              </div>
-              {selectedConnection.cable ? (
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-gray-700">
-                    <span className="text-xs text-gray-500">Марка кабеля:</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{selectedConnection.cable.name || 'Не указана'}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-gray-700">
-                    <span className="text-xs text-gray-500">Длина:</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{selectedConnection.cable.length} м</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-gray-700">
-                    <span className="text-xs text-gray-500">Сечение:</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{selectedConnection.cable.section} мм²</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-gray-700">
-                    <span className="text-xs text-gray-500">Материал:</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{selectedConnection.cable.material === 'aluminum' ? 'Алюминий' : 'Медь'}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-gray-700">
-                    <span className="text-xs text-gray-500">Допустимый ток:</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{selectedConnection.cable.iDop ? `${selectedConnection.cable.iDop} А` : 'Не указан'}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1.5">
-                    <span className="text-xs text-gray-500">Потеря напряжения:</span>
-                    <span className={`text-sm font-medium ${calculateVoltageDropDisplay(selectedConnection) && parseFloat(calculateVoltageDropDisplay(selectedConnection)!) > 5 ? 'text-red-500' : 'text-gray-900 dark:text-white'}`}>{calculateVoltageDropDisplay(selectedConnection) ? `${calculateVoltageDropDisplay(selectedConnection)}%` : 'Н/Д'}</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-4 text-gray-500 text-sm">Данные кабеля не указаны</div>
-              )}
-            </div>
-          )}
         </main>
       </div>
 

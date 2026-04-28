@@ -9,8 +9,6 @@ interface NetworkGraphG6Props {
   onNodeClick?: (nodeId: string) => void;
   onEdgeClick?: (edgeId: string) => void;
   onEmptyClick?: () => void;
-  selectedNodeId?: string | null;
-  selectedEdgeId?: string | null;
   zoom?: number;
   onZoomChange?: (zoom: number) => void;
   collapsedTypes?: Set<string>;
@@ -50,8 +48,6 @@ export default function NetworkGraphG6({
   onNodeClick,
   onEdgeClick,
   onEmptyClick,
-  selectedNodeId,
-  selectedEdgeId,
   zoom: externalZoom,
   onZoomChange,
   editMode = false,
@@ -522,77 +518,7 @@ export default function NetworkGraphG6({
     }
   }, [data]);
 
-  // Выделение выбранного узла
-  useEffect(() => {
-    const graph = graphRef.current;
-    if (!graph) return;
 
-    // Проверка что граф не уничтожен и готов к работе
-    if ((graph as any).destroyed || !(graph as any).rendered) return;
-
-    try {
-      // Снимаем выделение со всех узлов через getData
-      const nodeData = graph.getData();
-      if (!nodeData || !nodeData.nodes) return;
-
-      nodeData.nodes.forEach((node: any) => {
-        if (node?.id && !(graph as any).destroyed) {
-          try {
-            graph.setElementState(node.id, 'selected', false);
-          } catch {
-            // Skip if element doesn't exist
-          }
-        }
-      });
-
-      // Выделяем выбранный
-      if (selectedNodeId && !(graph as any).destroyed) {
-        try {
-          graph.setElementState(selectedNodeId, 'selected', true);
-        } catch {
-          // Skip if element doesn't exist
-        }
-      }
-    } catch (e) {
-      // Graph may be destroyed or data unavailable
-    }
-  }, [selectedNodeId]);
-
-  // Выделение выбранного ребра
-  useEffect(() => {
-    const graph = graphRef.current;
-    if (!graph) return;
-
-    // Проверка что граф не уничтожен и готов к работе
-    if ((graph as any).destroyed || !(graph as any).rendered) return;
-
-    try {
-      // Снимаем выделение со всех ребер
-      const edgeData = graph.getData();
-      if (!edgeData || !edgeData.edges) return;
-
-      edgeData.edges.forEach((edge: any) => {
-        if (edge?.id && !(graph as any).destroyed) {
-          try {
-            graph.setElementState(edge.id, 'selected', false);
-          } catch {
-            // Skip if element doesn't exist
-          }
-        }
-      });
-
-      // Выделяем выбранный
-      if (selectedEdgeId && !(graph as any).destroyed) {
-        try {
-          graph.setElementState(selectedEdgeId, 'selected', true);
-        } catch {
-          // Skip if element doesn't exist
-        }
-      }
-    } catch (e) {
-      // Graph may be destroyed or data unavailable
-    }
-  }, [selectedEdgeId]);
 
   // Внешний zoom
   useEffect(() => {
@@ -663,22 +589,66 @@ export default function NetworkGraphG6({
         </div>
       )}
 
-      {/* Подсказка при наведении на узел - скрываем если есть выбранный элемент */}
-      {hoveredNode && !selectedNodeId && (
-        <div className="absolute bottom-4 right-4 p-3 bg-white dark:bg-slate-900 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 text-sm max-w-xs z-20">
-          <div className="space-y-1">
-            <div className="font-medium text-slate-800 dark:text-slate-200">{hoveredNode.name}</div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">ID: {hoveredNode.id}</div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">Тип: {hoveredNode.type.toLowerCase()}</div>
-            {hoveredNode.devices?.[0]?.currentNom && (
-              <div className="text-xs text-slate-600 dark:text-slate-300">Iном: {hoveredNode.devices[0].currentNom}А</div>
+      {/* Подсказка при наведении на узел */}
+      {hoveredNode && (
+        <div className="absolute bottom-4 right-4 p-4 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 text-sm max-w-sm z-20">
+          <div className="space-y-2">
+            {/* Заголовок */}
+            <div className="border-b border-slate-200 dark:border-slate-700 pb-2">
+              <div className="font-semibold text-slate-900 dark:text-slate-100 text-base">{hoveredNode.name}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">ID: {hoveredNode.id} | Тип: {hoveredNode.type.toLowerCase()}</div>
+            </div>
+            
+            {/* Статусы */}
+            <div className="flex gap-2">
+              <div className={`px-2 py-1 rounded text-xs font-medium ${
+                hoveredNode.lifeStatus === 'LIVE' 
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+              }`}>
+                {hoveredNode.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
+              </div>
+              <div className={`px-2 py-1 rounded text-xs font-medium ${
+                hoveredNode.status === 'OFF' 
+                  ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
+                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+              }`}>
+                {hoveredNode.status === 'OFF' ? '🔴 Отключен' : '🔵 В работе'}
+              </div>
+            </div>
+            
+            {/* Устройства */}
+            {hoveredNode.devices && hoveredNode.devices.length > 0 && (
+              <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Устройства:</div>
+                {hoveredNode.devices.map((device, idx) => (
+                  <div key={idx} className="text-xs text-slate-500 dark:text-slate-400 pl-2">
+                    • {device.type}{device.model ? ` ${device.model}` : ''}
+                    {device.currentNom && ` | Iном: ${device.currentNom}А`}
+                    {device.pKw && ` | P: ${device.pKw}кВт`}
+                    {device.breakerType && ` | Тип: ${device.breakerType}`}
+                    {device.breakingCapacity && ` | Откл.способность: ${device.breakingCapacity}кА`}
+                    {device.curve && ` | Характеристика: ${device.curve}`}
+                    {device.leakageCurrent && ` | Iут: ${device.leakageCurrent}мА`}
+                    {device.poles && ` | Полюсов: ${device.poles}`}
+                  </div>
+                ))}
+              </div>
             )}
-            {hoveredNode.devices?.[0]?.pKw && (
-              <div className="text-xs text-slate-600 dark:text-slate-300">P: {hoveredNode.devices[0].pKw}кВт</div>
+            
+            {/* Напряжение */}
+            {hoveredNode.voltageLevel && (
+              <div className="text-xs text-slate-600 dark:text-slate-300">
+                Напряжение: {hoveredNode.voltageLevel}В
+              </div>
             )}
+            
+            {/* Проблемы */}
             {hoveredNode.criticalIssues > 0 && (
-              <div className="text-xs text-red-500 dark:text-red-400 mt-1">
-                {hoveredNode.criticalIssues} проблем
+              <div className="border-t border-red-200 dark:border-red-800 pt-2">
+                <div className="text-xs text-red-500 dark:text-red-400 font-medium">
+                  ⚠️ {hoveredNode.criticalIssues} проблем(ы)
+                </div>
               </div>
             )}
           </div>

@@ -59,6 +59,10 @@ model Cable {
   section        Float
   material       String          @default("copper")
   iDop           Float?
+  voltageDrop    Float?          // Потеря напряжения (%)
+  currentA       Float?          // Расчётный ток (А)
+  r0             Float?          // Активное сопротивление (Ом/км)
+  x0             Float?          // Реактивное сопротивление (Ом/км)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime
   CableReference CableReference? @relation(fields: [refId], references: [id])

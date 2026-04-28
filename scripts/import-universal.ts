@@ -21,6 +21,7 @@ import * as xlsx from 'xlsx';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { OperationalStatus } from '../types/index';
+import { calculateVoltageDropAuto, RESISTIVITY } from '../src/lib/calculations/voltageDrop';
 
 const prisma = new PrismaClient();
 
@@ -178,6 +179,8 @@ interface ConnectionInfo {
   section?: number | null;
   material?: string | null;
   iDop?: number | null;
+  // Power for voltage drop calculation
+  powerKw?: number | null;
 }
 
 // ============================================================================
@@ -447,7 +450,7 @@ function detectExcelFormat(rawData: Record<string, unknown>[]): ExcelFormat {
     // Leakage current - ток утечки
     leakageCurrentCol: findCol([/^ток\s*утечки/i, /^leakage\s*current/i]),
     // Power
-    powerCol: findCol([/^мощность$/i, /^power$/i, /^p_?квт$/i, /^s_?ква$/i]),
+    powerCol: findCol([/^мощность\s*\(квт\)/i, /^мощность$/i, /^power$/i, /^p_?квт$/i, /^s_?ква$/i]),
     // Location
     locationCol: findCol([/^location$/i, /^расположе/i, /^место$/i, /^помещение$/i]),
     // Parent
@@ -615,7 +618,7 @@ async function importAVR(workbook: xlsx.WorkBook, elementIdToDbId: Map<string, s
 // ============================================================================
 
 async function importCableReference(workbook: xlsx.WorkBook): Promise<number> {
-  const sheetNames = ['directory_connection', 'cables', 'кабели', 'справочник'];
+  const sheetNames = ['CableReference', 'directory_connection', 'cables', 'кабели', 'справочник'];
   let imported = 0;
 
   for (const name of sheetNames) {
@@ -627,13 +630,15 @@ async function importCableReference(workbook: xlsx.WorkBook): Promise<number> {
 
     for (const row of data) {
       try {
-        const mark = String(row['Марка, тип'] || row['mark'] || row['марка'] || '');
-        const section = parseFloatValue(row['сечение'] || row['section'] || '0');
-        const cores = parseInt(String(row['кол-во жил'] || row['cores'] || '3'));
-        const iDop = parseFloatValue(row['ток, А'] || row['current'] || row['i_dop'] || '0');
+        const mark = String(row['Марка кабеля'] || row['Марка, тип'] || row['mark'] || row['марка'] || '');
+        const section = parseFloatValue(row['Сечение (мм²)'] || row['сечение'] || row['section'] || '0');
+        const cores = parseInt(String(row['Кол-во жил'] || row['кол-во жил'] || row['cores'] || '3'));
+        const iDop = parseFloatValue(row['Допустимый ток (А)'] || row['ток, А'] || row['current'] || row['i_dop'] || '0');
         const material = String(row['Материал'] || row['material'] || 'Медь')
           .toLowerCase().includes('алюминий') ? 'aluminum' : 'copper';
         const voltage = parseFloatValue(row['Напряжение'] || row['voltage'] || '380') || 380;
+        const r0 = parseFloatValue(row['R₀ (Ом/км)'] || row['R0'] || row['r0'] || '0');
+        const x0 = parseFloatValue(row['X₀ (Ом/км)'] || row['X0'] || row['x0'] || '0.08');
 
         if (mark && section && section > 0) {
           const markKey = `${mark}_${cores}x${section}`;
@@ -646,12 +651,14 @@ async function importCableReference(workbook: xlsx.WorkBook): Promise<number> {
               material,
               voltage: voltage / 1000,
               iDop: iDop || 0,
-              r0: 0,
-              x0: 0.08,
+              r0: r0 || 0,
+              x0: x0 || 0.08,
             },
             update: {
               iDop: iDop || 0,
               material,
+              r0: r0 || 0,
+              x0: x0 || 0.08,
             },
           });
           imported++;
@@ -831,7 +838,9 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
     connectionsData.push({ 
       from, to, connection, order: i + 1,
       // Cable parameters
-      cores, length, section, material, iDop
+      cores, length, section, material, iDop,
+      // Power for voltage drop calculation (power of the target element)
+      powerKw: power,
     });
   }
 
@@ -947,8 +956,29 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   console.log('\n=== ИМПОРТ СВЯЗЕЙ ===');
 
   const connectionData = [];
-  const cableDataList: { id: string; cableId: string; length: number; cores: number; section: number; material: string; iDop: number | null; updatedAt: Date }[] = [];
+  const cableDataList: { 
+    id: string; 
+    cableId: string; 
+    length: number; 
+    cores: number; 
+    section: number; 
+    material: string; 
+    iDop: number | null;
+    voltageDrop: number | null;
+    currentA: number | null;
+    r0: number | null;
+    x0: number | null;
+    updatedAt: Date 
+  }[] = [];
   const connectionCableMap = new Map<string, string>(); // connectionId -> cableId
+
+  // Загружаем справочник кабелей для расчёта потерь
+  const cableRefMap = new Map<string, { r0: number; x0: number }>();
+  const cableRefs = await prisma.cableReference.findMany();
+  for (const ref of cableRefs) {
+    cableRefMap.set(ref.mark, { r0: ref.r0, x0: ref.x0 });
+  }
+  console.log(`   Справочник кабелей: ${cableRefs.length} записей`);
 
   for (const c of connectionsData) {
     const sourceDbId = elementIdToDbId.get(c.from);
@@ -964,9 +994,56 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
       cableDbId = cableId;
       
       // Определяем материал
-      let material = 'copper';
+      let material: 'Cu' | 'Al' = 'Cu';
+      let materialDb = 'copper';
       if (c.material) {
-        material = c.material.includes('алюм') ? 'aluminum' : 'copper';
+        if (c.material.includes('алюм') || c.material.toLowerCase() === 'aluminum') {
+          material = 'Al';
+          materialDb = 'aluminum';
+        }
+      }
+      
+      // Ищем R₀/X₀ в справочнике
+      let r0: number | null = null;
+      let x0: number | null = null;
+      
+      // Формируем ключ для поиска: Марка_КоличествоЖилxСечение
+      // Например: ВВГ_3x2.5, АВВГ_4x25
+      const cableName = c.connection || ''; // Например "АВВГ 4х25" или "ВВГ 3х16"
+      const markMatch = cableName.match(/^([А-ЯA-Z]+)/i);
+      const mark = markMatch ? markMatch[1] : '';
+      const refKey = `${mark}_${c.cores || 3}x${c.section || 0}`;
+      
+      const refData = cableRefMap.get(refKey);
+      if (refData) {
+        r0 = refData.r0;
+        x0 = refData.x0;
+      }
+      
+      // Расчёт тока и потерь напряжения
+      let voltageDrop: number | null = null;
+      let currentA: number | null = null;
+      
+      // Используем мощность из связи (для нагрузки)
+      const powerKw = c.powerKw || null;
+      
+      if (powerKw && c.length && c.section) {
+        // Расчёт тока: I = P / (√3 × U × cosφ)
+        const voltageV = 380; // Номинальное напряжение
+        const cosPhi = 0.92; // Коэффициент мощности по умолчанию
+        currentA = (powerKw * 1000) / (Math.sqrt(3) * voltageV * cosPhi);
+        
+        // Расчёт потерь напряжения с автовыбором метода
+        voltageDrop = calculateVoltageDropAuto({
+          powerKw,
+          lengthM: c.length,
+          sectionMm2: c.section,
+          material,
+          voltageV,
+          cosPhi,
+          r0OhmPerKm: r0,
+          x0OhmPerKm: x0,
+        });
       }
       
       cableDataList.push({
@@ -975,8 +1052,12 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
         length: c.length || 0,
         cores: c.cores || 3,
         section: c.section || 0,
-        material,
+        material: materialDb,
         iDop: c.iDop || null,
+        voltageDrop,
+        currentA,
+        r0,
+        x0,
         updatedAt: new Date(),
       });
       
@@ -998,6 +1079,11 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   if (cableDataList.length > 0) {
     await prisma.cable.createMany({ data: cableDataList });
     console.log(`   Кабели: ${cableDataList.length}`);
+    
+    // Статистика по потерям напряжения
+    const withVoltageDrop = cableDataList.filter(c => c.voltageDrop !== null).length;
+    const withR0 = cableDataList.filter(c => c.r0 !== null && c.r0 > 0).length;
+    console.log(`   С расчётом потерь: ${withVoltageDrop} (точный метод: ${withR0}, упрощённый: ${withVoltageDrop - withR0})`);
   }
 
   // Создаём связи

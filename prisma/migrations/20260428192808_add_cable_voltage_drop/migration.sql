@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Cable" ADD COLUMN "currentA" REAL;
+ALTER TABLE "Cable" ADD COLUMN "r0" REAL;
+ALTER TABLE "Cable" ADD COLUMN "voltageDrop" REAL;
+ALTER TABLE "Cable" ADD COLUMN "x0" REAL;

@@ -99,27 +99,28 @@ export default function ElementPalette({
           onClick={onEditModeToggle}
           className={`w-full px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
             editMode
-              ? 'bg-amber-500 text-white shadow-md'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+              ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+              : 'bg-blue-500 text-white shadow-md hover:bg-blue-600'
           }`}
         >
-          <span>{editMode ? '✏️' : '👁️'}</span>
-          <span>{editMode ? 'Редактирование' : 'Просмотр'}</span>
+          <span>{editMode ? '👁️' : '✏️'}</span>
+          <span>{editMode ? 'Просмотр' : 'Редактирование'}</span>
         </button>
 
-        {/* Режим создания связи */}
-        <button
-          onClick={onConnectionModeToggle}
-          className={`w-full px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-            connectionMode
-              ? 'bg-green-500 text-white shadow-md'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-          }`}
-          disabled={!editMode}
-        >
-          <span>🔗</span>
-          <span>Создать связь</span>
-        </button>
+        {/* Режим создания связи - только в режиме редактирования */}
+        {editMode && (
+          <button
+            onClick={onConnectionModeToggle}
+            className={`w-full px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+              connectionMode
+                ? 'bg-green-500 text-white shadow-md'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            <span>🔗</span>
+            <span>Создать связь</span>
+          </button>
+        )}
       </div>
 
       {/* Палитра элементов */}

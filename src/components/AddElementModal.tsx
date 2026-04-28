@@ -3,6 +3,11 @@
 import { useState, useEffect } from 'react';
 import type { ElementType, DeviceType } from '@/types';
 
+interface Cabinet {
+  id: string;
+  name: string;
+}
+
 interface AddElementModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -10,6 +15,7 @@ interface AddElementModalProps {
   elementType: ElementType | null;
   posX: number;
   posY: number;
+  cabinets?: Cabinet[]; // Список доступных cabinet-ов
 }
 
 export interface AddElementData {
@@ -122,6 +128,7 @@ export default function AddElementModal({
   elementType,
   posX,
   posY,
+  cabinets = [],
 }: AddElementModalProps) {
   // Основные параметры
   const [name, setName] = useState('');
@@ -310,6 +317,27 @@ export default function AddElementModal({
                 <option value={10000}>10 кВ</option>
               </select>
             </div>
+
+            {/* Cabinet - только для некабинетных элементов */}
+            {elementType !== 'CABINET' && cabinets.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Распределительный щит (Cabinet)
+                </label>
+                <select
+                  value={parentId}
+                  onChange={(e) => setParentId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Без щита (корневой элемент)</option>
+                  {cabinets.map(cabinet => (
+                    <option key={cabinet.id} value={cabinet.id}>
+                      {cabinet.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* === СТАТУСЫ === */}

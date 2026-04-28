@@ -317,6 +317,13 @@ export default function Home() {
   const errorCount = validation?.stats.errors || 0;
   const warningCount = validation?.stats.warnings || 0;
 
+  // Список cabinet-ов для выбора родительского элемента
+  const cabinetsList = useMemo(() => {
+    if (!networkData) return [];
+    return networkData.elements
+      .filter(e => e.type.toLowerCase() === 'cabinet')
+      .map(e => ({ id: e.id, name: e.name }));
+  }, [networkData]);
 
   const connectionSourceName = networkData?.elements.find(e => e.id === connectionSource)?.name || '';
   const connectionTargetName = networkData?.elements.find(e => e.id === connectionTarget)?.name || '';
@@ -463,7 +470,15 @@ export default function Home() {
       </div>
 
       {/* Modals */}
-      <AddElementModal isOpen={showAddElementModal} onClose={() => setShowAddElementModal(false)} onSubmit={handleAddElement} elementType={selectedElementType} posX={pendingElementPos.x} posY={pendingElementPos.y} />
+      <AddElementModal 
+        isOpen={showAddElementModal} 
+        onClose={() => setShowAddElementModal(false)} 
+        onSubmit={handleAddElement} 
+        elementType={selectedElementType} 
+        posX={pendingElementPos.x} 
+        posY={pendingElementPos.y}
+        cabinets={cabinetsList}
+      />
       <AddConnectionModal isOpen={showAddConnectionModal} onClose={() => { setShowAddConnectionModal(false); setConnectionSource(null); setConnectionTarget(null); }} onSubmit={handleAddConnection} sourceName={connectionSourceName} targetName={connectionTargetName} />
     </div>
   );

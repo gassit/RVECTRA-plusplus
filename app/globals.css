@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @config "../tailwind.config.ts";
 
+/* Tailwind 4 dark mode variant */
+@variant dark (&:where(.dark, .dark *));
+
 /* CSS переменные для тем */
 :root {
   --background: #f3f4f6;

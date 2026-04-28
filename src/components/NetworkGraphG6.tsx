@@ -600,22 +600,25 @@ export default function NetworkGraphG6({
             </div>
             
             {/* Статусы */}
-            <div className="flex gap-2">
-              <div className={`px-2 py-1 rounded text-xs font-medium ${
+            {(['SOURCE', 'BREAKER', 'LOAD', 'METER'].includes(hoveredNode.type.toUpperCase())) ? (
+              // Для коммутирующих элементов - показываем Включен/Отключен
+              <div className={`px-2 py-1 rounded text-xs font-medium inline-block ${
+                hoveredNode.status === 'OFF' 
+                  ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
+                  : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+              }`}>
+                {hoveredNode.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
+              </div>
+            ) : (
+              // Для остальных элементов - только Под напряжением/Без напряжения
+              <div className={`px-2 py-1 rounded text-xs font-medium inline-block ${
                 hoveredNode.lifeStatus === 'LIVE' 
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
               }`}>
                 {hoveredNode.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
               </div>
-              <div className={`px-2 py-1 rounded text-xs font-medium ${
-                hoveredNode.status === 'OFF' 
-                  ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
-                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-              }`}>
-                {hoveredNode.status === 'OFF' ? '🔴 Отключен' : '🔵 В работе'}
-              </div>
-            </div>
+            )}
             
             {/* Устройства */}
             {hoveredNode.devices && hoveredNode.devices.length > 0 && (

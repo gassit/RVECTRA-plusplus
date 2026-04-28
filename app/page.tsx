@@ -32,11 +32,24 @@ interface NetworkData {
     electricalStatus: ElectricalStatus;
     operationalStatus: OperationalStatus;
     DeviceSlot?: Array<{
+      slotId: string;
       Device?: {
-        Load?: { powerP: number; powerQ: number; cosPhi: number };
-        Breaker?: { ratedCurrent: number | null };
-        Meter?: { currentNom: number | null };
-      };
+        id: string;
+        type: string;
+        model?: string | null;
+        manufacturer?: string | null;
+        Load?: { powerP: number; powerQ: number; cosPhi: number } | null;
+        Breaker?: {
+          ratedCurrent: number | null;
+          breakerType?: string | null;
+          breakingCapacity?: number | null;
+          curve?: string | null;
+          leakageCurrent?: number | null;
+          poles?: number | null;
+        } | null;
+        Meter?: { currentNom: number | null } | null;
+        Transformer?: { powerKva: number | null } | null;
+      } | null;
     }>;
   }>;
   connections: Array<{
@@ -315,9 +328,34 @@ export default function Home() {
     
     return {
       nodes: nonCabinetElements.map(e => ({
-        id: e.id, type: e.type.toUpperCase() as any, name: e.name, posX: e.posX || 0, posY: e.posY || 0,
-        hasIssues: false, criticalIssues: 0, status: e.operationalStatus as any, lifeStatus: e.electricalStatus as any,
-        combo: e.parentId || undefined, // Привязка к cabinet (combo)
+        id: e.id,
+        type: e.type.toUpperCase() as any,
+        name: e.name,
+        posX: e.posX || 0,
+        posY: e.posY || 0,
+        hasIssues: false,
+        criticalIssues: 0,
+        status: e.operationalStatus as any,
+        lifeStatus: e.electricalStatus as any,
+        voltageLevel: e.voltageLevel || undefined,
+        combo: e.parentId || undefined,
+        // Преобразуем DeviceSlot в формат devices для tooltip
+        devices: e.DeviceSlot?.map(slot => ({
+          id: slot.Device?.id || '',
+          type: slot.Device?.type || '',
+          slotId: slot.slotId || '',
+          model: slot.Device?.model || undefined,
+          manufacturer: slot.Device?.manufacturer || undefined,
+          currentNom: slot.Device?.Breaker?.ratedCurrent || slot.Device?.Meter?.currentNom || undefined,
+          pKw: slot.Device?.Load?.powerP || undefined,
+          qKvar: slot.Device?.Load?.powerQ || undefined,
+          cosPhi: slot.Device?.Load?.cosPhi || undefined,
+          breakerType: slot.Device?.Breaker?.breakerType || undefined,
+          breakingCapacity: slot.Device?.Breaker?.breakingCapacity || undefined,
+          curve: slot.Device?.Breaker?.curve || undefined,
+          leakageCurrent: slot.Device?.Breaker?.leakageCurrent || undefined,
+          poles: slot.Device?.Breaker?.poles || undefined,
+        } as any)).filter(d => d.type) || [],
       })),
       edges: (filteredData?.connections || networkData?.connections || []).map(c => ({
         id: c.id, source: c.sourceId, target: c.targetId, type: 'CABLE' as const,

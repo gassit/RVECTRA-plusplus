@@ -21,9 +21,108 @@ import * as xlsx from 'xlsx';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { OperationalStatus } from '../types/index';
-import { propagateStates } from '../lib/services/state-propagation.service.js';
 
 const prisma = new PrismaClient();
+
+// ============================================================================
+// РАСПРОСТРАНЕНИЕ СОСТОЯНИЙ (inline)
+// ============================================================================
+async function propagateStates(): Promise<{ elementsUpdated: number; liveElements: number; deadElements: number; offElements: number }> {
+  const elements = await prisma.element.findMany();
+  const connections = await prisma.connection.findMany();
+
+  const elementMap = new Map<string, typeof elements[0]>();
+  for (const el of elements) {
+    elementMap.set(el.id, el);
+  }
+
+  type ElectricalStatus = 'LIVE' | 'DEAD';
+  const electricalStatusMap = new Map<string, ElectricalStatus>();
+  const operationalStatusMap = new Map<string, OperationalStatus>();
+
+  for (const el of elements) {
+    electricalStatusMap.set(el.id, 'DEAD');
+    operationalStatusMap.set(el.id, (el.operationalStatus as OperationalStatus) || 'ON');
+  }
+
+  const outgoingConnections = new Map<string, string[]>();
+  const connectionMap = new Map<string, typeof connections[0]>();
+
+  for (const conn of connections) {
+    connectionMap.set(conn.id, conn);
+    if (!outgoingConnections.has(conn.sourceId)) {
+      outgoingConnections.set(conn.sourceId, []);
+    }
+    outgoingConnections.get(conn.sourceId)!.push(conn.id);
+  }
+
+  const sources = elements.filter(el => el.type.toLowerCase() === 'source');
+  const queue: Array<{ elementId: string }> = [];
+
+  for (const source of sources) {
+    const opStatus = operationalStatusMap.get(source.id) || 'ON';
+    electricalStatusMap.set(source.id, opStatus === 'ON' ? 'LIVE' : 'DEAD');
+    queue.push({ elementId: source.id });
+  }
+
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const { elementId } = queue.shift()!;
+    const currentElement = elementMap.get(elementId);
+    if (!currentElement || currentElement.type.toLowerCase() === 'cabinet') continue;
+
+    const currentElectrical = electricalStatusMap.get(elementId) || 'DEAD';
+    const currentOperational = operationalStatusMap.get(elementId) || 'ON';
+    const outgoing = outgoingConnections.get(elementId) || [];
+
+    for (const connId of outgoing) {
+      const conn = connectionMap.get(connId);
+      if (!conn) continue;
+
+      const targetId = conn.targetId;
+      const targetElement = elementMap.get(targetId);
+      if (!targetElement || targetElement.type.toLowerCase() === 'cabinet') continue;
+
+      const connOperational = (conn.operationalStatus as OperationalStatus) || 'ON';
+      const targetOperational = operationalStatusMap.get(targetId) || 'ON';
+
+      if (currentElectrical === 'LIVE' && currentOperational === 'ON' && connOperational === 'ON' && targetOperational === 'ON') {
+        if (electricalStatusMap.get(targetId) !== 'LIVE') {
+          electricalStatusMap.set(targetId, 'LIVE');
+        }
+      }
+
+      const visitKey = `${elementId}-${targetId}`;
+      if (!visited.has(visitKey)) {
+        visited.add(visitKey);
+        queue.push({ elementId: targetId });
+      }
+    }
+  }
+
+  // CABINET post-processing
+  const cabinets = elements.filter(el => el.type.toLowerCase() === 'cabinet');
+  for (const cabinet of cabinets) {
+    const children = elements.filter(el => el.parentId === cabinet.id);
+    const hasLiveChild = children.some(child => electricalStatusMap.get(child.id) === 'LIVE');
+    electricalStatusMap.set(cabinet.id, hasLiveChild ? 'LIVE' : 'DEAD');
+  }
+
+  // Update DB
+  let elementsUpdated = 0;
+  for (const [id, electricalStatus] of electricalStatusMap) {
+    try {
+      await prisma.element.update({ where: { id }, data: { electricalStatus } });
+      elementsUpdated++;
+    } catch (e) { /* ignore */ }
+  }
+
+  const liveElements = Array.from(electricalStatusMap.values()).filter(s => s === 'LIVE').length;
+  const offElements = Array.from(operationalStatusMap.values()).filter(s => s === 'OFF').length;
+
+  return { elementsUpdated, liveElements, deadElements: elements.length - liveElements, offElements };
+}
 
 // ============================================================================
 // ТИПЫ
@@ -39,10 +138,19 @@ interface ExcelFormat {
   powerCol: string | null;
   locationCol: string | null;
   parentCol: string | null;
-  protectionCol: string | null;
   avrCol: string | null;
   avrStateCol: string | null;
   idCol: string | null;
+  // Breaker parameters
+  breakingCapacityCol: string | null;
+  curveCol: string | null;
+  leakageCurrentCol: string | null;
+  // Cable parameters
+  coresCol: string | null;
+  lengthCol: string | null;
+  sectionCol: string | null;
+  materialCol: string | null;
+  iDopCol: string | null;
 }
 
 interface ElementInfo {
@@ -53,6 +161,10 @@ interface ElementInfo {
   power?: number | null;
   location?: string | null;
   explicitParent?: string | null;
+  // Breaker parameters
+  breakingCapacity?: number | null;
+  curve?: string | null;
+  leakageCurrent?: number | null;
 }
 
 interface ConnectionInfo {
@@ -60,6 +172,12 @@ interface ConnectionInfo {
   to: string;
   connection?: string;
   order: number;
+  // Cable parameters
+  cores?: number | null;
+  length?: number | null;
+  section?: number | null;
+  material?: string | null;
+  iDop?: number | null;
 }
 
 // ============================================================================
@@ -255,34 +373,45 @@ function extractCabinet(elementName: string, elementType: string): string | unde
 // ============================================================================
 
 function detectExcelFormat(rawData: Record<string, unknown>[]): ExcelFormat {
+  const emptyFormat: ExcelFormat = {
+    type: 'standard', fromCol: '', toCol: '', connectionCol: null, stateCol: null,
+    currentCol: null, powerCol: null, locationCol: null, parentCol: null,
+    avrCol: null, avrStateCol: null, idCol: null,
+    breakingCapacityCol: null, curveCol: null, leakageCurrentCol: null,
+    coresCol: null, lengthCol: null, sectionCol: null, materialCol: null, iDopCol: null
+  };
+  
   if (rawData.length === 0) {
-    return { type: 'standard', fromCol: '', toCol: '', connectionCol: null, stateCol: null, currentCol: null, powerCol: null, locationCol: null, parentCol: null, protectionCol: null, avrCol: null, avrStateCol: null, idCol: null };
+    return emptyFormat;
   }
 
   const cols = Object.keys(rawData[0]);
   const colCount = cols.length;
   
   // Проверяем ЭХО формат: минимум 5 колонок, имена по позиции
-  // ЭХО: [id, state, from, connection, to, protection?, avr?, avrState?, location?, assemblyFrom?]
-  const isEchoFormat = colCount >= 5 && 
+  // ЭХО: [id, state, from, connection, to, avr?, avrState?, location?, assemblyFrom?]
+  // Но НЕ если колонки имеют осмысленные имена (например "От (from)", "До (to)")
+  const hasNamedColumns = cols.some(c => 
+    c && (c.includes('(') || c.includes('from') || c.includes('to') || c.includes('От') || c.includes('До'))
+  );
+  
+  const isEchoFormat = !hasNamedColumns && colCount >= 5 && 
     (!cols[0] || cols[0].toLowerCase() === 'id' || /^\d+$/.test(String(rawData[0]?.[cols[0]])));
 
   if (isEchoFormat) {
     console.log('📋 Определён формат: ЭХО (фиксированные позиции колонок)');
     return {
+      ...emptyFormat,
       type: 'echo',
       idCol: cols[0],
       stateCol: cols[1] || null,
       fromCol: cols[2],
       connectionCol: cols[3] || null,
       toCol: cols[4],
-      protectionCol: cols[5] || null,
-      avrCol: cols[6] || null,
-      avrStateCol: cols[7] || null,
-      locationCol: cols[8] || null,
-      parentCol: cols[9] || null,
-      currentCol: null,
-      powerCol: null,
+      avrCol: cols[5] || null,
+      avrStateCol: cols[6] || null,
+      locationCol: cols[7] || null,
+      parentCol: cols[8] || null,
     };
   }
 
@@ -303,19 +432,36 @@ function detectExcelFormat(rawData: Record<string, unknown>[]): ExcelFormat {
   const toCol = findCol([/^to$/i, /^до$/i, /^к$/i]) || cols[4] || null;
 
   return {
+    ...emptyFormat,
     type: 'standard',
     fromCol: fromCol || '',
     toCol: toCol || '',
     connectionCol: findCol([/^connection$/i, /^соединение$/i, /^кабель$/i]) || cols[3] || null,
     stateCol: findCol([/^state$/i, /^состояние$/i, /^статус$/i]) || cols[1] || null,
-    currentCol: findCol([/^ток$/i, /^current$/i, /^i_?ном$/i]),
+    // Breaker parameters - номинальный ток
+    currentCol: findCol([/^номинальный\s*ток/i, /^ток\s*\(а\)/i, /^ток$/i, /^current$/i, /^i_?ном$/i]),
+    // Breaking capacity - отключающая способность
+    breakingCapacityCol: findCol([/^отключ\.?\s*способность/i, /^отключающая\s*способность/i, /^breaking\s*capacity/i]),
+    // Curve - характеристика
+    curveCol: findCol([/^характеристика$/i, /^кривая$/i, /^curve$/i]),
+    // Leakage current - ток утечки
+    leakageCurrentCol: findCol([/^ток\s*утечки/i, /^leakage\s*current/i]),
+    // Power
     powerCol: findCol([/^мощность$/i, /^power$/i, /^p_?квт$/i, /^s_?ква$/i]),
+    // Location
     locationCol: findCol([/^location$/i, /^расположе/i, /^место$/i, /^помещение$/i]),
-    parentCol: findCol([/^parent$/i, /^родитель$/i, /^шкаф$/i, /^сборка$/i]),
-    protectionCol: findCol([/^protection$/i, /^защита$/i]),
+    // Parent
+    parentCol: findCol([/^parent$/i, /^родитель$/i, /^шкаф\/сборка$/i, /^шкаф$/i, /^сборка$/i]),
+    // AVR
     avrCol: findCol([/^avr$/i, /^авр$/i]),
-    avrStateCol: findCol([/^avrstate$/i, /^avr_state$/i, /^состояние_?авр$/i]),
+    avrStateCol: findCol([/^avrstate$/i, /^avr_state$/i, /^состояние_?авр$/i, /^авр\s*состояние$/i]),
     idCol: findCol([/^id$/i, /^№$/i]),
+    // Cable parameters
+    coresCol: findCol([/^кол-?во\s*жил$/i, /^жил$/i, /^cores$/i]),
+    lengthCol: findCol([/^длина\s*линии/i, /^длина$/i, /^length$/i]),
+    sectionCol: findCol([/^сечение/i, /^section$/i]),
+    materialCol: findCol([/^материал$/i, /^material$/i]),
+    iDopCol: findCol([/^допустимый\s*ток/i, /^i_?доп$/i, /^i_?dop$/i]),
   };
 }
 
@@ -337,7 +483,7 @@ function findExcelFile(): string | null {
   if (files.length === 0) return null;
 
   // Приоритет файлов
-  const priority = ['input.xlsx', 'ШАБЛОН_ИМПОРТА.xlsx', 'ЭХОв.xlsx', 'ЭХОмини.v1.xlsx'];
+  const priority = ['ШАБЛОН_ИМПОРТА.xlsx', 'input.xlsx', 'ЭХОв.xlsx', 'ЭХОмини.v1.xlsx'];
   for (const p of priority) {
     if (files.includes(p)) return path.join(dir, p);
   }
@@ -563,9 +709,17 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   if (format.stateCol) console.log(`📌 state="${format.stateCol}"`);
   if (format.connectionCol) console.log(`📌 connection="${format.connectionCol}"`);
   if (format.currentCol) console.log(`📌 ток="${format.currentCol}"`);
+  if (format.breakingCapacityCol) console.log(`📌 отключ. способность="${format.breakingCapacityCol}"`);
+  if (format.curveCol) console.log(`📌 характеристика="${format.curveCol}"`);
+  if (format.leakageCurrentCol) console.log(`📌 ток утечки="${format.leakageCurrentCol}"`);
   if (format.powerCol) console.log(`📌 мощность="${format.powerCol}"`);
   if (format.locationCol) console.log(`📌 location="${format.locationCol}"`);
   if (format.parentCol) console.log(`📌 parent="${format.parentCol}"`);
+  if (format.coresCol) console.log(`📌 кол-во жил="${format.coresCol}"`);
+  if (format.lengthCol) console.log(`📌 длина="${format.lengthCol}"`);
+  if (format.sectionCol) console.log(`📌 сечение="${format.sectionCol}"`);
+  if (format.materialCol) console.log(`📌 материал="${format.materialCol}"`);
+  if (format.iDopCol) console.log(`📌 допустимый ток="${format.iDopCol}"`);
 
   // =========================================================================
   // ОЧИСТКА БАЗЫ
@@ -610,7 +764,21 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
 
     const connection = format.connectionCol ? normalizeName(String(row[format.connectionCol] || '')) : undefined;
     const state = format.stateCol ? String(row[format.stateCol] || '').trim() : undefined;
+    
+    // Breaker parameters (для from-элемента если это breaker)
     const current = format.currentCol ? parseFloatValue(row[format.currentCol]) : null;
+    const breakingCapacity = format.breakingCapacityCol ? parseFloatValue(row[format.breakingCapacityCol]) : null;
+    const curve = format.curveCol ? String(row[format.curveCol] || '').trim().toUpperCase() || null : null;
+    const leakageCurrent = format.leakageCurrentCol ? parseFloatValue(row[format.leakageCurrentCol]) : null;
+    
+    // Cable parameters
+    const cores = format.coresCol ? parseInt(String(row[format.coresCol] || '')) || null : null;
+    const length = format.lengthCol ? parseFloatValue(row[format.lengthCol]) : null;
+    const section = format.sectionCol ? parseFloatValue(row[format.sectionCol]) : null;
+    const material = format.materialCol ? String(row[format.materialCol] || '').trim().toLowerCase() || null : null;
+    const iDop = format.iDopCol ? parseFloatValue(row[format.iDopCol]) : null;
+    
+    // Other parameters
     const power = format.powerCol ? parseFloatValue(row[format.powerCol]) : null;
     const location = format.locationCol ? String(row[format.locationCol] || '').trim() || null : null;
     const explicitParent = format.parentCol ? normalizeName(String(row[format.parentCol] || '')) : null;
@@ -628,10 +796,17 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
         power: null,
         location,
         explicitParent: explicitParent || null,
+        // Breaker parameters
+        breakingCapacity,
+        curve,
+        leakageCurrent,
       });
     } else {
       const el = elementsMap.get(from)!;
       if (current !== null && el.current === null) el.current = current;
+      if (breakingCapacity !== null && el.breakingCapacity === null) el.breakingCapacity = breakingCapacity;
+      if (curve && !el.curve) el.curve = curve;
+      if (leakageCurrent !== null && el.leakageCurrent === null) el.leakageCurrent = leakageCurrent;
       if (location && !el.location) el.location = location;
       if (explicitParent && !el.explicitParent) el.explicitParent = explicitParent;
     }
@@ -653,7 +828,11 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
       if (location && !el.location) el.location = location;
     }
 
-    connectionsData.push({ from, to, connection, order: i + 1 });
+    connectionsData.push({ 
+      from, to, connection, order: i + 1,
+      // Cable parameters
+      cores, length, section, material, iDop
+    });
   }
 
   console.log(`📦 Элементов: ${elementsMap.size}, связей: ${connectionsData.length}`);
@@ -768,24 +947,168 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   console.log('\n=== ИМПОРТ СВЯЗЕЙ ===');
 
   const connectionData = [];
+  const cableDataList: { id: string; cableId: string; length: number; cores: number; section: number; material: string; iDop: number | null; updatedAt: Date }[] = [];
+  const connectionCableMap = new Map<string, string>(); // connectionId -> cableId
+
   for (const c of connectionsData) {
     const sourceDbId = elementIdToDbId.get(c.from);
     const targetDbId = elementIdToDbId.get(c.to);
     if (!sourceDbId || !targetDbId) continue;
+    
+    const connId = `conn_${now}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Создаём Cable если есть параметры кабеля
+    let cableDbId: string | null = null;
+    if (c.length !== null || c.section !== null) {
+      const cableId = `cable_${now}_${Math.random().toString(36).substr(2, 9)}`;
+      cableDbId = cableId;
+      
+      // Определяем материал
+      let material = 'copper';
+      if (c.material) {
+        material = c.material.includes('алюм') ? 'aluminum' : 'copper';
+      }
+      
+      cableDataList.push({
+        id: cableId,
+        cableId: cableId,
+        length: c.length || 0,
+        cores: c.cores || 3,
+        section: c.section || 0,
+        material,
+        iDop: c.iDop || null,
+        updatedAt: new Date(),
+      });
+      
+      connectionCableMap.set(connId, cableId);
+    }
+    
     connectionData.push({
-      id: `conn_${now}_${Math.random().toString(36).substr(2, 9)}`,
+      id: connId,
       sourceId: sourceDbId,
       targetId: targetDbId,
+      cableId: cableDbId,
       order: c.order,
       operationalStatus: 'ON',
       electricalStatus: 'DEAD',
     });
   }
 
+  // Создаём кабели
+  if (cableDataList.length > 0) {
+    await prisma.cable.createMany({ data: cableDataList });
+    console.log(`   Кабели: ${cableDataList.length}`);
+  }
+
+  // Создаём связи
   if (connectionData.length > 0) {
     await prisma.connection.createMany({ data: connectionData });
     console.log(`   Связи: ${connectionData.length}`);
   }
+
+  // =========================================================================
+  // ИМПОРТ BREAKER И LOAD ДАННЫХ
+  // =========================================================================
+  console.log('\n=== ИМПОРТ BREAKER/LOAD ДАННЫХ ===');
+
+  let breakerCount = 0;
+  let loadCount = 0;
+
+  for (const [elementId, info] of elementsMap) {
+    const elementDbId = elementIdToDbId.get(elementId);
+    if (!elementDbId) continue;
+
+    if (info.type === 'breaker') {
+      // Создаём Device и Breaker
+      const deviceId = `dev_${now}_${Math.random().toString(36).substr(2, 9)}`;
+      const slotId = `slot_${now}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      try {
+        // DeviceSlot
+        await prisma.deviceSlot.create({
+          data: {
+            id: slotId,
+            slotId: slotId,
+            elementId: elementDbId,
+            slotType: 'breaker',
+          }
+        });
+        
+        // Device
+        await prisma.device.create({
+          data: {
+            id: deviceId,
+            deviceId: deviceId,
+            slotId: slotId,
+            deviceType: 'breaker',
+            updatedAt: new Date(),
+          }
+        });
+        
+        // Breaker
+        await prisma.breaker.create({
+          data: {
+            id: `brk_${now}_${Math.random().toString(36).substr(2, 9)}`,
+            deviceId: deviceId,
+            breakerType: info.leakageCurrent ? 'RCBO' : 'MCB',
+            ratedCurrent: info.current || 63,
+            breakingCapacity: info.breakingCapacity,
+            curve: info.curve,
+            leakageCurrent: info.leakageCurrent,
+            updatedAt: new Date(),
+          }
+        });
+        breakerCount++;
+      } catch (e) {
+        // Игнорируем ошибки
+      }
+    }
+    
+    if (info.type === 'load' && info.power) {
+      // Создаём Device и Load
+      const deviceId = `dev_${now}_${Math.random().toString(36).substr(2, 9)}`;
+      const slotId = `slot_${now}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      try {
+        // DeviceSlot
+        await prisma.deviceSlot.create({
+          data: {
+            id: slotId,
+            slotId: slotId,
+            elementId: elementDbId,
+            slotType: 'load',
+          }
+        });
+        
+        // Device
+        await prisma.device.create({
+          data: {
+            id: deviceId,
+            deviceId: deviceId,
+            slotId: slotId,
+            deviceType: 'load',
+            updatedAt: new Date(),
+          }
+        });
+        
+        // Load
+        await prisma.load.create({
+          data: {
+            id: `load_${now}_${Math.random().toString(36).substr(2, 9)}`,
+            deviceId: deviceId,
+            name: info.name,
+            powerP: info.power,
+            updatedAt: new Date(),
+          }
+        });
+        loadCount++;
+      } catch (e) {
+        // Игнорируем ошибки
+      }
+    }
+  }
+  
+  console.log(`   Breaker: ${breakerCount}, Load: ${loadCount}`);
 
   // =========================================================================
   // ИМПОРТ АВР

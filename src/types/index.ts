@@ -105,7 +105,8 @@ export interface NetworkDevice {
   voltageNom?: number;
   currentNom?: number;
   currentMax?: number;
-  breakingCapacity?: number;
+  breakingCapacity?: number;    // Отключающая способность (кА)
+  curve?: string;               // Характеристика расцепителя (B, C, D)
   pKw?: number;
   qKvar?: number;
   sKva?: number;
@@ -126,6 +127,7 @@ export interface NetworkConnection {
   type: ConnectionType;
   length?: number;
   wireType?: string;
+  cores?: number;              // Кол-во жил
   core?: string;
   wireSize?: number;
   material?: MaterialType;
@@ -172,6 +174,7 @@ export interface GraphEdge {
   length?: number;
   wireType?: string;
   wireSize?: number;
+  cores?: number;              // Кол-во жил
   core?: string;
   material?: MaterialType;
   resistanceR?: number;

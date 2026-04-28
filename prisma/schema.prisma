@@ -25,6 +25,8 @@ model Breaker {
   breakerType      String            @default("MCB")  // MCB | MCCB | RCD | RCBO
   ratedCurrent     Float
   currentSetting   Float?
+  breakingCapacity Float?            // Отключающая способность (кА)
+  curve            String?           // Характеристика: B, C, D
   leakageCurrent   Float?            // Ток утечки (мА) - для RCD/RCBO
   lastTripReason   String?
   tripCount        Int               @default(0)
@@ -53,6 +55,7 @@ model Cable {
   name           String?
   refId          String?
   length         Float
+  cores          Int             @default(3)  // Кол-во жил
   section        Float
   material       String          @default("copper")
   iDop           Float?

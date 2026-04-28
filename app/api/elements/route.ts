@@ -309,24 +309,75 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
+    console.log('DELETE /api/elements - Received ID:', id);
+
     if (!id) {
+      console.log('DELETE - Missing ID parameter');
       return NextResponse.json(
         { success: false, error: 'ID элемента обязателен' },
         { status: 400 }
       );
     }
 
-    // Удаляем связи
-    await prisma.connection.deleteMany({
+    // Проверяем существование элемента
+    const existingElement = await prisma.element.findUnique({
+      where: { id },
+    });
+
+    console.log('DELETE - Element exists:', !!existingElement, existingElement?.name);
+
+    if (!existingElement) {
+      console.log('DELETE - Element not found with ID:', id);
+      return NextResponse.json(
+        { success: false, error: 'Элемент не найден' },
+        { status: 404 }
+      );
+    }
+
+    // Сначала удаляем связи
+    const deletedConnections = await prisma.connection.deleteMany({
       where: {
         OR: [{ sourceId: id }, { targetId: id }],
       },
     });
+    console.log('DELETE - Deleted connections count:', deletedConnections.count);
 
-    // Удаляем элемент (каскадно удалит DeviceSlot, Device и т.д.)
+    // Удаляем DeviceSlots и связанные Devices
+    const slots = await prisma.deviceSlot.findMany({
+      where: { elementId: id },
+    });
+    console.log('DELETE - Found slots to delete:', slots.length);
+
+    for (const slot of slots) {
+      // Удаляем связанные записи из специфичных таблиц
+      const devices = await prisma.device.findMany({
+        where: { slotId: slot.id },
+      });
+
+      for (const device of devices) {
+        await prisma.load.deleteMany({ where: { deviceId: device.id } });
+        await prisma.breaker.deleteMany({ where: { deviceId: device.id } });
+        await prisma.meter.deleteMany({ where: { deviceId: device.id } });
+        await prisma.transformer.deleteMany({ where: { deviceId: device.id } });
+      }
+
+      // Удаляем устройства
+      await prisma.device.deleteMany({
+        where: { slotId: slot.id },
+      });
+    }
+
+    // Удаляем слоты
+    await prisma.deviceSlot.deleteMany({
+      where: { elementId: id },
+    });
+
+    // Теперь удаляем сам элемент
     await prisma.element.delete({
       where: { id },
     });
+
+    console.log('DELETE - Element deleted successfully:', id);
 
     return NextResponse.json({
       success: true,
@@ -335,7 +386,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     console.error('Error deleting element:', error);
     return NextResponse.json(
-      { success: false, error: 'Ошибка при удалении элемента' },
+      { success: false, error: `Ошибка при удалении элемента: ${error instanceof Error ? error.message : 'Unknown error'}` },
       { status: 500 }
     );
   }

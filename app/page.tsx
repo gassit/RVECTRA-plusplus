@@ -286,11 +286,20 @@ export default function Home() {
   // Удаление элемента
   const handleDeleteNode = async (nodeId: string) => {
     try {
-      console.log('Deleting element:', nodeId);
-      const response = await fetch(`/api/elements?id=${nodeId}`, {
+      console.log('handleDeleteNode - Deleting element with nodeId:', nodeId);
+      console.log('handleDeleteNode - nodeId type:', typeof nodeId);
+      console.log('handleDeleteNode - nodeId length:', nodeId?.length);
+      
+      const url = `/api/elements?id=${encodeURIComponent(nodeId)}`;
+      console.log('handleDeleteNode - Fetch URL:', url);
+      
+      const response = await fetch(url, {
         method: 'DELETE',
       });
       const result = await response.json();
+      
+      console.log('handleDeleteNode - Response status:', response.status);
+      console.log('handleDeleteNode - Response result:', result);
       
       if (response.ok && result.success) {
         console.log('Element deleted successfully');

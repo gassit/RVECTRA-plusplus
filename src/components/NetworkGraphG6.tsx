@@ -22,6 +22,8 @@ interface NetworkGraphG6Props {
   connectionMode?: boolean;
   connectionStartId?: string | null;
   onConnectionCreated?: (sourceId: string, targetId: string) => void;
+  // Удаление элемента
+  onDeleteNode?: (nodeId: string) => void;
 }
 
 // ============================================================================
@@ -56,6 +58,7 @@ export default function NetworkGraphG6({
   onNodeDrop,
   connectionMode = false,
   onConnectionCreated,
+  onDeleteNode,
 }: NetworkGraphG6Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
@@ -594,9 +597,28 @@ export default function NetworkGraphG6({
         <div className="absolute bottom-4 right-4 p-4 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 text-sm max-w-sm z-20">
           <div className="space-y-2">
             {/* Заголовок */}
-            <div className="border-b border-slate-200 dark:border-slate-700 pb-2">
-              <div className="font-semibold text-slate-900 dark:text-slate-100 text-base">{hoveredNode.name}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">ID: {hoveredNode.id} | Тип: {hoveredNode.type.toLowerCase()}</div>
+            <div className="border-b border-slate-200 dark:border-slate-700 pb-2 flex justify-between items-start">
+              <div>
+                <div className="font-semibold text-slate-900 dark:text-slate-100 text-base">{hoveredNode.name}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">ID: {hoveredNode.id} | Тип: {hoveredNode.type.toLowerCase()}</div>
+              </div>
+              {/* Кнопка удаления - только в режиме редактирования */}
+              {editMode && (
+                <button
+                  onClick={() => {
+                    if (confirm(`Удалить элемент "${hoveredNode.name}" и все связанные связи?`)) {
+                      onDeleteNode?.(hoveredNode.id);
+                      setHoveredNode(null);
+                    }
+                  }}
+                  className="ml-2 p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
+                  title="Удалить элемент"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
             </div>
             
             {/* Статусы */}

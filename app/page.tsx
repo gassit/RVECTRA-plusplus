@@ -283,6 +283,27 @@ export default function Home() {
     } catch (err) { console.error('Error updating element position:', err); }
   };
 
+  // Удаление элемента
+  const handleDeleteNode = async (nodeId: string) => {
+    try {
+      console.log('Deleting element:', nodeId);
+      const response = await fetch(`/api/elements?id=${nodeId}`, {
+        method: 'DELETE',
+      });
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        console.log('Element deleted successfully');
+        await refreshData();
+      } else {
+        alert(result.error || 'Ошибка при удалении элемента');
+      }
+    } catch (err) {
+      console.error('Error deleting element:', err);
+      alert('Ошибка при удалении элемента');
+    }
+  };
+
   // Calculate layout
   const calculateLayout = async () => {
     setLayoutLoading(true);
@@ -462,6 +483,7 @@ export default function Home() {
               onNodeDrop={handleNodeDrop}
               connectionMode={connectionMode}
               onConnectionCreated={handleConnectionCreated}
+              onDeleteNode={handleDeleteNode}
             />
           )}
 

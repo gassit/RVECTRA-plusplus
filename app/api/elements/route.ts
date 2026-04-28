@@ -17,8 +17,9 @@ interface CreateElementRequest {
   location?: string;
   voltageLevel?: number;
   parentId?: string;
-  posX: number;
-  posY: number;
+  // Статусы
+  electricalStatus?: 'LIVE' | 'DEAD';
+  operationalStatus?: 'ON' | 'OFF';
   // Данные устройства
   deviceType?: string;
   currentNom?: number;
@@ -26,6 +27,18 @@ interface CreateElementRequest {
   qKvar?: number;
   cosPhi?: number;
   voltageNom?: number;
+  // Для Breaker
+  breakerType?: 'MCB' | 'MCCB' | 'RCD' | 'RCBO';
+  breakingCapacity?: number;
+  curve?: string;
+  leakageCurrent?: number;
+  poles?: number;
+  // Для Meter
+  meterType?: string;
+  serialNumber?: string;
+  // Координаты
+  posX: number;
+  posY: number;
 }
 
 // ============================================================================
@@ -82,12 +95,21 @@ export async function POST(request: NextRequest) {
       parentId,
       posX,
       posY,
+      electricalStatus = 'DEAD',
+      operationalStatus = 'ON',
       deviceType,
       currentNom,
       pKw,
       qKvar,
       cosPhi,
       voltageNom,
+      breakerType,
+      breakingCapacity,
+      curve,
+      leakageCurrent,
+      poles,
+      meterType,
+      serialNumber,
     } = body;
 
     // Валидация
@@ -103,7 +125,7 @@ export async function POST(request: NextRequest) {
     const elementId = generateId('EL');
     const elementUuid = generateUUID();
 
-    // Создаём элемент
+    // Создаём элемент с статусами
     const element = await prisma.element.create({
       data: {
         id: elementUuid,
@@ -114,8 +136,8 @@ export async function POST(request: NextRequest) {
         voltageLevel: voltageLevel || null,
         posX,
         posY,
-        electricalStatus: 'DEAD',
-        operationalStatus: 'ON',
+        electricalStatus: electricalStatus || 'DEAD',
+        operationalStatus: operationalStatus || 'ON',
         updatedAt: new Date(),
       },
     });
@@ -168,7 +190,11 @@ export async function POST(request: NextRequest) {
             data: {
               id: generateUUID(),
               deviceId: device.id,
+              breakerType: breakerType || 'MCB',
               ratedCurrent: currentNom || 16,
+              breakingCapacity: breakingCapacity || null,
+              curve: curve || null,
+              leakageCurrent: leakageCurrent || null,
               updatedAt: new Date(),
             },
           });
@@ -179,7 +205,8 @@ export async function POST(request: NextRequest) {
             data: {
               id: generateUUID(),
               deviceId: device.id,
-              meterType: 'ELECTRONIC',
+              meterType: meterType || 'ELECTRONIC',
+              serialNumber: serialNumber || null,
               updatedAt: new Date(),
             },
           });

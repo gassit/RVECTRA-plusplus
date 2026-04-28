@@ -663,8 +663,8 @@ export default function NetworkGraphG6({
         </div>
       )}
 
-      {/* Подсказка при наведении на узел */}
-      {hoveredNode && (
+      {/* Подсказка при наведении на узел - скрываем если есть выбранный элемент */}
+      {hoveredNode && !selectedNodeId && (
         <div className="absolute bottom-4 right-4 p-3 bg-white dark:bg-slate-900 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 text-sm max-w-xs z-20">
           <div className="space-y-1">
             <div className="font-medium text-slate-800 dark:text-slate-200">{hoveredNode.name}</div>

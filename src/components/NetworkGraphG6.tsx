@@ -63,6 +63,7 @@ export default function NetworkGraphG6({
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
   const destroyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tooltipHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [pendingConnectionStart, setPendingConnectionStart] = useState<string | null>(null);
 
@@ -346,6 +347,12 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
+      // Отменяем отложенное скрытие tooltip если мышка вернулась
+      if (tooltipHideTimeoutRef.current) {
+        clearTimeout(tooltipHideTimeoutRef.current);
+        tooltipHideTimeoutRef.current = null;
+      }
+
       const nodeData = data?.nodes.find(n => n.id === nodeId);
       setHoveredNode(nodeData || null);
 
@@ -366,10 +373,20 @@ export default function NetworkGraphG6({
     });
 
     graph.on('node:pointerleave', (evt: any) => {
-      setHoveredNode(null);
       const nodeId = evt.target.id;
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
+
+      // В режиме редактирования добавляем задержку перед скрытием tooltip
+      // чтобы пользователь мог нажать кнопку удаления
+      if (editModeRef.current) {
+        tooltipHideTimeoutRef.current = setTimeout(() => {
+          setHoveredNode(null);
+          tooltipHideTimeoutRef.current = null;
+        }, 500); // 500мс задержка
+      } else {
+        setHoveredNode(null);
+      }
 
       if (connectionModeRef.current && pendingConnectionRef.current) {
         try {
@@ -594,7 +611,20 @@ export default function NetworkGraphG6({
 
       {/* Подсказка при наведении на узел */}
       {hoveredNode && (
-        <div className="absolute bottom-4 right-4 p-4 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 text-sm max-w-sm z-20">
+        <div 
+          className="absolute bottom-4 right-4 p-4 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 text-sm max-w-sm z-20"
+          onMouseEnter={() => {
+            // Отменяем скрытие если мышка наведена на tooltip
+            if (tooltipHideTimeoutRef.current) {
+              clearTimeout(tooltipHideTimeoutRef.current);
+              tooltipHideTimeoutRef.current = null;
+            }
+          }}
+          onMouseLeave={() => {
+            // Скрываем tooltip когда мышка уходит с него
+            setHoveredNode(null);
+          }}
+        >
           <div className="space-y-2">
             {/* Заголовок */}
             <div className="border-b border-slate-200 dark:border-slate-700 pb-2 flex justify-between items-start">

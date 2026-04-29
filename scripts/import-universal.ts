@@ -486,7 +486,7 @@ function findExcelFile(): string | null {
   if (files.length === 0) return null;
 
   // Приоритет файлов
-  const priority = ['ШАБЛОН_ИМПОРТА.xlsx', 'input.xlsx', 'ЭХОв.xlsx', 'ЭХОмини.v1.xlsx'];
+  const priority = ['input.xlsx', 'ШАБЛОН_ИМПОРТА.xlsx', 'ЭХОв.xlsx', 'ЭХОмини.v1.xlsx'];
   for (const p of priority) {
     if (files.includes(p)) return path.join(dir, p);
   }

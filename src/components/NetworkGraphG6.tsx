@@ -67,12 +67,17 @@ export default function NetworkGraphG6({
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<GraphEdge | null>(null);
   const [pendingConnectionStart, setPendingConnectionStart] = useState<string | null>(null);
+  // Закреплённые tooltip (не исчезают при уходе курсора)
+  const [pinnedNode, setPinnedNode] = useState<GraphNode | null>(null);
+  const [pinnedEdge, setPinnedEdge] = useState<GraphEdge | null>(null);
 
   // Refs для актуальных значений режимов (чтобы не пересоздавать граф)
   const editModeRef = useRef(editMode);
   const connectionModeRef = useRef(connectionMode);
   const selectedElementTypeRef = useRef(selectedElementType);
   const pendingConnectionRef = useRef<string | null>(null);
+  const pinnedNodeRef = useRef<GraphNode | null>(null);
+  const pinnedEdgeRef = useRef<GraphEdge | null>(null);
 
   // Обновляем refs при изменении props
   useEffect(() => {
@@ -90,6 +95,14 @@ export default function NetworkGraphG6({
   useEffect(() => {
     pendingConnectionRef.current = pendingConnectionStart;
   }, [pendingConnectionStart]);
+
+  useEffect(() => {
+    pinnedNodeRef.current = pinnedNode;
+  }, [pinnedNode]);
+
+  useEffect(() => {
+    pinnedEdgeRef.current = pinnedEdge;
+  }, [pinnedEdge]);
 
   // Инициализация графа (только один раз)
   useEffect(() => {
@@ -340,6 +353,15 @@ export default function NetworkGraphG6({
         return;
       }
 
+      // Закрепляем tooltip при клике на узел
+      const nodeData = data?.nodes.find(n => n.id === nodeId);
+      if (nodeData) {
+        setPinnedNode(nodeData);
+        setPinnedEdge(null); // Снимаем закрепление с ребра
+        setHoveredNode(null);
+        setHoveredEdge(null);
+      }
+
       onNodeClick?.(nodeId);
     });
 
@@ -378,15 +400,18 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      // В режиме редактирования добавляем задержку перед скрытием tooltip
-      // чтобы пользователь мог нажать кнопку удаления
-      if (editModeRef.current) {
-        tooltipHideTimeoutRef.current = setTimeout(() => {
+      // Не скрываем hoveredNode если tooltip закреплён
+      if (!pinnedNodeRef.current) {
+        // В режиме редактирования добавляем задержку перед скрытием tooltip
+        // чтобы пользователь мог нажать кнопку удаления
+        if (editModeRef.current) {
+          tooltipHideTimeoutRef.current = setTimeout(() => {
+            setHoveredNode(null);
+            tooltipHideTimeoutRef.current = null;
+          }, 500); // 500мс задержка
+        } else {
           setHoveredNode(null);
-          tooltipHideTimeoutRef.current = null;
-        }, 500); // 500мс задержка
-      } else {
-        setHoveredNode(null);
+        }
       }
 
       if (connectionModeRef.current && pendingConnectionRef.current) {
@@ -406,6 +431,16 @@ export default function NetworkGraphG6({
 
     graph.on('edge:click', (evt: any) => {
       const edgeId = evt.target.id;
+      
+      // Закрепляем tooltip при клике на ребро
+      const edgeData = data?.edges.find(e => e.id === edgeId);
+      if (edgeData) {
+        setPinnedEdge(edgeData);
+        setPinnedNode(null); // Снимаем закрепление с узла
+        setHoveredNode(null);
+        setHoveredEdge(null);
+      }
+      
       onEdgeClick?.(edgeId);
     });
 
@@ -434,7 +469,10 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      setHoveredEdge(null);
+      // Не скрываем hoveredEdge если tooltip закреплён
+      if (!pinnedEdgeRef.current) {
+        setHoveredEdge(null);
+      }
 
       try {
         graph.setElementState(edgeId, 'hover', false);
@@ -447,6 +485,10 @@ export default function NetworkGraphG6({
     graph.on('canvas:click', (evt: any) => {
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
+
+      // Снимаем закрепление tooltip при клике на пустое место
+      setPinnedNode(null);
+      setPinnedEdge(null);
 
       // Отмена режима связи при клике на пустое место
       if (connectionModeRef.current && pendingConnectionRef.current) {
@@ -648,8 +690,8 @@ export default function NetworkGraphG6({
         </div>
       )}
 
-      {/* Подсказка при наведении на узел */}
-      {hoveredNode && (
+      {/* Подсказка при наведении на узел (или закреплённая) */}
+      {(hoveredNode || pinnedNode) && (
         <div 
           className="absolute bottom-4 right-4 p-4 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 text-sm max-w-sm z-20"
           onMouseEnter={() => {
@@ -660,64 +702,82 @@ export default function NetworkGraphG6({
             }
           }}
           onMouseLeave={() => {
-            // Скрываем tooltip когда мышка уходит с него
-            setHoveredNode(null);
+            // Скрываем tooltip только если он не закреплён
+            if (!pinnedNode) {
+              setHoveredNode(null);
+            }
           }}
         >
           <div className="space-y-2">
             {/* Заголовок */}
             <div className="border-b border-slate-200 dark:border-slate-700 pb-2 flex justify-between items-start">
               <div>
-                <div className="font-semibold text-slate-900 dark:text-slate-100 text-base">{hoveredNode.name}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">ID: {hoveredNode.id} | Тип: {hoveredNode.type.toLowerCase()}</div>
+                <div className="font-semibold text-slate-900 dark:text-slate-100 text-base">{(pinnedNode || hoveredNode)?.name}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">ID: {(pinnedNode || hoveredNode)?.id} | Тип: {(pinnedNode || hoveredNode)?.type.toLowerCase()}</div>
               </div>
-              {/* Кнопка удаления - только в режиме редактирования */}
-              {editMode && (
-                <button
-                  onClick={() => {
-                    if (confirm(`Удалить элемент "${hoveredNode.name}" и все связанные связи?`)) {
-                      onDeleteNode?.(hoveredNode.id);
-                      setHoveredNode(null);
-                    }
-                  }}
-                  className="ml-2 p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
-                  title="Удалить элемент"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              )}
+              <div className="flex items-center gap-1">
+                {/* Кнопка закрытия tooltip */}
+                {pinnedNode && (
+                  <button
+                    onClick={() => setPinnedNode(null)}
+                    className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
+                    title="Закрыть"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+                {/* Кнопка удаления - только в режиме редактирования */}
+                {editMode && (
+                  <button
+                    onClick={() => {
+                      const node = pinnedNode || hoveredNode;
+                      if (node && confirm(`Удалить элемент "${node.name}" и все связанные связи?`)) {
+                        onDeleteNode?.(node.id);
+                        setHoveredNode(null);
+                        setPinnedNode(null);
+                      }
+                    }}
+                    className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
+                    title="Удалить элемент"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
             
             {/* Статусы */}
             <div className="flex flex-wrap gap-2">
               {/* Электрический статус - для всех элементов */}
               <div className={`px-2 py-1 rounded text-xs font-medium ${
-                hoveredNode.lifeStatus === 'LIVE' 
+                (pinnedNode || hoveredNode)?.lifeStatus === 'LIVE' 
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
               }`}>
-                {hoveredNode.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
+                {(pinnedNode || hoveredNode)?.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
               </div>
               
               {/* Оперативный статус - только для коммутирующих элементов */}
-              {(['SOURCE', 'BREAKER', 'LOAD', 'METER'].includes(hoveredNode.type.toUpperCase())) && (
+              {(['SOURCE', 'BREAKER', 'LOAD', 'METER'].includes((pinnedNode || hoveredNode)?.type?.toUpperCase() || '')) && (
                 <div className={`px-2 py-1 rounded text-xs font-medium ${
-                  hoveredNode.status === 'OFF' 
+                  (pinnedNode || hoveredNode)?.status === 'OFF' 
                     ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
                     : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 }`}>
-                  {hoveredNode.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
+                  {(pinnedNode || hoveredNode)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
                 </div>
               )}
             </div>
             
             {/* Устройства */}
-            {hoveredNode.devices && hoveredNode.devices.length > 0 && (
+            {(pinnedNode || hoveredNode)?.devices && (pinnedNode || hoveredNode)!.devices!.length > 0 && (
               <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
                 <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Устройства:</div>
-                {hoveredNode.devices.map((device, idx) => (
+                {(pinnedNode || hoveredNode)!.devices!.map((device, idx) => (
                   <div key={idx} className="text-xs text-slate-500 dark:text-slate-400 pl-2">
                     • {device.type}{device.model ? ` ${device.model}` : ''}
                     {device.currentNom && ` | Iном: ${device.currentNom}А`}
@@ -733,17 +793,17 @@ export default function NetworkGraphG6({
             )}
             
             {/* Напряжение */}
-            {hoveredNode.voltageLevel && (
+            {(pinnedNode || hoveredNode)?.voltageLevel && (
               <div className="text-xs text-slate-600 dark:text-slate-300">
-                Напряжение: {hoveredNode.voltageLevel}В
+                Напряжение: {(pinnedNode || hoveredNode)?.voltageLevel}В
               </div>
             )}
             
             {/* Проблемы */}
-            {hoveredNode.criticalIssues > 0 && (
+            {(pinnedNode || hoveredNode)?.criticalIssues && (pinnedNode || hoveredNode)!.criticalIssues > 0 && (
               <div className="border-t border-red-200 dark:border-red-800 pt-2">
                 <div className="text-xs text-red-500 dark:text-red-400 font-medium">
-                  ⚠️ {hoveredNode.criticalIssues} проблем(ы)
+                  ⚠️ {(pinnedNode || hoveredNode)?.criticalIssues} проблем(ы)
                 </div>
               </div>
             )}
@@ -751,83 +811,100 @@ export default function NetworkGraphG6({
         </div>
       )}
 
-      {/* Подсказка при наведении на ребро (связь) */}
-      {hoveredEdge && (
+      {/* Подсказка при наведении на ребро (связь) или закреплённая */}
+      {(hoveredEdge || pinnedEdge) && (
         <div 
           className="absolute bottom-4 right-4 p-4 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 text-sm max-w-sm z-20"
           onMouseEnter={() => {
             // Отменяем скрытие если мышка наведена на tooltip
           }}
           onMouseLeave={() => {
-            setHoveredEdge(null);
+            // Скрываем tooltip только если он не закреплён
+            if (!pinnedEdge) {
+              setHoveredEdge(null);
+            }
           }}
         >
           <div className="space-y-2">
             {/* Заголовок */}
-            <div className="border-b border-slate-200 dark:border-slate-700 pb-2">
-              <div className="font-semibold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
-                🔗 Связь
+            <div className="border-b border-slate-200 dark:border-slate-700 pb-2 flex justify-between items-start">
+              <div>
+                <div className="font-semibold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
+                  🔗 Связь
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  {(pinnedEdge || hoveredEdge)?.source} → {(pinnedEdge || hoveredEdge)?.target}
+                </div>
               </div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
-                {hoveredEdge.source} → {hoveredEdge.target}
-              </div>
+              {/* Кнопка закрытия tooltip */}
+              {pinnedEdge && (
+                <button
+                  onClick={() => setPinnedEdge(null)}
+                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
+                  title="Закрыть"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
             </div>
             
             {/* Параметры кабеля */}
             <div className="space-y-1">
               {/* Марка и сечение */}
-              {(hoveredEdge.wireType || hoveredEdge.wireSize) && (
+              {((pinnedEdge || hoveredEdge)?.wireType || (pinnedEdge || hoveredEdge)?.wireSize) && (
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Кабель:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {hoveredEdge.wireType} {hoveredEdge.wireSize}мм²
+                    {(pinnedEdge || hoveredEdge)?.wireType} {(pinnedEdge || hoveredEdge)?.wireSize}мм²
                   </span>
                 </div>
               )}
               
               {/* Длина */}
-              {hoveredEdge.length && hoveredEdge.length > 0 && (
+              {(pinnedEdge || hoveredEdge)?.length && (pinnedEdge || hoveredEdge)!.length! > 0 && (
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Длина:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {hoveredEdge.length} м
+                    {(pinnedEdge || hoveredEdge)?.length} м
                   </span>
                 </div>
               )}
               
               {/* Материал */}
-              {(hoveredEdge as any).cable?.material && (
+              {((pinnedEdge || hoveredEdge) as any)?.cable?.material && (
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Материал:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {(hoveredEdge as any).cable.material === 'copper' ? 'Медь' : 'Алюминий'}
+                    {((pinnedEdge || hoveredEdge) as any).cable.material === 'copper' ? 'Медь' : 'Алюминий'}
                   </span>
                 </div>
               )}
               
               {/* Допустимый ток */}
-              {(hoveredEdge as any).cable?.iDop && (
+              {((pinnedEdge || hoveredEdge) as any)?.cable?.iDop && (
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Iдоп:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {(hoveredEdge as any).cable.iDop} А
+                    {((pinnedEdge || hoveredEdge) as any).cable.iDop} А
                   </span>
                 </div>
               )}
               
               {/* Потеря напряжения */}
-              {(hoveredEdge as any).cable?.voltageDrop !== null && (hoveredEdge as any).cable?.voltageDrop !== undefined && (
+              {((pinnedEdge || hoveredEdge) as any)?.cable?.voltageDrop !== null && ((pinnedEdge || hoveredEdge) as any)?.cable?.voltageDrop !== undefined && (
                 <div className="flex justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-700">
                   <span className="text-slate-500 dark:text-slate-400">ΔU (потеря):</span>
                   <span className={`font-medium ${
-                    (hoveredEdge as any).cable.voltageDrop > 5 
+                    ((pinnedEdge || hoveredEdge) as any).cable.voltageDrop > 5 
                       ? 'text-red-600 dark:text-red-400' 
-                      : (hoveredEdge as any).cable.voltageDrop > 3 
+                      : ((pinnedEdge || hoveredEdge) as any).cable.voltageDrop > 3 
                         ? 'text-amber-600 dark:text-amber-400' 
                         : 'text-green-600 dark:text-green-400'
                   }`}>
-                    {(hoveredEdge as any).cable.voltageDrop.toFixed(2)}%
-                    {(hoveredEdge as any).cable.voltageDrop > 5 && ' ⚠️'}
+                    {((pinnedEdge || hoveredEdge) as any).cable.voltageDrop.toFixed(2)}%
+                    {((pinnedEdge || hoveredEdge) as any).cable.voltageDrop > 5 && ' ⚠️'}
                   </span>
                 </div>
               )}
@@ -836,19 +913,19 @@ export default function NetworkGraphG6({
             {/* Статусы */}
             <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
               <div className={`px-2 py-1 rounded text-xs font-medium ${
-                hoveredEdge.lifeStatus === 'LIVE' 
+                (pinnedEdge || hoveredEdge)?.lifeStatus === 'LIVE' 
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
               }`}>
-                {hoveredEdge.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
+                {(pinnedEdge || hoveredEdge)?.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
               </div>
               
               <div className={`px-2 py-1 rounded text-xs font-medium ${
-                hoveredEdge.status === 'OFF' 
+                (pinnedEdge || hoveredEdge)?.status === 'OFF' 
                   ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
                   : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
               }`}>
-                {hoveredEdge.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
+                {(pinnedEdge || hoveredEdge)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
               </div>
             </div>
           </div>

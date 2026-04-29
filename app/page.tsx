@@ -405,6 +405,15 @@ export default function Home() {
     };
   }, [filteredData, networkData]);
 
+  // Debug log
+  useEffect(() => {
+    console.log('graphData updated:', {
+      nodes: graphData.nodes.length,
+      edges: graphData.edges.length,
+      combos: graphData.combos?.length || 0
+    });
+  }, [graphData]);
+
   return (
     <div className="h-screen flex bg-gray-100 dark:bg-gray-900 overflow-hidden">
       {/* Sidebar - Palette */}

@@ -498,10 +498,20 @@ export default function NetworkGraphG6({
   // Обновление данных
   useEffect(() => {
     const graph = graphRef.current;
+    console.log('Graph data update:', { 
+      hasGraph: !!graph, 
+      hasData: !!data, 
+      nodesCount: data?.nodes?.length, 
+      edgesCount: data?.edges?.length,
+      combosCount: data?.combos?.length 
+    });
     if (!graph || !data) return;
 
     // Проверка что граф не уничтожен
-    if ((graph as any).destroyed) return;
+    if ((graph as any).destroyed) {
+      console.log('Graph is destroyed, skipping');
+      return;
+    }
 
     try {
       // Преобразуем данные в формат G6
@@ -527,16 +537,20 @@ export default function NetworkGraphG6({
         data: combo.data,
       })) || [];
 
+      console.log('Setting graph data:', { nodes: nodes.length, edges: edges.length, combos: combos.length });
       graph.setData({ nodes, edges: edges as any, combos });
 
       // Только первый рендер, потом данные обновляются через setData
       if (!(graph as any).rendered) {
+        console.log('First render');
         graph.render();
         (graph as any).rendered = true;
       } else {
         // Обновляем граф при изменении данных
+        console.log('Re-render');
         graph.render();
       }
+      console.log('Graph rendered successfully');
     } catch (e) {
       console.error('Graph update error:', e);
     }

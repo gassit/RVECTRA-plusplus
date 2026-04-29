@@ -22,29 +22,29 @@ model Breaker {
   id               String            @id
   deviceId         String            @unique
   refId            String?
-  breakerType      String            @default("MCB")  // MCB | MCCB | RCD | RCBO
+  breakerType      String            @default("MCB")
   ratedCurrent     Float
   currentSetting   Float?
-  breakingCapacity Float?            // Отключающая способность (кА)
-  curve            String?           // Характеристика: B, C, D
-  leakageCurrent   Float?            // Ток утечки (мА) - для RCD/RCBO
+  leakageCurrent   Float?
   lastTripReason   String?
   tripCount        Int               @default(0)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime
-  Device           Device            @relation(fields: [deviceId], references: [id])
+  breakingCapacity Float?
+  curve            String?
   BreakerReference BreakerReference? @relation(fields: [refId], references: [id])
+  Device           Device            @relation(fields: [deviceId], references: [id])
 }
 
 model BreakerReference {
   id               String    @id
   type             String    @unique
-  breakerType      String    @default("MCB")  // MCB | MCCB | RCD | RCBO
+  breakerType      String    @default("MCB")
   ratedCurrent     Float
   breakingCapacity Float
   curve            String
   poles            Int
-  leakageCurrent   Float?    // Ток утечки (мА) - для RCD/RCBO
+  leakageCurrent   Float?
   createdAt        DateTime  @default(now())
   Breaker          Breaker[]
 }
@@ -55,16 +55,16 @@ model Cable {
   name           String?
   refId          String?
   length         Float
-  cores          Int             @default(3)  // Кол-во жил
+  cores          Int             @default(3)
   section        Float
   material       String          @default("copper")
   iDop           Float?
-  voltageDrop    Float?          // Потеря напряжения (%)
-  currentA       Float?          // Расчётный ток (А)
-  r0             Float?          // Активное сопротивление (Ом/км)
-  x0             Float?          // Реактивное сопротивление (Ом/км)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime
+  currentA       Float?
+  r0             Float?
+  voltageDrop    Float?
+  x0             Float?
   CableReference CableReference? @relation(fields: [refId], references: [id])
   Connection     Connection[]
 }
@@ -152,95 +152,70 @@ model Element {
   DeviceSlot                              DeviceSlot[]
   Element                                 Element?     @relation("ElementToElement", fields: [parentId], references: [id])
   other_Element                           Element[]    @relation("ElementToElement")
-  AVRInputs                               AVRInput[]   // Элементы, которые мониторит АВР
-  AVROutputs                              AVROutput[]  // Элементы, которыми управляет АВР
+  AVRInputs                               AVRInput[]
+  AVROutputs                              AVROutput[]
 }
 
-// === АВР (КОНТРОЛЛЕР УПРАВЛЕНИЯ) ===
-// АВР не находится в цепи питания, а управляет выключателями
 model AVR {
-  id                String   @id
-  name              String              // "АВР ГРЩ1"
-  description       String?             // Описание
-  
-  mode              String   @default("AUTO")  // AUTO | MANUAL | OFF
-  status            String   @default("OK")    // OK | SWITCHING | FAULT | OFF
-  
-  switchoverDelay   Float    @default(0.5)     // Задержка переключения (сек)
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  
-  inputs            AVRInput[]          // Что мониторим (входы)
-  outputs           AVROutput[]         // Чем управляем (выходы)
-  switchovers       AVRSwitchover[]     // История переключений
-  
+  id              String          @id
+  name            String
+  description     String?
+  mode            String          @default("AUTO")
+  status          String          @default("OK")
+  switchoverDelay Float           @default(0.5)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  inputs          AVRInput[]
+  outputs         AVROutput[]
+  switchovers     AVRSwitchover[]
+
   @@map("avr")
 }
 
-// === ВХОДЫ АВР (мониторинг элементов) ===
 model AVRInput {
-  id              String   @id
-  avrId           String
-  
-  elementId       String              // Какой элемент мониторим (QF1, QF2...)
-  role            String              // "PRIMARY" | "SECONDARY" | "DGU" | "RESERVE"
-  priority        Int                 // Приоритет (1 = основной, 2 = резерв...)
-  
-  // Какой сигнал считаем
-  signalType      String   @default("ELECTRICAL")  // ELECTRICAL (LIVE/DEAD) | OPERATIONAL (ON/OFF)
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  avr             AVR      @relation(fields: [avrId], references: [id], onDelete: Cascade)
-  element         Element  @relation(fields: [elementId], references: [id])
-  
+  id         String   @id
+  avrId      String
+  elementId  String
+  role       String
+  priority   Int
+  signalType String   @default("ELECTRICAL")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  element    Element  @relation(fields: [elementId], references: [id])
+  avr        AVR      @relation(fields: [avrId], references: [id], onDelete: Cascade)
+
   @@index([avrId])
   @@map("avr_input")
 }
 
-// === ВЫХОДЫ АВР (управление элементами) ===
 model AVROutput {
-  id              String   @id
-  avrId           String
-  
-  elementId       String              // Каким элементом управляем (QF3, QF4...)
-  role            String              // "MAIN_BREAKER" | "RESERVE_BREAKER" | "DGU_BREAKER"
-  
-  // Логика управления
-  actionOn        String   @default("CLOSE")   // "CLOSE" = включить при активации
-  actionOff       String   @default("OPEN")    // "OPEN" = отключить при деактивации
-  
-  isActive        Boolean  @default(false)     // Текущее состояние выхода
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  avr             AVR      @relation(fields: [avrId], references: [id], onDelete: Cascade)
-  element         Element  @relation(fields: [elementId], references: [id])
-  
+  id        String   @id
+  avrId     String
+  elementId String
+  role      String
+  actionOn  String   @default("CLOSE")
+  actionOff String   @default("OPEN")
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  element   Element  @relation(fields: [elementId], references: [id])
+  avr       AVR      @relation(fields: [avrId], references: [id], onDelete: Cascade)
+
   @@index([avrId])
   @@map("avr_output")
 }
 
-// === ИСТОРИЯ ПЕРЕКЛЮЧЕНИЙ АВР ===
 model AVRSwitchover {
-  id              String   @id
-  avrId           String
-  
-  triggerElement  String?             // Какой элемент вызвал переключение
-  triggerReason   String              // "PRIMARY_LOST" | "PRIMARY_RESTORED" | "MANUAL" | "ALL_SOURCES_LOST"
-  
-  actions         String              // JSON: [{elementId, elementName, fromState, toState}]
-  
-  delay           Float?              // Фактическая задержка (сек)
-  success         Boolean  @default(true)
-  
-  timestamp       DateTime @default(now())
-  
-  avr             AVR      @relation(fields: [avrId], references: [id], onDelete: Cascade)
-  
+  id             String   @id
+  avrId          String
+  triggerElement String?
+  triggerReason  String
+  actions        String
+  delay          Float?
+  success        Boolean  @default(true)
+  timestamp      DateTime @default(now())
+  avr            AVR      @relation(fields: [avrId], references: [id], onDelete: Cascade)
+
   @@map("avr_switchover")
 }
 

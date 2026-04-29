@@ -65,6 +65,7 @@ export default function NetworkGraphG6({
   const destroyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tooltipHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
+  const [hoveredEdge, setHoveredEdge] = useState<GraphEdge | null>(null);
   const [pendingConnectionStart, setPendingConnectionStart] = useState<string | null>(null);
 
   // Refs для актуальных значений режимов (чтобы не пересоздавать граф)
@@ -408,6 +409,40 @@ export default function NetworkGraphG6({
       onEdgeClick?.(edgeId);
     });
 
+    // Наведение на ребро (связь)
+    graph.on('edge:pointerenter', (evt: any) => {
+      const edgeId = evt.target.id;
+      const graph = graphRef.current;
+      if (!graph || (graph as any).destroyed) return;
+
+      const edgeData = data?.edges.find(e => e.id === edgeId);
+      if (edgeData) {
+        setHoveredEdge(edgeData);
+        setHoveredNode(null); // Скрываем tooltip узла
+      }
+
+      try {
+        graph.setElementState(edgeId, 'hover', true);
+      } catch (e) {
+        // Element may not exist
+      }
+    });
+
+    // Уход курсора с ребра
+    graph.on('edge:pointerleave', (evt: any) => {
+      const edgeId = evt.target.id;
+      const graph = graphRef.current;
+      if (!graph || (graph as any).destroyed) return;
+
+      setHoveredEdge(null);
+
+      try {
+        graph.setElementState(edgeId, 'hover', false);
+      } catch (e) {
+        // Element may not exist
+      }
+    });
+
     // Клик по холсту - для добавления элемента
     graph.on('canvas:click', (evt: any) => {
       const graph = graphRef.current;
@@ -498,20 +533,10 @@ export default function NetworkGraphG6({
   // Обновление данных
   useEffect(() => {
     const graph = graphRef.current;
-    console.log('Graph data update:', { 
-      hasGraph: !!graph, 
-      hasData: !!data, 
-      nodesCount: data?.nodes?.length, 
-      edgesCount: data?.edges?.length,
-      combosCount: data?.combos?.length 
-    });
     if (!graph || !data) return;
 
     // Проверка что граф не уничтожен
-    if ((graph as any).destroyed) {
-      console.log('Graph is destroyed, skipping');
-      return;
-    }
+    if ((graph as any).destroyed) return;
 
     try {
       // Преобразуем данные в формат G6
@@ -537,20 +562,16 @@ export default function NetworkGraphG6({
         data: combo.data,
       })) || [];
 
-      console.log('Setting graph data:', { nodes: nodes.length, edges: edges.length, combos: combos.length });
       graph.setData({ nodes, edges: edges as any, combos });
 
       // Только первый рендер, потом данные обновляются через setData
       if (!(graph as any).rendered) {
-        console.log('First render');
         graph.render();
         (graph as any).rendered = true;
       } else {
         // Обновляем граф при изменении данных
-        console.log('Re-render');
         graph.render();
       }
-      console.log('Graph rendered successfully');
     } catch (e) {
       console.error('Graph update error:', e);
     }
@@ -726,6 +747,110 @@ export default function NetworkGraphG6({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Подсказка при наведении на ребро (связь) */}
+      {hoveredEdge && (
+        <div 
+          className="absolute bottom-4 right-4 p-4 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 text-sm max-w-sm z-20"
+          onMouseEnter={() => {
+            // Отменяем скрытие если мышка наведена на tooltip
+          }}
+          onMouseLeave={() => {
+            setHoveredEdge(null);
+          }}
+        >
+          <div className="space-y-2">
+            {/* Заголовок */}
+            <div className="border-b border-slate-200 dark:border-slate-700 pb-2">
+              <div className="font-semibold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
+                🔗 Связь
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {hoveredEdge.source} → {hoveredEdge.target}
+              </div>
+            </div>
+            
+            {/* Параметры кабеля */}
+            <div className="space-y-1">
+              {/* Марка и сечение */}
+              {(hoveredEdge.wireType || hoveredEdge.wireSize) && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">Кабель:</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-medium">
+                    {hoveredEdge.wireType} {hoveredEdge.wireSize}мм²
+                  </span>
+                </div>
+              )}
+              
+              {/* Длина */}
+              {hoveredEdge.length && hoveredEdge.length > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">Длина:</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-medium">
+                    {hoveredEdge.length} м
+                  </span>
+                </div>
+              )}
+              
+              {/* Материал */}
+              {(hoveredEdge as any).cable?.material && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">Материал:</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-medium">
+                    {(hoveredEdge as any).cable.material === 'copper' ? 'Медь' : 'Алюминий'}
+                  </span>
+                </div>
+              )}
+              
+              {/* Допустимый ток */}
+              {(hoveredEdge as any).cable?.iDop && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">Iдоп:</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-medium">
+                    {(hoveredEdge as any).cable.iDop} А
+                  </span>
+                </div>
+              )}
+              
+              {/* Потеря напряжения */}
+              {(hoveredEdge as any).cable?.voltageDrop !== null && (hoveredEdge as any).cable?.voltageDrop !== undefined && (
+                <div className="flex justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-700">
+                  <span className="text-slate-500 dark:text-slate-400">ΔU (потеря):</span>
+                  <span className={`font-medium ${
+                    (hoveredEdge as any).cable.voltageDrop > 5 
+                      ? 'text-red-600 dark:text-red-400' 
+                      : (hoveredEdge as any).cable.voltageDrop > 3 
+                        ? 'text-amber-600 dark:text-amber-400' 
+                        : 'text-green-600 dark:text-green-400'
+                  }`}>
+                    {(hoveredEdge as any).cable.voltageDrop.toFixed(2)}%
+                    {(hoveredEdge as any).cable.voltageDrop > 5 && ' ⚠️'}
+                  </span>
+                </div>
+              )}
+            </div>
+            
+            {/* Статусы */}
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+              <div className={`px-2 py-1 rounded text-xs font-medium ${
+                hoveredEdge.lifeStatus === 'LIVE' 
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+              }`}>
+                {hoveredEdge.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
+              </div>
+              
+              <div className={`px-2 py-1 rounded text-xs font-medium ${
+                hoveredEdge.status === 'OFF' 
+                  ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
+                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+              }`}>
+                {hoveredEdge.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
+              </div>
+            </div>
           </div>
         </div>
       )}

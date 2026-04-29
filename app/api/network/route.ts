@@ -48,6 +48,7 @@ export async function GET() {
             section: true,
             material: true,
             iDop: true,
+            voltageDrop: true,
             CableReference: {
               select: {
                 r0: true,
@@ -83,6 +84,7 @@ export async function GET() {
         section: conn.Cable.section,
         material: conn.Cable.material,
         iDop: conn.Cable.iDop,
+        voltageDrop: conn.Cable.voltageDrop,
         // Справочные данные для точного расчёта
         r0: conn.Cable.CableReference?.r0 ?? null,
         x0: conn.Cable.CableReference?.x0 ?? null,

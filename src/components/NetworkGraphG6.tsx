@@ -572,6 +572,9 @@ export default function NetworkGraphG6({
     };
   }, []); // Пустой массив - граф создаётся только один раз!
 
+  // Кэш предыдущих данных для инкрементального обновления
+  const prevDataRef = useRef<{ nodeIds: Set<string>; edgeIds: Set<string> } | null>(null);
+
   // Обновление данных
   useEffect(() => {
     const graph = graphRef.current;
@@ -604,16 +607,65 @@ export default function NetworkGraphG6({
         data: combo.data,
       })) || [];
 
-      graph.setData({ nodes, edges: edges as any, combos });
-
-      // Только первый рендер, потом данные обновляются через setData
+      // Первый рендер
       if (!(graph as any).rendered) {
+        graph.setData({ nodes, edges: edges as any, combos });
         graph.render();
         (graph as any).rendered = true;
-      } else {
-        // Обновляем граф при изменении данных
-        graph.render();
+        prevDataRef.current = {
+          nodeIds: new Set(nodes.map(n => n.id)),
+          edgeIds: new Set(edges.map(e => e.id)),
+        };
+        return;
       }
+
+      // Инкрементальное обновление
+      const newNodeIds = new Set(nodes.map(n => n.id));
+      const newEdgeIds = new Set(edges.map(e => e.id));
+      const prevIds = prevDataRef.current;
+
+      if (prevIds) {
+        // Находим добавленные/удалённые элементы
+        const addedNodes = nodes.filter(n => !prevIds.nodeIds.has(n.id));
+        const removedNodeIds = [...prevIds.nodeIds].filter(id => !newNodeIds.has(id));
+        const addedEdges = edges.filter(e => !prevIds.edgeIds.has(e.id));
+        const removedEdgeIds = [...prevIds.edgeIds].filter(id => !newEdgeIds.has(id));
+
+        // Если изменений немного - обновляем инкрементально
+        const totalChanges = addedNodes.length + removedNodeIds.length + addedEdges.length + removedEdgeIds.length;
+        const totalElements = nodes.length + edges.length;
+
+        if (totalChanges <= 5 && totalElements > 20) {
+          // Инкрементальное обновление без перерисовки layout
+          if (removedNodeIds.length > 0) {
+            graph.removeData('node', removedNodeIds);
+          }
+          if (removedEdgeIds.length > 0) {
+            graph.removeData('edge', removedEdgeIds);
+          }
+          if (addedNodes.length > 0 || addedEdges.length > 0) {
+            graph.addData({
+              nodes: addedNodes,
+              edges: addedEdges as any,
+            });
+          }
+          // Обновляем данные существующих элементов без пересчёта layout
+          graph.setData({ nodes, edges: edges as any, combos }, true);
+        } else {
+          // Много изменений - полный обновление с layout
+          graph.setData({ nodes, edges: edges as any, combos });
+          graph.layout();
+        }
+      } else {
+        // Нет предыдущих данных - полный рендер
+        graph.setData({ nodes, edges: edges as any, combos });
+        graph.layout();
+      }
+
+      prevDataRef.current = {
+        nodeIds: newNodeIds,
+        edgeIds: newEdgeIds,
+      };
     } catch (e) {
       console.error('Graph update error:', e);
     }

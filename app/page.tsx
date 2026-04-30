@@ -102,6 +102,7 @@ interface ValidationData {
 
 export default function Home() {
   const [networkData, setNetworkData] = useState<NetworkData | null>(null);
+  const networkDataRef = useRef<NetworkData | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [validation, setValidation] = useState<ValidationData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,6 +114,11 @@ export default function Home() {
   const [layoutLoading, setLayoutLoading] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const dataLoadedRef = useRef(false);
+
+  // Обновляем ref при изменении networkData
+  useEffect(() => {
+    networkDataRef.current = networkData;
+  }, [networkData]);
 
   // Режим редактирования
   const [editMode, setEditMode] = useState(false);
@@ -163,16 +169,30 @@ export default function Home() {
       const [networkRes, statsRes, validationRes] = await Promise.all([
         fetch('/api/network'), fetch('/api/stats'), fetch('/api/validation'),
       ]);
-      
-      if (networkRes.ok) setNetworkData(await networkRes.json());
+
+      // Проверяем изменились ли данные перед обновлением состояния
+      if (networkRes.ok) {
+        const newNetworkData = await networkRes.json();
+        const currentData = networkDataRef.current;
+        // Сравниваем количество элементов и связей (быстрая проверка)
+        const currentElements = currentData?.elements?.length || 0;
+        const currentConnections = currentData?.connections?.length || 0;
+        const newElements = newNetworkData?.elements?.length || 0;
+        const newConnections = newNetworkData?.connections?.length || 0;
+
+        // Обновляем только если данные действительно изменились
+        if (currentElements !== newElements || currentConnections !== newConnections) {
+          setNetworkData(newNetworkData);
+        }
+      }
       if (statsRes.ok) setStats(await statsRes.json());
       if (validationRes.ok) setValidation(await validationRes.json());
-    } catch (err) { 
+    } catch (err) {
       console.error('refreshData error:', err);
-      setError(err instanceof Error ? err.message : 'Error'); 
+      setError(err instanceof Error ? err.message : 'Error');
     }
-    finally { 
-      if (showLoading) setLoading(false); 
+    finally {
+      if (showLoading) setLoading(false);
     }
   };
 

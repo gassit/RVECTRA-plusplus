@@ -1,3 +1,3 @@
 #!/bin/bash
-cd /home/z/my-project
+cd "$(dirname "$0")"
 exec npm run start

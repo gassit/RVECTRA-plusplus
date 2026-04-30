@@ -103,7 +103,7 @@ function extractCabinet(elementName: string, elementType: string): string | unde
 }
 
 function findExcelFile(): string | null {
-  const dir = '/home/z/my-project/upload';
+  const dir = path.join(process.cwd(), 'upload');
   if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); return null; }
   const files = fs.readdirSync(dir).filter(f => f.endsWith('.xlsx') || f.endsWith('.xls'));
   if (files.length === 0) return null;

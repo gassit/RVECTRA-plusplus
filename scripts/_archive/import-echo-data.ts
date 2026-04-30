@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import * as path from 'path';
 
 const adapter = new PrismaLibSql({
-  url: 'file:/home/z/my-project/db/custom.db'
+  url: `file:${process.cwd()}/db/custom.db`
 });
 
 const prisma = new PrismaClient({ adapter });
@@ -88,7 +88,7 @@ async function importData() {
   console.log('=== Импорт данных из ЭХОмини.v1.xlsx ===\n');
   
   // Читаем Excel файл
-  const filePath = '/home/z/my-project/upload/ЭХОмини.v1.xlsx';
+  const filePath = path.join(process.cwd(), 'upload/ЭХОмини.v1.xlsx');
   const workbook = XLSX.readFile(filePath);
   
   // Читаем лист Networkall

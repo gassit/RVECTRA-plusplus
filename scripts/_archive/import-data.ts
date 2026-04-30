@@ -381,7 +381,7 @@ async function calculateLayout(): Promise<void> {
 
 // Поиск файла Excel в папке upload
 function findExcelFile(): string | null {
-  const uploadDir = '/home/z/my-project/upload';
+  const uploadDir = path.join(process.cwd(), 'upload');
   const files = fs.readdirSync(uploadDir);
   const excelFiles = files.filter(f =>
     f.endsWith('.xlsx') || f.endsWith('.xls')
@@ -408,7 +408,7 @@ async function main() {
   // Поиск файла Excel
   const filePath = findExcelFile();
   if (!filePath) {
-    console.error('ОШИБКА: Файл Excel не найден в папке /home/z/my-project/upload/');
+    console.error('ОШИБКА: Файл Excel не найден в папке upload/');
     process.exit(1);
   }
   console.log(`Файл: ${filePath}`);

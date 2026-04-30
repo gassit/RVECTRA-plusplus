@@ -2,7 +2,7 @@ import { PrismaClient } from '../app/generated/prisma/client';
 import { PrismaLibSql } from '@prisma/adapter-libsql';
 
 const adapter = new PrismaLibSql({
-  url: 'file:/home/z/my-project/db/custom.db'
+  url: `file:${process.cwd()}/db/custom.db`
 });
 const prisma = new PrismaClient({ adapter });
 

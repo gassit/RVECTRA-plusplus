@@ -473,7 +473,7 @@ function detectExcelFormat(rawData: Record<string, unknown>[]): ExcelFormat {
 // ============================================================================
 
 function findExcelFile(): string | null {
-  const dir = '/home/z/my-project/upload';
+  const dir = path.join(process.cwd(), 'upload');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     return null;

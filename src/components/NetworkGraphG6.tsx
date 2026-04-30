@@ -26,6 +26,8 @@ interface NetworkGraphG6Props {
   onDeleteNode?: (nodeId: string) => void;
   // Обновление статуса элемента
   onUpdateNodeStatus?: (nodeId: string, operationalStatus: 'ON' | 'OFF') => void;
+  // Принудительное обновление статусов (propagate)
+  onPropagate?: () => void;
 }
 
 // ============================================================================
@@ -70,6 +72,7 @@ export default function NetworkGraphG6({
   onConnectionCreated,
   onDeleteNode,
   onUpdateNodeStatus,
+  onPropagate,
 }: NetworkGraphG6Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
@@ -827,36 +830,38 @@ export default function NetworkGraphG6({
               {/* Оперативный статус - только для коммутирующих элементов */}
               {isSwitchable((pinnedNode || hoveredNode)?.type || '') && (
                 <div className="flex items-center gap-1">
-                  {editMode ? (
-                    // В режиме редактирования - кнопка переключения
-                    <button
-                      onClick={() => {
-                        const node = pinnedNode || hoveredNode;
-                        if (node && onUpdateNodeStatus) {
-                          const newStatus = node.status === 'OFF' ? 'ON' : 'OFF';
-                          onUpdateNodeStatus(node.id, newStatus);
-                        }
-                      }}
-                      className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 ${
-                        (pinnedNode || hoveredNode)?.status === 'OFF' 
-                          ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
-                          : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                      }`}
-                      title="Нажмите для переключения статуса"
-                    >
-                      {(pinnedNode || hoveredNode)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
-                    </button>
-                  ) : (
-                    // В обычном режиме - просто отображение
-                    <div className={`px-2 py-1 rounded text-xs font-medium ${
+                  {/* Кнопка переключения - всегда доступна */}
+                  <button
+                    onClick={() => {
+                      const node = pinnedNode || hoveredNode;
+                      if (node && onUpdateNodeStatus) {
+                        const newStatus = node.status === 'OFF' ? 'ON' : 'OFF';
+                        onUpdateNodeStatus(node.id, newStatus);
+                      }
+                    }}
+                    className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 ${
                       (pinnedNode || hoveredNode)?.status === 'OFF' 
                         ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
                         : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                    }`}>
-                      {(pinnedNode || hoveredNode)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
-                    </div>
-                  )}
+                    }`}
+                    title="Нажмите для переключения статуса"
+                  >
+                    {(pinnedNode || hoveredNode)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
+                  </button>
                 </div>
+              )}
+              
+              {/* Кнопка обновления статусов */}
+              {onPropagate && (
+                <button
+                  onClick={() => {
+                    onPropagate();
+                  }}
+                  className="px-2 py-1 rounded text-xs font-medium cursor-pointer transition-all bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:ring-2 hover:ring-purple-400"
+                  title="Пересчитать статусы по всей сети"
+                >
+                  🔄 Обновить статусы
+                </button>
               )}
             </div>
             

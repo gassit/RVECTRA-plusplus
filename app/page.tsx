@@ -351,6 +351,24 @@ export default function Home() {
     }
   };
 
+  // Принудительное обновление статусов (propagate)
+  const handlePropagate = async () => {
+    try {
+      const response = await fetch('/api/propagate', { method: 'POST' });
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        console.log('Propagate result:', result.data);
+        await refreshData(false);
+      } else {
+        alert(result.error || 'Ошибка при обновлении статусов');
+      }
+    } catch (err) {
+      console.error('Error propagating:', err);
+      alert('Ошибка при обновлении статусов');
+    }
+  };
+
   // Calculate layout
   const calculateLayout = async () => {
     setLayoutLoading(true);
@@ -532,6 +550,7 @@ export default function Home() {
               onConnectionCreated={handleConnectionCreated}
               onDeleteNode={handleDeleteNode}
               onUpdateNodeStatus={handleUpdateNodeStatus}
+              onPropagate={handlePropagate}
             />
           )}
 

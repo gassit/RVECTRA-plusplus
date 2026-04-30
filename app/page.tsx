@@ -329,6 +329,28 @@ export default function Home() {
     }
   };
 
+  // Обновление статуса элемента
+  const handleUpdateNodeStatus = async (nodeId: string, operationalStatus: 'ON' | 'OFF') => {
+    try {
+      const response = await fetch('/api/elements', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: nodeId, operationalStatus }),
+      });
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        // Обновляем данные без перезагрузки всей страницы
+        await refreshData(false);
+      } else {
+        alert(result.error || 'Ошибка при обновлении статуса');
+      }
+    } catch (err) {
+      console.error('Error updating status:', err);
+      alert('Ошибка при обновлении статуса');
+    }
+  };
+
   // Calculate layout
   const calculateLayout = async () => {
     setLayoutLoading(true);
@@ -509,6 +531,7 @@ export default function Home() {
               connectionMode={connectionMode}
               onConnectionCreated={handleConnectionCreated}
               onDeleteNode={handleDeleteNode}
+              onUpdateNodeStatus={handleUpdateNodeStatus}
             />
           )}
 

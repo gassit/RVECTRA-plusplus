@@ -28,6 +28,27 @@ const prisma = new PrismaClient();
 // ============================================================================
 // РАСПРОСТРАНЕНИЕ СОСТОЯНИЙ (inline)
 // ============================================================================
+/**
+ * ЛОГИКА РАСПРОСТРАНЕНИЯ:
+ *
+ * electricalStatus (LIVE/DEAD) - физическое наличие напряжения
+ * operationalStatus (ON/OFF) - положение выключателя
+ *
+ * Правила:
+ * 1. Element.electricalStatus наследуется от ВХОДЯЩЕЙ Connection
+ * 2. Connection.electricalStatus = LIVE если:
+ *    - Source.electricalStatus == LIVE
+ *    - Source.operationalStatus == ON (элемент пропускает)
+ *    - Connection.operationalStatus == ON
+ * 3. operationalStatus элемента влияет на ИСХОДЯЩИЕ связи, не на себя
+ *
+ * Пример:
+ * SOURCE (ON | LIVE)
+ *   └── Connection (ON | LIVE) ──→ BREAKER (OFF | LIVE) ──→ LOAD (ON | DEAD)
+ *                                         ↑
+ *                                    BREAKER под напряжением,
+ *                                    но не пропускает дальше
+ */
 async function propagateStates(): Promise<{ elementsUpdated: number; liveElements: number; deadElements: number; offElements: number }> {
   const elements = await prisma.element.findMany();
   const connections = await prisma.connection.findMany();
@@ -40,12 +61,15 @@ async function propagateStates(): Promise<{ elementsUpdated: number; liveElement
   type ElectricalStatus = 'LIVE' | 'DEAD';
   const electricalStatusMap = new Map<string, ElectricalStatus>();
   const operationalStatusMap = new Map<string, OperationalStatus>();
+  const connectionElectricalMap = new Map<string, ElectricalStatus>();
 
+  // Инициализация
   for (const el of elements) {
     electricalStatusMap.set(el.id, 'DEAD');
     operationalStatusMap.set(el.id, (el.operationalStatus as OperationalStatus) || 'ON');
   }
 
+  // Структуры связей
   const outgoingConnections = new Map<string, string[]>();
   const connectionMap = new Map<string, typeof connections[0]>();
 
@@ -57,25 +81,28 @@ async function propagateStates(): Promise<{ elementsUpdated: number; liveElement
     outgoingConnections.get(conn.sourceId)!.push(conn.id);
   }
 
+  // ШАГ 1: Инициализация источников
   const sources = elements.filter(el => el.type.toLowerCase() === 'source');
-  const queue: Array<{ elementId: string }> = [];
+  const queue: string[] = [];
 
   for (const source of sources) {
     const opStatus = operationalStatusMap.get(source.id) || 'ON';
-    electricalStatusMap.set(source.id, opStatus === 'ON' ? 'LIVE' : 'DEAD');
-    queue.push({ elementId: source.id });
+    const electrical: ElectricalStatus = opStatus === 'ON' ? 'LIVE' : 'DEAD';
+    electricalStatusMap.set(source.id, electrical);
+    queue.push(source.id);
   }
 
+  // ШАГ 2: BFS распространение
   const visited = new Set<string>();
 
   while (queue.length > 0) {
-    const { elementId } = queue.shift()!;
-    const currentElement = elementMap.get(elementId);
+    const currentId = queue.shift()!;
+    const currentElement = elementMap.get(currentId);
     if (!currentElement || currentElement.type.toLowerCase() === 'cabinet') continue;
 
-    const currentElectrical = electricalStatusMap.get(elementId) || 'DEAD';
-    const currentOperational = operationalStatusMap.get(elementId) || 'ON';
-    const outgoing = outgoingConnections.get(elementId) || [];
+    const currentElectrical = electricalStatusMap.get(currentId) || 'DEAD';
+    const currentOperational = operationalStatusMap.get(currentId) || 'ON';
+    const outgoing = outgoingConnections.get(currentId) || [];
 
     for (const connId of outgoing) {
       const conn = connectionMap.get(connId);
@@ -86,23 +113,34 @@ async function propagateStates(): Promise<{ elementsUpdated: number; liveElement
       if (!targetElement || targetElement.type.toLowerCase() === 'cabinet') continue;
 
       const connOperational = (conn.operationalStatus as OperationalStatus) || 'ON';
-      const targetOperational = operationalStatusMap.get(targetId) || 'ON';
 
-      if (currentElectrical === 'LIVE' && currentOperational === 'ON' && connOperational === 'ON' && targetOperational === 'ON') {
-        if (electricalStatusMap.get(targetId) !== 'LIVE') {
-          electricalStatusMap.set(targetId, 'LIVE');
-        }
+      // КЛЮЧЕВАЯ ЛОГИКА:
+      // Connection.electricalStatus зависит от SOURCE элемента
+      const connElectrical: ElectricalStatus =
+        (currentElectrical === 'LIVE' && currentOperational === 'ON' && connOperational === 'ON')
+          ? 'LIVE'
+          : 'DEAD';
+
+      connectionElectricalMap.set(connId, connElectrical);
+
+      // Element.electricalStatus наследуется от ВХОДЯЩЕЙ связи
+      // operationalStatus элемента влияет на ДАЛЬНЕЙШИЕ связи, не на себя
+      const targetElectrical = connElectrical;
+
+      // Обновляем только если не был LIVE (множественные входы - приоритет LIVE)
+      if (targetElectrical === 'LIVE' || electricalStatusMap.get(targetId) !== 'LIVE') {
+        electricalStatusMap.set(targetId, targetElectrical);
       }
 
-      const visitKey = `${elementId}-${targetId}`;
+      const visitKey = `${currentId}-${targetId}`;
       if (!visited.has(visitKey)) {
         visited.add(visitKey);
-        queue.push({ elementId: targetId });
+        queue.push(targetId);
       }
     }
   }
 
-  // CABINET post-processing
+  // ШАГ 3: CABINET post-processing
   const cabinets = elements.filter(el => el.type.toLowerCase() === 'cabinet');
   for (const cabinet of cabinets) {
     const children = elements.filter(el => el.parentId === cabinet.id);
@@ -110,12 +148,19 @@ async function propagateStates(): Promise<{ elementsUpdated: number; liveElement
     electricalStatusMap.set(cabinet.id, hasLiveChild ? 'LIVE' : 'DEAD');
   }
 
-  // Update DB
+  // ШАГ 4: Обновление БД
   let elementsUpdated = 0;
   for (const [id, electricalStatus] of electricalStatusMap) {
     try {
       await prisma.element.update({ where: { id }, data: { electricalStatus } });
       elementsUpdated++;
+    } catch (e) { /* ignore */ }
+  }
+
+  // Обновляем связи
+  for (const [connId, electricalStatus] of connectionElectricalMap) {
+    try {
+      await prisma.connection.update({ where: { id: connId }, data: { electricalStatus } });
     } catch (e) { /* ignore */ }
   }
 

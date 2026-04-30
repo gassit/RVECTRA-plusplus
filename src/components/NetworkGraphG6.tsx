@@ -43,6 +43,14 @@ const TYPE_COLORS: Record<string, { primary: string; gradient: string }> = {
   cabinet: { primary: '#d97706', gradient: 'l(0) 0:#B87333 0.5:#CD7F32 1:#B87333' },
 };
 
+// Типы элементов, которые имеют operationalStatus (можно включить/выключить)
+const SWITCHABLE_TYPES = ['SOURCE', 'BREAKER', 'LOAD', 'METER'];
+
+// Проверка: элемент имеет operationalStatus
+function isSwitchable(type: string): boolean {
+  return SWITCHABLE_TYPES.includes(type.toUpperCase());
+}
+
 // ============================================================================
 // ОСНОВНОЙ КОМПОНЕНТ
 // ============================================================================
@@ -817,7 +825,7 @@ export default function NetworkGraphG6({
               </div>
               
               {/* Оперативный статус - только для коммутирующих элементов */}
-              {(['SOURCE', 'BREAKER', 'LOAD', 'METER'].includes((pinnedNode || hoveredNode)?.type?.toUpperCase() || '')) && (
+              {isSwitchable((pinnedNode || hoveredNode)?.type || '') && (
                 <div className="flex items-center gap-1">
                   {editMode ? (
                     // В режиме редактирования - кнопка переключения

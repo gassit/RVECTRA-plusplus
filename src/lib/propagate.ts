@@ -8,26 +8,49 @@
  * electricalStatus (LIVE/DEAD) - физическое наличие напряжения
  * operationalStatus (ON/OFF) - положение выключателя
  *
+ * Типы элементов:
+ * - SWITCHABLE (имеют operationalStatus): SOURCE, BREAKER, LOAD, METER
+ * - PASS_THROUGH (всегда ON): BUS, JUNCTION
+ * - CONTAINER: CABINET (статус от дочерних элементов)
+ *
  * Правила:
- * 1. Element.electricalStatus наследуется от ВХОДЯЩЕЙ Connection
- * 2. Connection.electricalStatus = LIVE если:
- *    - Source.electricalStatus == LIVE
- *    - Source.operationalStatus == ON (элемент пропускает)
- *    - Connection.operationalStatus == ON
- * 3. operationalStatus элемента влияет на ИСХОДЯЩИЕ связи, не на себя
+ * 1. SOURCE: electricalStatus = LIVE если operationalStatus = ON
+ * 2. CONNECTION: electricalStatus = LIVE если:
+ *    - source.electricalStatus = LIVE
+ *    - source IS SWITCHABLE AND source.operationalStatus = ON
+ *      OR source IS PASS_THROUGH (всегда пропускает)
+ *    - connection.operationalStatus = ON
+ * 3. ELEMENT (не SOURCE): electricalStatus = connection.electricalStatus
+ * 4. PASS_THROUGH элементы всегда пропускают (operationalStatus игнорируется)
  *
  * Пример:
  * SOURCE (ON | LIVE)
- *   └── Connection (ON | LIVE) ──→ BREAKER (OFF | LIVE) ──→ LOAD (ON | DEAD)
- *                                         ↑
- *                                    BREAKER под напряжением,
- *                                    но не пропускает дальше
+ *   └── Connection (ON | LIVE) ──→ BUS (LIVE) ──→ BREAKER (OFF | LIVE) ──→ LOAD (DEAD)
+ *                                          ↑              ↑
+ *                                     Пропускает    Под напряжением,
+ *                                                   но не пропускает
  */
 
 import { prisma } from './prisma';
 
 export type ElectricalStatus = 'LIVE' | 'DEAD';
 export type OperationalStatus = 'ON' | 'OFF';
+
+// Типы элементов с operationalStatus (можно включить/выключить)
+export const SWITCHABLE_TYPES = ['SOURCE', 'BREAKER', 'LOAD', 'METER'];
+
+// Типы элементов без operationalStatus (всегда пропускают)
+export const PASS_THROUGH_TYPES = ['BUS', 'JUNCTION', 'JUNCTIONBOX'];
+
+// Проверка: элемент имеет operationalStatus
+export function isSwitchable(type: string): boolean {
+  return SWITCHABLE_TYPES.includes(type.toUpperCase());
+}
+
+// Проверка: элемент просто пропускает (не имеет operationalStatus)
+export function isPassThrough(type: string): boolean {
+  return PASS_THROUGH_TYPES.includes(type.toUpperCase());
+}
 
 export interface PropagationResult {
   elementsUpdated: number;
@@ -60,7 +83,12 @@ export async function propagateStates(): Promise<PropagationResult> {
   // Инициализация
   for (const el of elements) {
     electricalStatusMap.set(el.id, 'DEAD');
-    operationalStatusMap.set(el.id, (el.operationalStatus as OperationalStatus) || 'ON');
+    // PASS_THROUGH элементы всегда ON
+    if (isPassThrough(el.type)) {
+      operationalStatusMap.set(el.id, 'ON');
+    } else {
+      operationalStatusMap.set(el.id, (el.operationalStatus as OperationalStatus) || 'ON');
+    }
   }
 
   // Структуры связей
@@ -119,10 +147,24 @@ export async function propagateStates(): Promise<PropagationResult> {
 
       const connOperational = (conn.operationalStatus as OperationalStatus) || 'ON';
 
+      // =========================================================================
       // КЛЮЧЕВАЯ ЛОГИКА:
       // Connection.electricalStatus зависит от SOURCE элемента
+      // =========================================================================
+      let elementPassesCurrent = false;
+
+      if (currentElectrical === 'LIVE') {
+        if (isPassThrough(currentElement.type)) {
+          // PASS_THROUGH элементы (BUS, JUNCTION) всегда пропускают
+          elementPassesCurrent = true;
+        } else if (currentOperational === 'ON') {
+          // SWITCHABLE элементы пропускают только если ON
+          elementPassesCurrent = true;
+        }
+      }
+
       const connElectrical: ElectricalStatus =
-        (currentElectrical === 'LIVE' && currentOperational === 'ON' && connOperational === 'ON')
+        (elementPassesCurrent && connOperational === 'ON')
           ? 'LIVE'
           : 'DEAD';
 
@@ -232,8 +274,6 @@ export async function propagateFromElement(elementId: string): Promise<void> {
     const connElectrical = conn.electricalStatus as ElectricalStatus;
     
     // Element.electricalStatus наследуется от ВХОДЯЩЕЙ связи
-    // БЕЗ проверки operationalStatus элемента!
-    // operationalStatus влияет только на ИСХОДЯЩИЕ связи
     if (connElectrical === 'LIVE') {
       hasLiveInput = true;
       break;
@@ -250,13 +290,23 @@ export async function propagateFromElement(elementId: string): Promise<void> {
 
   // Распространяем дальше по исходящим связям
   const outgoingConnections = element.Connection_Connection_sourceIdToElement;
+  const elementOperational = (element.operationalStatus as OperationalStatus) || 'ON';
 
   for (const conn of outgoingConnections) {
     const connOperational = (conn.operationalStatus as OperationalStatus) || 'ON';
-    const elementOperational = (element.operationalStatus as OperationalStatus) || 'ON';
+
+    // Определяем, пропускает ли элемент ток
+    let elementPassesCurrent = false;
+    if (newElectricalStatus === 'LIVE') {
+      if (isPassThrough(element.type)) {
+        elementPassesCurrent = true;
+      } else if (elementOperational === 'ON') {
+        elementPassesCurrent = true;
+      }
+    }
 
     const connElectrical: ElectricalStatus =
-      (newElectricalStatus === 'LIVE' && elementOperational === 'ON' && connOperational === 'ON')
+      (elementPassesCurrent && connOperational === 'ON')
         ? 'LIVE'
         : 'DEAD';
 
@@ -284,12 +334,23 @@ export async function propagateFromConnection(connectionId: string): Promise<voi
 
   if (!connection) return;
 
-  const sourceElectrical = connection.Element_Connection_sourceIdToElement.electricalStatus as ElectricalStatus;
-  const sourceOperational = (connection.Element_Connection_sourceIdToElement.operationalStatus as OperationalStatus) || 'ON';
+  const sourceElement = connection.Element_Connection_sourceIdToElement;
+  const sourceElectrical = sourceElement.electricalStatus as ElectricalStatus;
+  const sourceOperational = (sourceElement.operationalStatus as OperationalStatus) || 'ON';
   const connOperational = (connection.operationalStatus as OperationalStatus) || 'ON';
 
+  // Определяем, пропускает ли source элемент ток
+  let sourcePassesCurrent = false;
+  if (sourceElectrical === 'LIVE') {
+    if (isPassThrough(sourceElement.type)) {
+      sourcePassesCurrent = true;
+    } else if (sourceOperational === 'ON') {
+      sourcePassesCurrent = true;
+    }
+  }
+
   const connElectrical: ElectricalStatus =
-    (sourceElectrical === 'LIVE' && sourceOperational === 'ON' && connOperational === 'ON')
+    (sourcePassesCurrent && connOperational === 'ON')
       ? 'LIVE'
       : 'DEAD';
 

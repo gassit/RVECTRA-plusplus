@@ -8,20 +8,19 @@
  * electricalStatus (LIVE/DEAD) - физическое наличие напряжения
  * operationalStatus (ON/OFF) - положение выключателя
  *
- * Правила:
- * 1. Element.electricalStatus наследуется от ВХОДЯЩЕЙ Connection
- * 2. Connection.electricalStatus = LIVE если:
- *    - Source.electricalStatus == LIVE
- *    - Source.operationalStatus == ON (элемент пропускает)
- *    - Connection.operationalStatus == ON
- * 3. operationalStatus элемента влияет на ИСХОДЯЩИЕ связи, не на себя
+ * Типы элементов:
+ * - SWITCHABLE (имеют operationalStatus): SOURCE, BREAKER, LOAD, METER
+ * - PASS_THROUGH (всегда ON): BUS, JUNCTION
+ * - CONTAINER: CABINET (статус от дочерних элементов)
  *
- * Пример:
- * SOURCE (ON | LIVE)
- *   └── Connection (ON | LIVE) ──→ BREAKER (OFF | LIVE) ──→ LOAD (ON | DEAD)
- *                                         ↑
- *                                    BREAKER под напряжением,
- *                                    но не пропускает дальше
+ * Правила:
+ * 1. SOURCE: electricalStatus = LIVE если operationalStatus = ON
+ * 2. CONNECTION: electricalStatus = LIVE если:
+ *    - source.electricalStatus = LIVE
+ *    - source IS SWITCHABLE AND source.operationalStatus = ON
+ *      OR source IS PASS_THROUGH (всегда пропускает)
+ *    - connection.operationalStatus = ON
+ * 3. ELEMENT (не SOURCE): electricalStatus = connection.electricalStatus
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -30,6 +29,20 @@ const prisma = new PrismaClient();
 
 type ElectricalStatus = 'LIVE' | 'DEAD';
 type OperationalStatus = 'ON' | 'OFF';
+
+// Типы элементов с operationalStatus (можно включить/выключить)
+const SWITCHABLE_TYPES = ['SOURCE', 'BREAKER', 'LOAD', 'METER'];
+
+// Типы элементов без operationalStatus (всегда пропускают)
+const PASS_THROUGH_TYPES = ['BUS', 'JUNCTION', 'JUNCTIONBOX'];
+
+function isSwitchable(type: string): boolean {
+  return SWITCHABLE_TYPES.includes(type.toUpperCase());
+}
+
+function isPassThrough(type: string): boolean {
+  return PASS_THROUGH_TYPES.includes(type.toUpperCase());
+}
 
 // Мапы для хранения состояний
 const electricalStatusMap = new Map<string, ElectricalStatus>();
@@ -56,29 +69,26 @@ async function propagateStates(): Promise<void> {
 
   // Инициализация operationalStatus из БД
   for (const el of elements) {
-    operationalStatusMap.set(el.id, (el.operationalStatus as OperationalStatus) || 'ON');
+    // PASS_THROUGH элементы всегда ON
+    if (isPassThrough(el.type)) {
+      operationalStatusMap.set(el.id, 'ON');
+    } else {
+      operationalStatusMap.set(el.id, (el.operationalStatus as OperationalStatus) || 'ON');
+    }
     electricalStatusMap.set(el.id, 'DEAD'); // по умолчанию DEAD
   }
 
   // Структуры для связей
   const outgoingConnections = new Map<string, string[]>();
-  const incomingConnections = new Map<string, string[]>();
   const connectionMap = new Map<string, typeof connections[0]>();
 
   for (const conn of connections) {
     connectionMap.set(conn.id, conn);
 
-    // Исходящие связи
     if (!outgoingConnections.has(conn.sourceId)) {
       outgoingConnections.set(conn.sourceId, []);
     }
     outgoingConnections.get(conn.sourceId)!.push(conn.id);
-
-    // Входящие связи
-    if (!incomingConnections.has(conn.targetId)) {
-      incomingConnections.set(conn.targetId, []);
-    }
-    incomingConnections.get(conn.targetId)!.push(conn.id);
   }
 
   // =========================================================================
@@ -89,7 +99,6 @@ async function propagateStates(): Promise<void> {
 
   for (const source of sources) {
     const opStatus = operationalStatusMap.get(source.id) || 'ON';
-    // SOURCE сам задаёт свой electricalStatus
     const electrical: ElectricalStatus = opStatus === 'ON' ? 'LIVE' : 'DEAD';
     electricalStatusMap.set(source.id, electrical);
     console.log(`SOURCE "${source.name}" -> (${opStatus} | ${electrical})`);
@@ -112,7 +121,6 @@ async function propagateStates(): Promise<void> {
     const currentElectrical = electricalStatusMap.get(currentId) || 'DEAD';
     const currentOperational = operationalStatusMap.get(currentId) || 'ON';
 
-    // Обрабатываем все исходящие связи
     const outgoing = outgoingConnections.get(currentId) || [];
 
     for (const connId of outgoing) {
@@ -130,30 +138,39 @@ async function propagateStates(): Promise<void> {
 
       // =========================================================================
       // КЛЮЧЕВАЯ ЛОГИКА:
-      // Connection.electricalStatus зависит от SOURCE элемента
+      // Определяем, пропускает ли элемент ток
       // =========================================================================
+      let elementPassesCurrent = false;
+
+      if (currentElectrical === 'LIVE') {
+        if (isPassThrough(currentElement.type)) {
+          // PASS_THROUGH элементы (BUS, JUNCTION) всегда пропускают
+          elementPassesCurrent = true;
+        } else if (currentOperational === 'ON') {
+          // SWITCHABLE элементы пропускают только если ON
+          elementPassesCurrent = true;
+        }
+      }
+
       const connElectrical: ElectricalStatus =
-        (currentElectrical === 'LIVE' && currentOperational === 'ON' && connOperational === 'ON')
+        (elementPassesCurrent && connOperational === 'ON')
           ? 'LIVE'
           : 'DEAD';
 
       connectionElectricalMap.set(connId, connElectrical);
 
-      // =========================================================================
       // Element.electricalStatus наследуется от ВХОДЯЩЕЙ связи
-      // =========================================================================
-      // Элемент наследует electricalStatus от связи
-      // operationalStatus элемента влияет на ДАЛЬНЕЙШИЕ связи, не на себя
-      const targetElectrical = connElectrical; // наследуем от связи
+      const targetElectrical = connElectrical;
 
       // Обновляем только если не был LIVE (множественные входы - приоритет LIVE)
       if (targetElectrical === 'LIVE' || electricalStatusMap.get(targetId) !== 'LIVE') {
         electricalStatusMap.set(targetId, targetElectrical);
       }
 
-      console.log(`  ${currentElement.name} (${currentOperational}|${currentElectrical}) --[${connOperational}|${connElectrical}]--> ${targetElement.name} (?|${electricalStatusMap.get(targetId)})`);
+      // Логирование типа элемента
+      const typeInfo = isPassThrough(currentElement.type) ? 'PASS_THROUGH' : 'SWITCHABLE';
+      console.log(`  ${currentElement.name} [${typeInfo}] (${currentOperational}|${currentElectrical}) --[${connOperational}|${connElectrical}]--> ${targetElement.name} (?|${electricalStatusMap.get(targetId)})`);
 
-      // Добавляем в очередь
       const visitKey = `${currentId}-${targetId}`;
       if (!visited.has(visitKey)) {
         visited.add(visitKey);

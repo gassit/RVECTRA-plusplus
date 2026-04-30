@@ -34,21 +34,31 @@ const prisma = new PrismaClient();
  * electricalStatus (LIVE/DEAD) - физическое наличие напряжения
  * operationalStatus (ON/OFF) - положение выключателя
  *
- * Правила:
- * 1. Element.electricalStatus наследуется от ВХОДЯЩЕЙ Connection
- * 2. Connection.electricalStatus = LIVE если:
- *    - Source.electricalStatus == LIVE
- *    - Source.operationalStatus == ON (элемент пропускает)
- *    - Connection.operationalStatus == ON
- * 3. operationalStatus элемента влияет на ИСХОДЯЩИЕ связи, не на себя
+ * Типы элементов:
+ * - SWITCHABLE (имеют operationalStatus): SOURCE, BREAKER, LOAD, METER
+ * - PASS_THROUGH (всегда ON): BUS, JUNCTION
  *
- * Пример:
- * SOURCE (ON | LIVE)
- *   └── Connection (ON | LIVE) ──→ BREAKER (OFF | LIVE) ──→ LOAD (ON | DEAD)
- *                                         ↑
- *                                    BREAKER под напряжением,
- *                                    но не пропускает дальше
+ * Правила:
+ * 1. SOURCE: electricalStatus = LIVE если operationalStatus = ON
+ * 2. CONNECTION: electricalStatus = LIVE если:
+ *    - source.electricalStatus = LIVE
+ *    - source IS SWITCHABLE AND source.operationalStatus = ON
+ *      OR source IS PASS_THROUGH (всегда пропускает)
+ *    - connection.operationalStatus = ON
+ * 3. ELEMENT (не SOURCE): electricalStatus = connection.electricalStatus
  */
+
+// Типы элементов с operationalStatus
+const SWITCHABLE_TYPES = ['SOURCE', 'BREAKER', 'LOAD', 'METER'];
+const PASS_THROUGH_TYPES = ['BUS', 'JUNCTION', 'JUNCTIONBOX'];
+
+function isSwitchable(type: string): boolean {
+  return SWITCHABLE_TYPES.includes(type.toUpperCase());
+}
+
+function isPassThrough(type: string): boolean {
+  return PASS_THROUGH_TYPES.includes(type.toUpperCase());
+}
 async function propagateStates(): Promise<{ elementsUpdated: number; liveElements: number; deadElements: number; offElements: number }> {
   const elements = await prisma.element.findMany();
   const connections = await prisma.connection.findMany();
@@ -66,7 +76,12 @@ async function propagateStates(): Promise<{ elementsUpdated: number; liveElement
   // Инициализация
   for (const el of elements) {
     electricalStatusMap.set(el.id, 'DEAD');
-    operationalStatusMap.set(el.id, (el.operationalStatus as OperationalStatus) || 'ON');
+    // PASS_THROUGH элементы всегда ON
+    if (isPassThrough(el.type)) {
+      operationalStatusMap.set(el.id, 'ON');
+    } else {
+      operationalStatusMap.set(el.id, (el.operationalStatus as OperationalStatus) || 'ON');
+    }
   }
 
   // Структуры связей
@@ -114,10 +129,21 @@ async function propagateStates(): Promise<{ elementsUpdated: number; liveElement
 
       const connOperational = (conn.operationalStatus as OperationalStatus) || 'ON';
 
-      // КЛЮЧЕВАЯ ЛОГИКА:
-      // Connection.electricalStatus зависит от SOURCE элемента
+      // Определяем, пропускает ли элемент ток
+      let elementPassesCurrent = false;
+
+      if (currentElectrical === 'LIVE') {
+        if (isPassThrough(currentElement.type)) {
+          // PASS_THROUGH элементы (BUS, JUNCTION) всегда пропускают
+          elementPassesCurrent = true;
+        } else if (currentOperational === 'ON') {
+          // SWITCHABLE элементы пропускают только если ON
+          elementPassesCurrent = true;
+        }
+      }
+
       const connElectrical: ElectricalStatus =
-        (currentElectrical === 'LIVE' && currentOperational === 'ON' && connOperational === 'ON')
+        (elementPassesCurrent && connOperational === 'ON')
           ? 'LIVE'
           : 'DEAD';
 

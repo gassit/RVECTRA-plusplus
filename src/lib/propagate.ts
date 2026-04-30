@@ -229,17 +229,12 @@ export async function propagateFromElement(elementId: string): Promise<void> {
   let hasLiveInput = false;
 
   for (const conn of incomingConnections) {
-    const sourceElement = await prisma.element.findUnique({
-      where: { id: conn.sourceId }
-    });
-
-    if (!sourceElement) continue;
-
-    const sourceElectrical = sourceElement.electricalStatus as ElectricalStatus;
-    const sourceOperational = (sourceElement.operationalStatus as OperationalStatus) || 'ON';
-    const connOperational = (conn.operationalStatus as OperationalStatus) || 'ON';
-
-    if (sourceElectrical === 'LIVE' && sourceOperational === 'ON' && connOperational === 'ON') {
+    const connElectrical = conn.electricalStatus as ElectricalStatus;
+    
+    // Element.electricalStatus наследуется от ВХОДЯЩЕЙ связи
+    // БЕЗ проверки operationalStatus элемента!
+    // operationalStatus влияет только на ИСХОДЯЩИЕ связи
+    if (connElectrical === 'LIVE') {
       hasLiveInput = true;
       break;
     }

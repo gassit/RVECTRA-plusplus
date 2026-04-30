@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateId, generateUUID } from '@/lib/utils/id-generator';
+import { propagateFromElement, propagateStates } from '@/lib/propagate';
 
 // ============================================================================
 // ТИПЫ
@@ -248,6 +249,16 @@ export async function POST(request: NextRequest) {
 
     console.log('Element created successfully:', { id: element.id, elementId, name, type });
 
+    // =========================================================================
+    // АВТОМАТИЧЕСКОЕ НАСЛЕДОВАНИЕ СТАТУСА
+    // =========================================================================
+    // Для SOURCE запускаем полное распространение
+    if (type.toUpperCase() === 'SOURCE') {
+      await propagateStates();
+    }
+    // Для обычных элементов - распространение от этого элемента
+    // (но у нового элемента нет связей, поэтому статус останется DEAD до создания связи)
+
     return NextResponse.json({
       success: true,
       data: createdElement,
@@ -278,6 +289,11 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Получаем текущий элемент для проверки изменений
+    const existingElement = await prisma.element.findUnique({
+      where: { id }
+    });
+
     const element = await prisma.element.update({
       where: { id },
       data: {
@@ -285,6 +301,16 @@ export async function PUT(request: NextRequest) {
         updatedAt: new Date(),
       },
     });
+
+    // =========================================================================
+    // АВТОМАТИЧЕСКОЕ НАСЛЕДОВАНИЕ СТАТУСА
+    // =========================================================================
+    // Если изменился operationalStatus - распространяем изменения
+    if (updateData.operationalStatus !== undefined &&
+        existingElement?.operationalStatus !== updateData.operationalStatus) {
+      console.log(`operationalStatus changed for element ${id}, propagating...`);
+      await propagateFromElement(id);
+    }
 
     return NextResponse.json({
       success: true,
@@ -368,6 +394,12 @@ export async function DELETE(request: NextRequest) {
     await prisma.element.delete({
       where: { id },
     });
+
+    // =========================================================================
+    // АВТОМАТИЧЕСКОЕ НАСЛЕДОВАНИЕ СТАТУСА
+    // =========================================================================
+    // После удаления элемента пересчитываем статусы
+    await propagateStates();
 
     return NextResponse.json({
       success: true,

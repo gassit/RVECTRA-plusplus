@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateId, generateUUID } from '@/lib/utils/id-generator';
 import { calculateVoltageDropAuto } from '@/lib/calculations/voltageDrop';
+import { propagateFromConnection, propagateFromElement, propagateStates } from '@/lib/propagate';
 
 // ============================================================================
 // ТИПЫ
@@ -241,6 +242,12 @@ export async function POST(request: NextRequest) {
 
     console.log('Connection created successfully:', { id: connection.id, sourceId, targetId, voltageDrop: voltageDropPercent });
 
+    // =========================================================================
+    // АВТОМАТИЧЕСКОЕ НАСЛЕДОВАНИЕ СТАТУСА
+    // =========================================================================
+    // После создания связи - распространяем статус на target элемент
+    await propagateFromConnection(connection.id);
+
     return NextResponse.json({
       success: true,
       data: connection,
@@ -253,6 +260,56 @@ export async function POST(request: NextRequest) {
     console.error('Error creating connection:', error);
     return NextResponse.json(
       { success: false, error: `Ошибка при создании связи: ${error instanceof Error ? error.message : 'Unknown error'}` },
+      { status: 500 }
+    );
+  }
+}
+
+// ============================================================================
+// PUT - Обновить связь
+// ============================================================================
+
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, ...updateData } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'ID связи обязателен' },
+        { status: 400 }
+      );
+    }
+
+    // Получаем текущую связь для проверки изменений
+    const existingConnection = await prisma.connection.findUnique({
+      where: { id }
+    });
+
+    const connection = await prisma.connection.update({
+      where: { id },
+      data: updateData,
+    });
+
+    // =========================================================================
+    // АВТОМАТИЧЕСКОЕ НАСЛЕДОВАНИЕ СТАТУСА
+    // =========================================================================
+    // Если изменился operationalStatus - распространяем изменения
+    if (updateData.operationalStatus !== undefined &&
+        existingConnection?.operationalStatus !== updateData.operationalStatus) {
+      console.log(`operationalStatus changed for connection ${id}, propagating...`);
+      await propagateFromConnection(id);
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: connection,
+      message: 'Связь обновлена',
+    });
+  } catch (error) {
+    console.error('Error updating connection:', error);
+    return NextResponse.json(
+      { success: false, error: 'Ошибка при обновлении связи' },
       { status: 500 }
     );
   }
@@ -274,7 +331,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Получаем связь для удаления кабеля
+    // Получаем связь для удаления кабеля и сохранения targetId
     const connection = await prisma.connection.findUnique({
       where: { id },
       include: { Cable: true },
@@ -287,6 +344,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    const targetId = connection.targetId;
+
     // Удаляем связь
     await prisma.connection.delete({
       where: { id },
@@ -298,6 +357,12 @@ export async function DELETE(request: NextRequest) {
         where: { id: connection.cableId },
       });
     }
+
+    // =========================================================================
+    // АВТОМАТИЧЕСКОЕ НАСЛЕДОВАНИЕ СТАТУСА
+    // =========================================================================
+    // После удаления связи - пересчитываем статус для бывшего target элемента
+    await propagateFromElement(targetId);
 
     return NextResponse.json({
       success: true,

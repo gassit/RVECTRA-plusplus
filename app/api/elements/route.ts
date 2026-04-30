@@ -305,11 +305,11 @@ export async function PUT(request: NextRequest) {
     // =========================================================================
     // АВТОМАТИЧЕСКОЕ НАСЛЕДОВАНИЕ СТАТУСА
     // =========================================================================
-    // Если изменился operationalStatus - распространяем изменения
+    // Если изменился operationalStatus - запускаем полное распространение
     if (updateData.operationalStatus !== undefined &&
         existingElement?.operationalStatus !== updateData.operationalStatus) {
-      console.log(`operationalStatus changed for element ${id}, propagating...`);
-      await propagateFromElement(id);
+      console.log(`operationalStatus changed for element ${id}, running full propagation...`);
+      await propagateStates();
     }
 
     return NextResponse.json({

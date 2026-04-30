@@ -851,18 +851,7 @@ export default function NetworkGraphG6({
                 </div>
               )}
               
-              {/* Кнопка обновления статусов */}
-              {onPropagate && (
-                <button
-                  onClick={() => {
-                    onPropagate();
-                  }}
-                  className="px-2 py-1 rounded text-xs font-medium cursor-pointer transition-all bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:ring-2 hover:ring-purple-400"
-                  title="Пересчитать статусы по всей сети"
-                >
-                  🔄 Обновить статусы
-                </button>
-              )}
+
             </div>
             
             {/* Устройства */}

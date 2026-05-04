@@ -34,6 +34,7 @@ export interface AddElementData {
   pKw?: number;
   qKvar?: number;
   cosPhi?: number;
+  usageFactor?: number;  // Коэффициент использования (Ки)
   voltageNom?: number;
   // Для Breaker
   breakerType?: 'MCB' | 'MCCB' | 'RCD' | 'RCBO';
@@ -146,6 +147,7 @@ export default function AddElementModal({
   const [pKw, setPKw] = useState<number | undefined>();
   const [qKvar, setQKvar] = useState<number | undefined>();
   const [cosPhi, setCosPhi] = useState<number>(0.92);
+  const [usageFactor, setUsageFactor] = useState<number>(0.8);  // Ки по умолчанию 0.8
   const [voltageNom, setVoltageNom] = useState<number>(380);
 
   // Параметры Breaker
@@ -184,6 +186,7 @@ export default function AddElementModal({
       setPKw(undefined);
       setQKvar(undefined);
       setCosPhi(0.92);
+      setUsageFactor(0.8);  // Ки по умолчанию
       setVoltageNom(380);
       setBreakerType('MCB');
       setBreakingCapacity(undefined);
@@ -215,6 +218,7 @@ export default function AddElementModal({
       pKw,
       qKvar,
       cosPhi,
+      usageFactor,
       voltageNom,
       breakerType,
       breakingCapacity,
@@ -392,7 +396,7 @@ export default function AddElementModal({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        P (кВт)
+                        Pуст (кВт)
                       </label>
                       <input
                         type="number"
@@ -417,19 +421,39 @@ export default function AddElementModal({
                       />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      cos φ
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.1"
-                      max="1"
-                      value={cosPhi}
-                      onChange={(e) => setCosPhi(Number(e.target.value))}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        cos φ
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.1"
+                        max="1"
+                        value={cosPhi}
+                        onChange={(e) => setCosPhi(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Ки (коэф. использования)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.1"
+                        max="1"
+                        value={usageFactor}
+                        onChange={(e) => setUsageFactor(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="0.8"
+                      />
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 rounded p-2">
+                    <strong>Pрасч = Pуст × Ки = {(pKw || 0).toFixed(2)} × {usageFactor.toFixed(2)} = {((pKw || 0) * usageFactor).toFixed(2)} кВт</strong>
                   </div>
                 </>
               )}

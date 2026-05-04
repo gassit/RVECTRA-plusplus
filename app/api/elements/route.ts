@@ -27,6 +27,7 @@ interface CreateElementRequest {
   pKw?: number;
   qKvar?: number;
   cosPhi?: number;
+  usageFactor?: number;  // Коэффициент использования (Ки)
   voltageNom?: number;
   // Для Breaker
   breakerType?: 'MCB' | 'MCCB' | 'RCD' | 'RCBO';
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
       pKw,
       qKvar,
       cosPhi,
+      usageFactor,
       voltageNom,
       breakerType,
       breakingCapacity,
@@ -181,6 +183,7 @@ export async function POST(request: NextRequest) {
               powerP: pKw || 0,
               powerQ: qKvar || 0,
               cosPhi: cosPhi || 0.92,
+              usageFactor: usageFactor || 0.8,  // Ки по умолчанию 0.8
               updatedAt: new Date(),
             },
           });

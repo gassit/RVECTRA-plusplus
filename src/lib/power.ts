@@ -68,27 +68,18 @@ export async function calculatePower(): Promise<PowerResult> {
 
   // Структуры связей
   // incomingConnections[elementId] = [connections где elementId является target]
-  // т.е. связи, идущие К этому элементу (от нижестоящих)
+  // т.е. связи, идущие К этому элементу (от вышестоящих в направлении потока энергии)
   const incomingConnections = new Map<string, string[]>();
-  // outgoingConnections[elementId] = [connections где elementId является source]
-  // т.е. связи, идущие ОТ этого элемента (к вышестоящим)
-  const outgoingConnections = new Map<string, string[]>();
   const connectionMap = new Map<string, typeof connections[0]>();
 
   for (const conn of connections) {
     connectionMap.set(conn.id, conn);
 
-    // Входящие связи (от нижестоящих элементов)
+    // Входящие связи (где этот элемент является target)
     if (!incomingConnections.has(conn.targetId)) {
       incomingConnections.set(conn.targetId, []);
     }
     incomingConnections.get(conn.targetId)!.push(conn.id);
-
-    // Исходящие связи (к вышестоящим элементам)
-    if (!outgoingConnections.has(conn.sourceId)) {
-      outgoingConnections.set(conn.sourceId, []);
-    }
-    outgoingConnections.get(conn.sourceId)!.push(conn.id);
   }
 
   // =========================================================================
@@ -115,12 +106,14 @@ export async function calculatePower(): Promise<PowerResult> {
   }
 
   // =========================================================================
-  // ШАГ 2: Обратный BFS - распространение мощности вверх
+  // ШАГ 2: Обратный BFS - распространение мощности ВВЕРХ от LOAD к SOURCE
   // =========================================================================
-  const visited = new Set<string>();
+  // Структура графа: SOURCE → (connection) → BREAKER → ... → LOAD
+  // sourceId = вышестоящий элемент, targetId = нижестоящий элемент
+  // Для обхода ВВЕРХ нужно использовать incomingConnections (где элемент = target)
+  // и получать sourceId этой связи (родительский элемент)
 
-  // Мапа для отслеживания обработанных входящих связей
-  const processedIncoming = new Map<string, Set<string>>();
+  const visited = new Set<string>();
 
   while (queue.length > 0) {
     const currentId = queue.shift()!;
@@ -134,10 +127,14 @@ export async function calculatePower(): Promise<PowerResult> {
     // SOURCE не накапливает мощность
     if (currentElement.type.toLowerCase() === 'source') continue;
 
-    // Получаем исходящие связи (к вышестоящим элементам)
-    const outgoing = outgoingConnections.get(currentId) || [];
+    // Получаем мощность текущего элемента
+    const currentPower = powerMap.get(currentId) || { pInstalled: 0, pCalculated: 0 };
 
-    for (const connId of outgoing) {
+    // Получаем ВХОДЯЩИЕ связи (где currentId является target)
+    // Это связи ОТ вышестоящих элементов К этому элементу
+    const incoming = incomingConnections.get(currentId) || [];
+
+    for (const connId of incoming) {
       const conn = connectionMap.get(connId);
       if (!conn) continue;
 
@@ -147,38 +144,26 @@ export async function calculatePower(): Promise<PowerResult> {
       // Проверяем operationalStatus текущего элемента
       if (currentElement.operationalStatus === 'OFF') continue;
 
-      const targetId = conn.targetId;
-      const targetElement = elementMap.get(targetId);
-      if (!targetElement) continue;
+      // sourceId - это вышестоящий (родительский) элемент
+      const parentId = conn.sourceId;
+      const parentElement = elementMap.get(parentId);
+      if (!parentElement) continue;
 
       // SOURCE не накапливает, пропускаем
-      if (targetElement.type.toLowerCase() === 'source') continue;
+      if (parentElement.type.toLowerCase() === 'source') continue;
 
-      // Получаем мощность текущего элемента
-      const currentPower = powerMap.get(currentId) || { pInstalled: 0, pCalculated: 0 };
-
-      // Добавляем мощность к целевому элементу
-      if (!powerMap.has(targetId)) {
-        powerMap.set(targetId, { pInstalled: 0, pCalculated: 0 });
+      // Добавляем мощность текущего элемента к родительскому
+      if (!powerMap.has(parentId)) {
+        powerMap.set(parentId, { pInstalled: 0, pCalculated: 0 });
       }
 
-      const targetPower = powerMap.get(targetId)!;
-      targetPower.pInstalled += currentPower.pInstalled;
-      targetPower.pCalculated += currentPower.pCalculated;
+      const parentPower = powerMap.get(parentId)!;
+      parentPower.pInstalled += currentPower.pInstalled;
+      parentPower.pCalculated += currentPower.pCalculated;
 
-      // Инициализируем Set для отслеживания обработанных связей
-      if (!processedIncoming.has(targetId)) {
-        processedIncoming.set(targetId, new Set());
-      }
-      processedIncoming.get(targetId)!.add(connId);
-
-      // Проверяем, все ли входящие связи обработаны
-      const allIncoming = incomingConnections.get(targetId) || [];
-      const processed = processedIncoming.get(targetId)!;
-
-      // Добавляем в очередь только если обработали хотя бы одну входящую связь
-      if (!visited.has(targetId)) {
-        queue.push(targetId);
+      // Добавляем родителя в очередь для дальнейшего распространения
+      if (!visited.has(parentId)) {
+        queue.push(parentId);
       }
     }
   }

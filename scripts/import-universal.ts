@@ -1239,11 +1239,11 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
       }
     }
     
-    if (info.type === 'load' && info.power) {
-      // Создаём Device и Load
+    if (info.type === 'load') {
+      // Создаём Device и Load для ВСЕХ нагрузок (даже без указанной мощности)
       const deviceId = `dev_${now}_${Math.random().toString(36).substr(2, 9)}`;
       const slotId = `slot_${now}_${Math.random().toString(36).substr(2, 9)}`;
-      
+
       try {
         // DeviceSlot
         await prisma.deviceSlot.create({
@@ -1254,7 +1254,7 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
             slotType: 'load',
           }
         });
-        
+
         // Device
         await prisma.device.create({
           data: {
@@ -1265,15 +1265,17 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
             updatedAt: new Date(),
           }
         });
-        
-        // Load
+
+        // Load - мощность по умолчанию 0, Ки по умолчанию 0.8
         await prisma.load.create({
           data: {
             id: `load_${now}_${Math.random().toString(36).substr(2, 9)}`,
             deviceId: deviceId,
             name: info.name,
-            powerP: info.power,
+            powerP: info.power ?? 0,  // Если мощность не указана, 0
             usageFactor: info.usageFactor ?? 0.8,  // По умолчанию 0.8 если не указан
+            cosPhi: 0.9,  // По умолчанию
+            category: 3,  // По умолчанию 3-я категория
             updatedAt: new Date(),
           }
         });

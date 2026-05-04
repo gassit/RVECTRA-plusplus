@@ -33,6 +33,7 @@
 
 import { prisma } from './prisma';
 import { calculatePower } from './power';
+import { calculateVoltageDropAll } from './voltageDropCalc';
 
 export type ElectricalStatus = 'LIVE' | 'DEAD';
 export type OperationalStatus = 'ON' | 'OFF';
@@ -242,6 +243,19 @@ export async function propagateStates(): Promise<PropagationResult> {
     await calculatePower();
   } catch (e) {
     console.error('Ошибка расчёта мощностей:', e);
+  }
+
+  // =========================================================================
+  // ШАГ 6: Расчёт потерь напряжения
+  // =========================================================================
+  try {
+    const voltageDropResult = await calculateVoltageDropAll();
+    if (voltageDropResult.warnings.length > 0) {
+      console.warn('Предупреждения ΔU:', voltageDropResult.warnings);
+    }
+    console.log(`ΔU рассчитан для ${voltageDropResult.connectionsUpdated} связей, max: ${voltageDropResult.maxVoltageDrop.toFixed(2)}%`);
+  } catch (e) {
+    console.error('Ошибка расчёта ΔU:', e);
   }
 
   return {

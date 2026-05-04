@@ -624,9 +624,14 @@ export default function NetworkGraphG6({
       // Первый рендер
       if (!(graph as any).rendered) {
         if ((graph as any).destroyed) return;
-        graph.setData({ nodes, edges: edges as any, combos });
-        graph.render();
-        (graph as any).rendered = true;
+        try {
+          graph.setData({ nodes, edges: edges as any, combos });
+          graph.render();
+          (graph as any).rendered = true;
+        } catch (renderError) {
+          console.warn('Render error:', renderError);
+          return;
+        }
         prevDataRef.current = {
           nodeIds: new Set(nodes.map(n => n.id)),
           edgeIds: new Set(edges.map(e => e.id)),
@@ -670,13 +675,25 @@ export default function NetworkGraphG6({
           // Много изменений - полный обновление с layout
           if ((graph as any).destroyed) return;
           graph.setData({ nodes, edges: edges as any, combos });
-          graph.layout();
+          try {
+            if (typeof graph.layout === 'function') {
+              graph.layout();
+            }
+          } catch (layoutError) {
+            console.warn('Layout error (ignored):', layoutError);
+          }
         }
       } else {
         // Нет предыдущих данных - полный рендер
         if ((graph as any).destroyed) return;
         graph.setData({ nodes, edges: edges as any, combos });
-        graph.layout();
+        try {
+          if (typeof graph.layout === 'function') {
+            graph.layout();
+          }
+        } catch (layoutError) {
+          console.warn('Layout error (ignored):', layoutError);
+        }
       }
 
       prevDataRef.current = {

@@ -975,7 +975,7 @@ export default function NetworkGraphG6({
             )}
             
             {/* Проблемы */}
-            {(pinnedNode || hoveredNode)?.criticalIssues && (pinnedNode || hoveredNode)!.criticalIssues > 0 && (
+            {((pinnedNode || hoveredNode)?.criticalIssues ?? 0) > 0 && (
               <div className="border-t border-red-200 dark:border-red-800 pt-2">
                 <div className="text-xs text-red-500 dark:text-red-400 font-medium">
                   ⚠️ {(pinnedNode || hoveredNode)?.criticalIssues} проблем(ы)

@@ -42,10 +42,29 @@ export function calculateVoltageDropSimple(
   voltageV: number,
   cosPhi: number = 0.92
 ): number {
+  // Проверка на некорректные входные данные
+  if (sectionMm2 <= 0 || lengthM <= 0 || powerKw <= 0 || voltageV <= 0) {
+    return 0;
+  }
+
   const rho = RESISTIVITY[material] ?? RESISTIVITY.Cu;
+  
+  // Для трёхфазной сети используем формулу:
+  // ΔU% = (P * L * ρ) / (U² * S * cosφ) * 100%
+  // где P в кВт, L в м, U в В, S в мм²
+  
+  // Сопротивление линии (Ом)
   const rLine = (rho * lengthM) / sectionMm2;
-  const deltaU_V = (rLine * powerKw * 1000) / (voltageV * cosPhi);
-  const deltaU_Percent = (deltaU_V * 100) / voltageV;
+  
+  // Ток (А)
+  const current = (powerKw * 1000) / (Math.sqrt(3) * voltageV * cosPhi);
+  
+  // Потеря напряжения (В)
+  const deltaU_V = Math.sqrt(3) * current * rLine * cosPhi;
+  
+  // Потеря напряжения (%)
+  const deltaU_Percent = (deltaU_V / voltageV) * 100;
+  
   return deltaU_Percent;
 }
 
@@ -77,6 +96,15 @@ export function calculateVoltageDropAuto(params: {
     x0OhmPerKm,
   } = params;
 
+  // Проверка на некорректные входные данные
+  if (powerKw <= 0 || lengthM <= 0 || voltageV <= 0) {
+    return 0;
+  }
+
+  // Минимальное сечение для расчёта (1.5 мм² - стандартное минимальное)
+  const minSection = 1.5;
+  const effectiveSection = Math.max(sectionMm2, minSection);
+
   if (r0OhmPerKm !== null && r0OhmPerKm !== undefined && r0OhmPerKm > 0) {
     // ТОЧНЫЙ РАСЧЁТ (со справочником)
     const lengthKm = lengthM / 1000;
@@ -88,7 +116,7 @@ export function calculateVoltageDropAuto(params: {
     return deltaU;
   } else {
     // УПРОЩЁННЫЙ РАСЧЁТ (без справочника)
-    return calculateVoltageDropSimple(powerKw, lengthM, sectionMm2, material, voltageV, cosPhi);
+    return calculateVoltageDropSimple(powerKw, lengthM, effectiveSection, material, voltageV, cosPhi);
   }
 }
 

@@ -78,6 +78,7 @@ export default function NetworkGraphG6({
   const graphRef = useRef<Graph | null>(null);
   const destroyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tooltipHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true); // Для отслеживания mounted состояния
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<GraphEdge | null>(null);
   const [pendingConnectionStart, setPendingConnectionStart] = useState<string | null>(null);
@@ -179,6 +180,8 @@ export default function NetworkGraphG6({
         ranksep: 100,
         preventOverlap: true,
         nodeSize: [160, 80],
+        // Отключаем анимацию для предотвращения race conditions
+        animate: false,
       },
       node: {
         type: 'rect',
@@ -675,24 +678,36 @@ export default function NetworkGraphG6({
           // Много изменений - полный обновление с layout
           if ((graph as any).destroyed) return;
           graph.setData({ nodes, edges: edges as any, combos });
-          try {
-            if (typeof graph.layout === 'function') {
-              graph.layout();
+          // Проверяем что компонент всё ещё смонтирован и граф не уничтожен перед layout
+          if (mountedRef.current && !(graph as any).destroyed && typeof graph.layout === 'function') {
+            const layoutPromise = graph.layout();
+            // Обрабатываем Promise если layout возвращает Promise
+            if (layoutPromise && typeof layoutPromise.catch === 'function') {
+              layoutPromise.catch((layoutError: any) => {
+                // Игнорируем ошибки если компонент размонтирован или граф уничтожен
+                if (mountedRef.current && !(graph as any).destroyed) {
+                  console.warn('Layout error:', layoutError?.message || layoutError);
+                }
+              });
             }
-          } catch (layoutError) {
-            console.warn('Layout error (ignored):', layoutError);
           }
         }
       } else {
         // Нет предыдущих данных - полный рендер
         if ((graph as any).destroyed) return;
         graph.setData({ nodes, edges: edges as any, combos });
-        try {
-          if (typeof graph.layout === 'function') {
-            graph.layout();
+        // Проверяем что компонент всё ещё смонтирован и граф не уничтожен перед layout
+        if (mountedRef.current && !(graph as any).destroyed && typeof graph.layout === 'function') {
+          const layoutPromise = graph.layout();
+          // Обрабатываем Promise если layout возвращает Promise
+          if (layoutPromise && typeof layoutPromise.catch === 'function') {
+            layoutPromise.catch((layoutError: any) => {
+              // Игнорируем ошибки если компонент размонтирован или граф уничтожен
+              if (mountedRef.current && !(graph as any).destroyed) {
+                console.warn('Layout error:', layoutError?.message || layoutError);
+              }
+            });
           }
-        } catch (layoutError) {
-          console.warn('Layout error (ignored):', layoutError);
         }
       }
 
@@ -738,7 +753,9 @@ export default function NetworkGraphG6({
 
   // Финальный cleanup при размонтировании компонента
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       const graph = graphRef.current;
       if (graph && !(graph as any).destroyed) {
         // Откладываем уничтожение на 100мс

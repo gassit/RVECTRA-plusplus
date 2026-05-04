@@ -116,7 +116,12 @@ export async function calculateVoltageDropAll(): Promise<VoltageDropResult> {
     // =========================================================================
     // Определяем напряжение
     // =========================================================================
-    const voltageV = targetElement.voltageLevel || defaultVoltage;
+    // voltageLevel может быть в кВ или В, нормализуем к В
+    let voltageV = targetElement.voltageLevel || defaultVoltage;
+    // Если значение меньше 10, считаем что это кВ - конвертируем в В
+    if (voltageV < 10) {
+      voltageV = voltageV * 1000; // кВ -> В
+    }
 
     // =========================================================================
     // Определяем материал
@@ -140,25 +145,28 @@ export async function calculateVoltageDropAll(): Promise<VoltageDropResult> {
       x0OhmPerKm: cable.x0,
     });
 
+    // Ограничиваем максимальное значение потери напряжения (защита от некорректных данных)
+    const voltageDropBounded = Math.min(voltageDrop, 100);
+
     // =========================================================================
     // Сохраняем результат
     // =========================================================================
     try {
       await prisma.cable.update({
         where: { id: cable.id },
-        data: { voltageDrop },
+        data: { voltageDrop: voltageDropBounded },
       });
       connectionsUpdated++;
 
       // Отслеживаем максимальную потерю
-      if (voltageDrop > maxVoltageDrop) {
-        maxVoltageDrop = voltageDrop;
+      if (voltageDropBounded > maxVoltageDrop) {
+        maxVoltageDrop = voltageDropBounded;
         maxVoltageDropConnection = conn.id;
       }
 
       // Предупреждение о большой потере
-      if (voltageDrop > 5) {
-        warnings.push(`Связь ${conn.id}: ΔU = ${voltageDrop.toFixed(2)}% (превышает 5%)`);
+      if (voltageDropBounded > 5) {
+        warnings.push(`Связь ${conn.id}: ΔU = ${voltageDropBounded.toFixed(2)}% (превышает 5%)`);
       }
     } catch (e) {
       console.error(`Ошибка обновления кабеля ${cable.id}:`, e);

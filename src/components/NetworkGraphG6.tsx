@@ -25,7 +25,7 @@ interface NetworkGraphG6Props {
   // Удаление элемента
   onDeleteNode?: (nodeId: string) => void;
   // Обновление статуса элемента
-  onUpdateNodeStatus?: (nodeId: string, operationalStatus: 'ON' | 'OFF') => void;
+  onUpdateNodeStatus?: (nodeId: string, operationalStatus: 'ON' | 'OFF') => Promise<void>;
   // Принудительное обновление статусов (propagate)
   onPropagate?: () => void;
 }
@@ -85,6 +85,8 @@ export default function NetworkGraphG6({
   // Закреплённые tooltip (не исчезают при уходе курсора)
   const [pinnedNode, setPinnedNode] = useState<GraphNode | null>(null);
   const [pinnedEdge, setPinnedEdge] = useState<GraphEdge | null>(null);
+  // Состояние загрузки для кнопки статуса
+  const [updatingNodeId, setUpdatingNodeId] = useState<string | null>(null);
 
   // Refs для актуальных значений режимов (чтобы не пересоздавать граф)
   const editModeRef = useRef(editMode);
@@ -899,23 +901,41 @@ export default function NetworkGraphG6({
                 <div className="flex items-center gap-1">
                   {/* Кнопка переключения - всегда доступна */}
                   <button
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       const node = pinnedNode || hoveredNode;
                       if (node && onUpdateNodeStatus) {
                         const newStatus = node.status === 'OFF' ? 'ON' : 'OFF';
-                        onUpdateNodeStatus(node.id, newStatus);
+                        setUpdatingNodeId(node.id);
+                        try {
+                          await onUpdateNodeStatus(node.id, newStatus);
+                          // После обновления статуса вызываем propagate
+                          onPropagate?.();
+                        } finally {
+                          setUpdatingNodeId(null);
+                        }
                       }
                     }}
-                    className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 ${
+                    disabled={updatingNodeId === (pinnedNode || hoveredNode)?.id}
+                    className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 disabled:opacity-50 disabled:cursor-wait ${
                       (pinnedNode || hoveredNode)?.status === 'OFF' 
                         ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
                         : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                     }`}
                     title="Нажмите для переключения статуса"
                   >
-                    {(pinnedNode || hoveredNode)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
+                    {updatingNodeId === (pinnedNode || hoveredNode)?.id ? (
+                      <span className="flex items-center gap-1">
+                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>...</span>
+                      </span>
+                    ) : (
+                      (pinnedNode || hoveredNode)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'
+                    )}
                   </button>
                 </div>
               )}

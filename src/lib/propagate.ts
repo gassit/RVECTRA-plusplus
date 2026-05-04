@@ -237,28 +237,16 @@ export async function propagateStates(): Promise<PropagationResult> {
   const liveConnections = Array.from(connectionElectricalMap.values()).filter(s => s === 'LIVE').length;
 
   // =========================================================================
-  // ШАГ 5: Расчёт мощностей (только при необходимости)
+  // ШАГ 5: Расчёт мощностей
   // =========================================================================
-  // Временно отключено для отладки
-  // try {
-  //   await calculatePower();
-  // } catch (e) {
-  //   console.error('Ошибка расчёта мощностей:', e);
-  // }
+  // Расчёт мощностей вызывается отдельно через API /api/power
+  // чтобы не вызывать ре-рендер при каждом изменении статуса
 
   // =========================================================================
-  // ШАГ 6: Расчёт потерь напряжения (только при необходимости)
+  // ШАГ 6: Расчёт потерь напряжения
   // =========================================================================
-  // Временно отключено для отладки
-  // try {
-  //   const voltageDropResult = await calculateVoltageDropAll();
-  //   if (voltageDropResult.warnings.length > 0) {
-  //     console.warn('Предупреждения ΔU:', voltageDropResult.warnings);
-  //   }
-  //   console.log(`ΔU рассчитан для ${voltageDropResult.connectionsUpdated} связей, max: ${voltageDropResult.maxVoltageDrop.toFixed(2)}%`);
-  // } catch (e) {
-  //   console.error('Ошибка расчёта ΔU:', e);
-  // }
+  // Расчёт ΔU вызывается отдельно через API /api/power
+  // чтобы не вызывать ре-рендер при каждом изменении статуса
 
   return {
     elementsUpdated,

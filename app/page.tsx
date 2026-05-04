@@ -343,21 +343,26 @@ export default function Home() {
     }
   };
 
-  // Принудительное обновление статусов (propagate)
+  // Принудительное обновление статусов и расчёт мощностей
   const handlePropagate = async () => {
     try {
-      const response = await fetch('/api/propagate', { method: 'POST' });
-      const result = await response.json();
-      
-      if (response.ok && result.success) {
-        console.log('Propagate result:', result.data);
-        await refreshData(false);
+      // 1. Распространение статусов LIVE/DEAD
+      const propagateResponse = await fetch('/api/propagate', { method: 'POST' });
+      const propagateResult = await propagateResponse.json();
+
+      // 2. Расчёт мощностей и ΔU
+      const powerResponse = await fetch('/api/power', { method: 'POST' });
+      const powerResult = await powerResponse.json();
+
+      if (propagateResponse.ok && powerResponse.ok) {
+        console.log('Propagate:', propagateResult);
+        console.log('Power:', powerResult);
       } else {
-        alert(result.error || 'Ошибка при обновлении статусов');
+        alert('Ошибка при обновлении');
       }
     } catch (err) {
       console.error('Error propagating:', err);
-      alert('Ошибка при обновлении статусов');
+      alert('Ошибка при обновлении');
     }
   };
 

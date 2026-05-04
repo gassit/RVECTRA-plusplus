@@ -426,16 +426,12 @@ export default function NetworkGraphG6({
 
       // Не скрываем hoveredNode если tooltip закреплён
       if (!pinnedNodeRef.current) {
-        // В режиме редактирования добавляем задержку перед скрытием tooltip
-        // чтобы пользователь мог нажать кнопку удаления
-        if (editModeRef.current) {
-          tooltipHideTimeoutRef.current = setTimeout(() => {
-            setHoveredNode(null);
-            tooltipHideTimeoutRef.current = null;
-          }, 500); // 500мс задержка
-        } else {
+        // Добавляем задержку перед скрытием tooltip
+        // чтобы пользователь мог переместить курсор на tooltip
+        tooltipHideTimeoutRef.current = setTimeout(() => {
           setHoveredNode(null);
-        }
+          tooltipHideTimeoutRef.current = null;
+        }, 300); // 300мс задержка
       }
 
       if (connectionModeRef.current && pendingConnectionRef.current) {
@@ -495,7 +491,11 @@ export default function NetworkGraphG6({
 
       // Не скрываем hoveredEdge если tooltip закреплён
       if (!pinnedEdgeRef.current) {
-        setHoveredEdge(null);
+        // Добавляем задержку перед скрытием tooltip
+        tooltipHideTimeoutRef.current = setTimeout(() => {
+          setHoveredEdge(null);
+          tooltipHideTimeoutRef.current = null;
+        }, 300); // 300мс задержка
       }
 
       try {
@@ -992,6 +992,10 @@ export default function NetworkGraphG6({
           className="absolute bottom-4 right-4 p-4 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 text-sm max-w-sm z-20"
           onMouseEnter={() => {
             // Отменяем скрытие если мышка наведена на tooltip
+            if (tooltipHideTimeoutRef.current) {
+              clearTimeout(tooltipHideTimeoutRef.current);
+              tooltipHideTimeoutRef.current = null;
+            }
           }}
           onMouseLeave={() => {
             // Скрываем tooltip только если он не закреплён

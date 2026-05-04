@@ -400,6 +400,7 @@ export default function NetworkGraphG6({
         tooltipHideTimeoutRef.current = null;
       }
 
+      setHoveredEdge(null); // Скрываем tooltip связи
       const nodeData = data?.nodes.find(n => n.id === nodeId);
       setHoveredNode(nodeData || null);
 

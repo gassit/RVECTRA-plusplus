@@ -421,8 +421,9 @@ export default function Home() {
         id: e.id,
         type: e.type.toUpperCase() as any,
         name: e.name,
-        posX: e.posX || 0,
-        posY: e.posY || 0,
+        // Передаём координаты только если они есть (G6 сам расставит через dagre если null)
+        posX: e.posX ?? undefined,
+        posY: e.posY ?? undefined,
         hasIssues: false,
         criticalIssues: 0,
         status: e.operationalStatus as any,

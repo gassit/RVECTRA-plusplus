@@ -665,7 +665,11 @@ export default function NetworkGraphG6({
         const totalChanges = addedNodes.length + removedNodeIds.length + addedEdges.length + removedEdgeIds.length;
         const totalElements = nodes.length + edges.length;
 
-        if (totalChanges <= 5 && totalElements > 20) {
+        // Проверяем, есть ли у узлов позиции (если большинство без позиций - нужен layout)
+        const nodesWithPositions = nodes.filter(n => n.data?.posX != null && n.data?.posY != null).length;
+        const needsLayout = nodes.length > 0 && nodesWithPositions < nodes.length / 2;
+
+        if (totalChanges <= 5 && totalElements > 20 && !needsLayout) {
           // Инкрементальное обновление без перерисовки layout
           if (removedNodeIds.length > 0) {
             graph.removeData({ nodes: removedNodeIds });

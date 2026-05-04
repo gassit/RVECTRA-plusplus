@@ -155,8 +155,8 @@ export interface GraphNode {
   id: string;
   type: ElementType;
   name: string;
-  posX: number;
-  posY: number;
+  posX?: number | null;  // Опционально - G6 сам расставит через dagre layout
+  posY?: number | null;  // Опционально - G6 сам расставит через dagre layout
   hasIssues: boolean;
   criticalIssues: number;
   devices?: NetworkDevice[];

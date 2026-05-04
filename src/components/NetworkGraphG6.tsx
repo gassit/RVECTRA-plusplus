@@ -826,6 +826,14 @@ export default function NetworkGraphG6({
               tooltipHideTimeoutRef.current = null;
             }
           }}
+          onMouseDown={(e) => {
+            // Предотвращаем скрытие tooltip при клике внутри него
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            // Предотвращаем всплытие клика к canvas
+            e.stopPropagation();
+          }}
           onMouseLeave={() => {
             // Скрываем tooltip только если он не закреплён
             if (!pinnedNode) {
@@ -891,11 +899,17 @@ export default function NetworkGraphG6({
                 <div className="flex items-center gap-1">
                   {/* Кнопка переключения - всегда доступна */}
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       const node = pinnedNode || hoveredNode;
+                      console.log('Button clicked, node:', node?.id, 'status:', node?.status);
                       if (node && onUpdateNodeStatus) {
                         const newStatus = node.status === 'OFF' ? 'ON' : 'OFF';
+                        console.log('Calling onUpdateNodeStatus with:', node.id, newStatus);
                         onUpdateNodeStatus(node.id, newStatus);
+                      } else {
+                        console.log('No node or onUpdateNodeStatus', { node: !!node, onUpdateNodeStatus: !!onUpdateNodeStatus });
                       }
                     }}
                     className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 ${

@@ -22,6 +22,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { OperationalStatus } from '../types/index';
 import { calculateVoltageDropAuto, RESISTIVITY } from '../src/lib/calculations/voltageDrop';
+import { calculatePower } from '../src/lib/power';
+import { calculateVoltageDropAll } from '../src/lib/voltageDropCalc';
 
 const prisma = new PrismaClient();
 
@@ -1298,6 +1300,28 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   const propagationResult = await propagateStates();
   console.log(`   Обновлено элементов: ${propagationResult.elementsUpdated}`);
   console.log(`   LIVE: ${propagationResult.liveElements}, DEAD: ${propagationResult.deadElements}, OFF: ${propagationResult.offElements}`);
+
+  // =========================================================================
+  // РАСЧЁТ МОЩНОСТЕЙ
+  // =========================================================================
+  console.log('\n=== РАСЧЁТ МОЩНОСТЕЙ ===');
+  const powerResult = await calculatePower();
+  console.log(`   Элементов обновлено: ${powerResult.elementsUpdated}`);
+  console.log(`   Σ Pуст: ${powerResult.totalPInstalled.toFixed(2)} кВт`);
+  console.log(`   Σ Pрасч: ${powerResult.totalPCalculated.toFixed(2)} кВт`);
+  console.log(`   Нагрузок: ${powerResult.loadCount}`);
+
+  // =========================================================================
+  // РАСЧЁТ ПОТЕРЬ НАПРЯЖЕНИЯ
+  // =========================================================================
+  console.log('\n=== РАСЧЁТ ПОТЕРЬ НАПРЯЖЕНИЯ ===');
+  const voltageDropResult = await calculateVoltageDropAll();
+  console.log(`   Связей обновлено: ${voltageDropResult.connectionsUpdated}`);
+  console.log(`   Max ΔU: ${voltageDropResult.maxVoltageDrop.toFixed(2)}%`);
+  if (voltageDropResult.warnings.length > 0) {
+    console.log(`   ⚠️ Предупреждения:`);
+    voltageDropResult.warnings.forEach(w => console.log(`      ${w}`));
+  }
 
   // =========================================================================
   // ИТОГИ

@@ -922,23 +922,27 @@ export default function NetworkGraphG6({
                 return (
                   <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
                     <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Мощность:</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5">
-                      <div>Pуст: {pUst.toFixed(2)} кВт</div>
-                      <div>Ки: {ki.toFixed(2)}</div>
-                      <div>Pрасч: {pRasch.toFixed(2)} кВт</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5 grid grid-cols-2 gap-x-2">
+                      <><span className="text-slate-400">Pуст:</span><span>{pUst.toFixed(2)} кВт</span></>
+                      <><span className="text-slate-400">Ки:</span><span>{ki.toFixed(2)}</span></>
+                      <><span className="text-slate-400">Pрасч:</span><span>{pRasch.toFixed(2)} кВт</span></>
                     </div>
                   </div>
                 );
               }
 
-              // Для остальных элементов показываем суммарные мощности
-              if (node.sumPInstalled !== undefined || node.sumPCalculated !== undefined) {
+              // Для остальных элементов показываем суммарные мощности (только если значения > 0)
+              const hasSumP = (node.sumPInstalled !== null && node.sumPInstalled !== undefined && node.sumPInstalled > 0) ||
+                              (node.sumPCalculated !== null && node.sumPCalculated !== undefined && node.sumPCalculated > 0);
+              if (hasSumP) {
                 return (
                   <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
                     <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Суммарная мощность:</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5">
-                      {node.sumPInstalled !== undefined && <div>Σ Pуст: {node.sumPInstalled.toFixed(2)} кВт</div>}
-                      {node.sumPCalculated !== undefined && <div>Σ Pрасч: {node.sumPCalculated.toFixed(2)} кВт</div>}
+                    <div className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5 grid grid-cols-2 gap-x-2">
+                      {node.sumPInstalled !== null && node.sumPInstalled !== undefined && node.sumPInstalled > 0 && 
+                        <><span className="text-slate-400">Σ Pуст:</span><span>{node.sumPInstalled.toFixed(2)} кВт</span></>}
+                      {node.sumPCalculated !== null && node.sumPCalculated !== undefined && node.sumPCalculated > 0 && 
+                        <><span className="text-slate-400">Σ Pрасч:</span><span>{node.sumPCalculated.toFixed(2)} кВт</span></>}
                     </div>
                   </div>
                 );
@@ -952,15 +956,17 @@ export default function NetworkGraphG6({
               <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
                 <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Устройства:</div>
                 {(pinnedNode || hoveredNode)!.devices!.map((device, idx) => (
-                  <div key={idx} className="text-xs text-slate-500 dark:text-slate-400 pl-2">
-                    • {device.type}{device.model ? ` ${device.model}` : ''}
-                    {device.currentNom && ` | Iном: ${device.currentNom}А`}
-                    {device.pKw && ` | P: ${device.pKw}кВт`}
-                    {device.breakerType && ` | Тип: ${device.breakerType}`}
-                    {device.breakingCapacity && ` | Откл.способность: ${device.breakingCapacity}кА`}
-                    {device.curve && ` | Характеристика: ${device.curve}`}
-                    {device.leakageCurrent && ` | Iут: ${device.leakageCurrent}мА`}
-                    {device.poles && ` | Полюсов: ${device.poles}`}
+                  <div key={idx} className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5">
+                    <div className="font-medium text-slate-600 dark:text-slate-300">• {device.type}{device.model ? ` ${device.model}` : ''}</div>
+                    <div className="grid grid-cols-2 gap-x-2 pl-2">
+                      {device.currentNom && <><span className="text-slate-400">Iном:</span><span>{device.currentNom} А</span></>}
+                      {device.pKw && <><span className="text-slate-400">Pуст:</span><span>{device.pKw} кВт</span></>}
+                      {device.breakerType && <><span className="text-slate-400">Тип:</span><span>{device.breakerType}</span></>}
+                      {device.breakingCapacity && <><span className="text-slate-400">Откл.спос.:</span><span>{device.breakingCapacity} кА</span></>}
+                      {device.curve && <><span className="text-slate-400">Хар-ка:</span><span>{device.curve}</span></>}
+                      {device.leakageCurrent && <><span className="text-slate-400">Iут:</span><span>{device.leakageCurrent} мА</span></>}
+                      {device.poles && <><span className="text-slate-400">Полюсов:</span><span>{device.poles}</span></>}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -968,8 +974,11 @@ export default function NetworkGraphG6({
             
             {/* Напряжение */}
             {(pinnedNode || hoveredNode)?.voltageLevel && (
-              <div className="text-xs text-slate-600 dark:text-slate-300">
-                Напряжение: {(pinnedNode || hoveredNode)?.voltageLevel}В
+              <div className="text-xs text-slate-600 dark:text-slate-300 flex justify-between">
+                <span className="text-slate-400">Напряжение:</span>
+                <span>{((pinnedNode || hoveredNode)?.voltageLevel || 0) < 1 
+                  ? `${((pinnedNode || hoveredNode)?.voltageLevel || 0) * 1000} В`
+                  : `${(pinnedNode || hoveredNode)?.voltageLevel} кВ`}</span>
               </div>
             )}
             

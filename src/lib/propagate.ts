@@ -32,6 +32,7 @@
  */
 
 import { prisma } from './prisma';
+import { calculatePower } from './power';
 
 export type ElectricalStatus = 'LIVE' | 'DEAD';
 export type OperationalStatus = 'ON' | 'OFF';
@@ -233,6 +234,15 @@ export async function propagateStates(): Promise<PropagationResult> {
   const liveElements = Array.from(electricalStatusMap.values()).filter(s => s === 'LIVE').length;
   const offElements = Array.from(operationalStatusMap.values()).filter(s => s === 'OFF').length;
   const liveConnections = Array.from(connectionElectricalMap.values()).filter(s => s === 'LIVE').length;
+
+  // =========================================================================
+  // ШАГ 5: Расчёт мощностей
+  // =========================================================================
+  try {
+    await calculatePower();
+  } catch (e) {
+    console.error('Ошибка расчёта мощностей:', e);
+  }
 
   return {
     elementsUpdated,

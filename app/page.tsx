@@ -31,6 +31,8 @@ interface NetworkData {
     voltageLevel?: number | null;
     electricalStatus: ElectricalStatus;
     operationalStatus: OperationalStatus;
+    sumPInstalled?: number | null;
+    sumPCalculated?: number | null;
     DeviceSlot?: Array<{
       slotId: string;
       Device?: Array<{
@@ -38,7 +40,7 @@ interface NetworkData {
         deviceType: string;
         model?: string | null;
         manufacturer?: string | null;
-        Load?: { powerP: number; powerQ: number; cosPhi: number } | null;
+        Load?: { powerP: number; powerQ: number; cosPhi: number; usageFactor?: number } | null;
         Breaker?: {
           ratedCurrent: number | null;
           breakerType?: string | null;
@@ -422,6 +424,9 @@ export default function Home() {
         lifeStatus: e.electricalStatus as any,
         voltageLevel: e.voltageLevel || undefined,
         combo: e.parentId || undefined,
+        // Мощности
+        sumPInstalled: e.sumPInstalled || undefined,
+        sumPCalculated: e.sumPCalculated || undefined,
         // Преобразуем DeviceSlot в формат devices для tooltip
         devices: e.DeviceSlot?.flatMap(slot => {
           const devices = slot.Device || [];
@@ -435,6 +440,7 @@ export default function Home() {
             pKw: d.Load?.powerP || undefined,
             qKvar: d.Load?.powerQ || undefined,
             cosPhi: d.Load?.cosPhi || undefined,
+            usageFactor: d.Load?.usageFactor || undefined,
             breakerType: d.Breaker?.breakerType || undefined,
             breakingCapacity: d.Breaker?.breakingCapacity || undefined,
             curve: d.Breaker?.curve || undefined,

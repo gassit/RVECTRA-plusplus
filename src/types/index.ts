@@ -117,6 +117,8 @@ export interface NetworkDevice {
   // Для выключателей
   breakerType?: BreakerType;   // MCB | MCCB | RCD | RCBO
   leakageCurrent?: number;     // Ток утечки (мА)
+  // Для нагрузок
+  usageFactor?: number;        // Коэффициент использования Ки
 }
 
 // Связь
@@ -163,6 +165,9 @@ export interface GraphNode {
   status?: ElementStatus;
   lifeStatus?: ElementLifeStatus;
   voltageLevel?: number;
+  // Мощности
+  sumPInstalled?: number;    // Σ Pуст (кВт)
+  sumPCalculated?: number;   // Σ Pрасч = Σ(Pуст × Ки) (кВт)
 }
 
 // Ребро графа

@@ -652,10 +652,10 @@ export default function NetworkGraphG6({
         if (totalChanges <= 5 && totalElements > 20) {
           // Инкрементальное обновление без перерисовки layout
           if (removedNodeIds.length > 0) {
-            graph.removeData('node', removedNodeIds);
+            graph.removeData({ nodes: removedNodeIds });
           }
           if (removedEdgeIds.length > 0) {
-            graph.removeData('edge', removedEdgeIds);
+            graph.removeData({ edges: removedEdgeIds });
           }
           if (addedNodes.length > 0 || addedEdges.length > 0) {
             graph.addData({
@@ -664,7 +664,7 @@ export default function NetworkGraphG6({
             });
           }
           // Обновляем данные существующих элементов без пересчёта layout
-          graph.setData({ nodes, edges: edges as any, combos }, true);
+          graph.setData({ nodes, edges: edges as any, combos });
         } else {
           // Много изменений - полный обновление с layout
           graph.setData({ nodes, edges: edges as any, combos });
@@ -853,7 +853,46 @@ export default function NetworkGraphG6({
               
 
             </div>
-            
+
+            {/* Мощности */}
+            {(() => {
+              const node = pinnedNode || hoveredNode;
+              if (!node) return null;
+
+              // Для LOAD показываем Pуст, Ки, Pрасч из устройства
+              if (node.type?.toUpperCase() === 'LOAD' && node.devices?.[0]) {
+                const device = node.devices[0];
+                const pUst = device.pKw || 0;
+                const ki = device.usageFactor || 0.7;
+                const pRasch = pUst * ki;
+                return (
+                  <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
+                    <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Мощность:</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5">
+                      <div>Pуст: {pUst.toFixed(2)} кВт</div>
+                      <div>Ки: {ki.toFixed(2)}</div>
+                      <div>Pрасч: {pRasch.toFixed(2)} кВт</div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Для остальных элементов показываем суммарные мощности
+              if (node.sumPInstalled !== undefined || node.sumPCalculated !== undefined) {
+                return (
+                  <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
+                    <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Суммарная мощность:</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5">
+                      {node.sumPInstalled !== undefined && <div>Σ Pуст: {node.sumPInstalled.toFixed(2)} кВт</div>}
+                      {node.sumPCalculated !== undefined && <div>Σ Pрасч: {node.sumPCalculated.toFixed(2)} кВт</div>}
+                    </div>
+                  </div>
+                );
+              }
+
+              return null;
+            })()}
+
             {/* Устройства */}
             {(pinnedNode || hoveredNode)?.devices && (pinnedNode || hoveredNode)!.devices!.length > 0 && (
               <div className="border-t border-slate-200 dark:border-slate-700 pt-2">

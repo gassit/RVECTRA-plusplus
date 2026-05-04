@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
 
@@ -120,6 +120,17 @@ export default function NetworkGraphG6({
   useEffect(() => {
     pinnedEdgeRef.current = pinnedEdge;
   }, [pinnedEdge]);
+
+  // Получаем актуальные данные узлов из data (для обновления tooltip после refreshData)
+  const actualPinnedNode = useMemo(() => {
+    if (!pinnedNode || !data) return pinnedNode;
+    return data.nodes.find(n => n.id === pinnedNode.id) || pinnedNode;
+  }, [pinnedNode, data]);
+
+  const actualHoveredNode = useMemo(() => {
+    if (!hoveredNode || !data) return hoveredNode;
+    return data.nodes.find(n => n.id === hoveredNode.id) || hoveredNode;
+  }, [hoveredNode, data]);
 
   // Инициализация графа (только один раз)
   useEffect(() => {
@@ -847,12 +858,12 @@ export default function NetworkGraphG6({
             {/* Заголовок */}
             <div className="border-b border-slate-200 dark:border-slate-700 pb-2 flex justify-between items-start">
               <div>
-                <div className="font-semibold text-slate-900 dark:text-slate-100 text-base">{(pinnedNode || hoveredNode)?.name}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">ID: {(pinnedNode || hoveredNode)?.id} | Тип: {(pinnedNode || hoveredNode)?.type.toLowerCase()}</div>
+                <div className="font-semibold text-slate-900 dark:text-slate-100 text-base">{(actualPinnedNode || actualHoveredNode)?.name}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">ID: {(actualPinnedNode || actualHoveredNode)?.id} | Тип: {(actualPinnedNode || actualHoveredNode)?.type.toLowerCase()}</div>
               </div>
               <div className="flex items-center gap-1">
                 {/* Кнопка закрытия tooltip */}
-                {pinnedNode && (
+                {actualPinnedNode && (
                   <button
                     onClick={() => setPinnedNode(null)}
                     className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
@@ -867,7 +878,7 @@ export default function NetworkGraphG6({
                 {editMode && (
                   <button
                     onClick={() => {
-                      const node = pinnedNode || hoveredNode;
+                      const node = actualPinnedNode || actualHoveredNode;
                       if (node && confirm(`Удалить элемент "${node.name}" и все связанные связи?`)) {
                         onDeleteNode?.(node.id);
                         setHoveredNode(null);
@@ -889,22 +900,22 @@ export default function NetworkGraphG6({
             <div className="flex flex-wrap gap-2">
               {/* Электрический статус - для всех элементов */}
               <div className={`px-2 py-1 rounded text-xs font-medium ${
-                (pinnedNode || hoveredNode)?.lifeStatus === 'LIVE' 
+                (actualPinnedNode || actualHoveredNode)?.lifeStatus === 'LIVE' 
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
               }`}>
-                {(pinnedNode || hoveredNode)?.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
+                {(actualPinnedNode || actualHoveredNode)?.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
               </div>
               
               {/* Оперативный статус - только для коммутирующих элементов */}
-              {isSwitchable((pinnedNode || hoveredNode)?.type || '') && (
+              {isSwitchable((actualPinnedNode || actualHoveredNode)?.type || '') && (
                 <div className="flex items-center gap-1">
                   {/* Кнопка переключения - всегда доступна */}
                   <button
                     onClick={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      const node = pinnedNode || hoveredNode;
+                      const node = actualPinnedNode || actualHoveredNode;
                       if (node && onUpdateNodeStatus) {
                         const newStatus = node.status === 'OFF' ? 'ON' : 'OFF';
                         setUpdatingNodeId(node.id);
@@ -917,15 +928,15 @@ export default function NetworkGraphG6({
                         }
                       }
                     }}
-                    disabled={updatingNodeId === (pinnedNode || hoveredNode)?.id}
+                    disabled={updatingNodeId === (actualPinnedNode || actualHoveredNode)?.id}
                     className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 disabled:opacity-50 disabled:cursor-wait ${
-                      (pinnedNode || hoveredNode)?.status === 'OFF' 
+                      (actualPinnedNode || actualHoveredNode)?.status === 'OFF' 
                         ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
                         : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                     }`}
                     title="Нажмите для переключения статуса"
                   >
-                    {updatingNodeId === (pinnedNode || hoveredNode)?.id ? (
+                    {updatingNodeId === (actualPinnedNode || actualHoveredNode)?.id ? (
                       <span className="flex items-center gap-1">
                         <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -934,7 +945,7 @@ export default function NetworkGraphG6({
                         <span>...</span>
                       </span>
                     ) : (
-                      (pinnedNode || hoveredNode)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'
+                      (actualPinnedNode || actualHoveredNode)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'
                     )}
                   </button>
                 </div>
@@ -945,7 +956,7 @@ export default function NetworkGraphG6({
 
             {/* Мощности */}
             {(() => {
-              const node = pinnedNode || hoveredNode;
+              const node = actualPinnedNode || actualHoveredNode;
               if (!node) return null;
 
               // Для LOAD показываем Pуст, Ки, Pрасч из устройства
@@ -979,10 +990,10 @@ export default function NetworkGraphG6({
             })()}
 
             {/* Устройства */}
-            {(pinnedNode || hoveredNode)?.devices && (pinnedNode || hoveredNode)!.devices!.length > 0 && (
+            {(actualPinnedNode || actualHoveredNode)?.devices && (actualPinnedNode || actualHoveredNode)!.devices!.length > 0 && (
               <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
                 <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Устройства:</div>
-                {(pinnedNode || hoveredNode)!.devices!.map((device, idx) => (
+                {(actualPinnedNode || actualHoveredNode)!.devices!.map((device, idx) => (
                   <div key={idx} className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5">
                     <div className="font-medium text-slate-600 dark:text-slate-300">• {device.type}{device.model ? ` ${device.model}` : ''}</div>
                     <div className="grid grid-cols-2 gap-x-2 pl-2">
@@ -1000,20 +1011,20 @@ export default function NetworkGraphG6({
             )}
             
             {/* Напряжение */}
-            {(pinnedNode || hoveredNode)?.voltageLevel && (
+            {(actualPinnedNode || actualHoveredNode)?.voltageLevel && (
               <div className="text-xs text-slate-600 dark:text-slate-300 flex justify-between">
                 <span className="text-slate-400">Напряжение:</span>
-                <span>{((pinnedNode || hoveredNode)?.voltageLevel || 0) < 1 
-                  ? `${((pinnedNode || hoveredNode)?.voltageLevel || 0) * 1000} В`
-                  : `${(pinnedNode || hoveredNode)?.voltageLevel} кВ`}</span>
+                <span>{((actualPinnedNode || actualHoveredNode)?.voltageLevel || 0) < 1 
+                  ? `${((actualPinnedNode || actualHoveredNode)?.voltageLevel || 0) * 1000} В`
+                  : `${(actualPinnedNode || actualHoveredNode)?.voltageLevel} кВ`}</span>
               </div>
             )}
             
             {/* Проблемы */}
-            {((pinnedNode || hoveredNode)?.criticalIssues ?? 0) > 0 && (
+            {((actualPinnedNode || actualHoveredNode)?.criticalIssues ?? 0) > 0 && (
               <div className="border-t border-red-200 dark:border-red-800 pt-2">
                 <div className="text-xs text-red-500 dark:text-red-400 font-medium">
-                  ⚠️ {(pinnedNode || hoveredNode)?.criticalIssues} проблем(ы)
+                  ⚠️ {(actualPinnedNode || actualHoveredNode)?.criticalIssues} проблем(ы)
                 </div>
               </div>
             )}

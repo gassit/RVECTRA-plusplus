@@ -1035,7 +1035,7 @@ export default function NetworkGraphG6({
             
             {/* Параметры кабеля */}
             <div className="space-y-1">
-              {/* Марка и сечение */}
+              {/* Марка и сечение - показываем только если есть реальные данные */}
               {((pinnedEdge || hoveredEdge)?.wireType || ((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0)) && (
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Кабель:</span>

@@ -458,9 +458,9 @@ export default function Home() {
       edges: (filteredData?.connections || networkData?.connections || []).map(c => ({
         id: c.id, source: c.sourceId, target: c.targetId, type: 'CABLE' as const,
         status: c.operationalStatus as any, lifeStatus: c.electricalStatus as any,
-        wireType: c.cable?.name?.split(' ')[0] || '',
-        wireSize: c.cable?.section || 0,
-        length: c.cable?.length || 0,
+        wireType: c.cable?.name?.split(' ')[0] || undefined,
+        wireSize: c.cable?.section ?? undefined,
+        length: c.cable?.length ?? undefined,
         cable: c.cable,
       })),
       combos: networkData?.combos || [],

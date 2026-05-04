@@ -623,6 +623,7 @@ export default function NetworkGraphG6({
 
       // Первый рендер
       if (!(graph as any).rendered) {
+        if ((graph as any).destroyed) return;
         graph.setData({ nodes, edges: edges as any, combos });
         graph.render();
         (graph as any).rendered = true;
@@ -667,11 +668,13 @@ export default function NetworkGraphG6({
           graph.setData({ nodes, edges: edges as any, combos });
         } else {
           // Много изменений - полный обновление с layout
+          if ((graph as any).destroyed) return;
           graph.setData({ nodes, edges: edges as any, combos });
           graph.layout();
         }
       } else {
         // Нет предыдущих данных - полный рендер
+        if ((graph as any).destroyed) return;
         graph.setData({ nodes, edges: edges as any, combos });
         graph.layout();
       }

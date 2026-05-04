@@ -1032,11 +1032,11 @@ export default function NetworkGraphG6({
             {/* Параметры кабеля */}
             <div className="space-y-1">
               {/* Марка и сечение */}
-              {((pinnedEdge || hoveredEdge)?.wireType || (pinnedEdge || hoveredEdge)?.wireSize) && (
+              {((pinnedEdge || hoveredEdge)?.wireType || ((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0)) && (
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Кабель:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {(pinnedEdge || hoveredEdge)?.wireType} {(pinnedEdge || hoveredEdge)?.wireSize}мм²
+                    {(pinnedEdge || hoveredEdge)?.wireType} {((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0) ? `${(pinnedEdge || hoveredEdge)?.wireSize}мм²` : ''}
                   </span>
                 </div>
               )}

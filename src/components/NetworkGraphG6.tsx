@@ -931,24 +931,16 @@ export default function NetworkGraphG6({
                 );
               }
 
-              // Для остальных элементов показываем суммарные мощности (только если значения > 0)
-              const hasSumP = (node.sumPInstalled !== null && node.sumPInstalled !== undefined && node.sumPInstalled > 0) ||
-                              (node.sumPCalculated !== null && node.sumPCalculated !== undefined && node.sumPCalculated > 0);
-              if (hasSumP) {
-                return (
-                  <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
-                    <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Суммарная мощность:</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5 grid grid-cols-2 gap-x-2">
-                      {node.sumPInstalled !== null && node.sumPInstalled !== undefined && node.sumPInstalled > 0 && 
-                        <><span className="text-slate-400">Σ Pуст:</span><span>{node.sumPInstalled.toFixed(2)} кВт</span></>}
-                      {node.sumPCalculated !== null && node.sumPCalculated !== undefined && node.sumPCalculated > 0 && 
-                        <><span className="text-slate-400">Σ Pрасч:</span><span>{node.sumPCalculated.toFixed(2)} кВт</span></>}
-                    </div>
+              // Для остальных элементов показываем суммарные мощности (всегда, даже если 0)
+              return (
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
+                  <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Суммарная мощность:</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 pl-2 grid grid-cols-2 gap-x-2">
+                    <><span className="text-slate-400">Σ Pуст:</span><span>{(node.sumPInstalled || 0).toFixed(2)} кВт</span></>
+                    <><span className="text-slate-400">Σ Pрасч:</span><span>{(node.sumPCalculated || 0).toFixed(2)} кВт</span></>
                   </div>
-                );
-              }
-
-              return null;
+                </div>
+              );
             })()}
 
             {/* Устройства */}

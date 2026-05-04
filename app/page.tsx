@@ -357,6 +357,8 @@ export default function Home() {
       if (propagateResponse.ok && powerResponse.ok) {
         console.log('Propagate:', propagateResult);
         console.log('Power:', powerResult);
+        // 3. Обновляем данные на фронтенде
+        await refreshData(false);
       } else {
         alert('Ошибка при обновлении');
       }

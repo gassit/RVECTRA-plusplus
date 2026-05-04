@@ -237,26 +237,28 @@ export async function propagateStates(): Promise<PropagationResult> {
   const liveConnections = Array.from(connectionElectricalMap.values()).filter(s => s === 'LIVE').length;
 
   // =========================================================================
-  // ШАГ 5: Расчёт мощностей
+  // ШАГ 5: Расчёт мощностей (только при необходимости)
   // =========================================================================
-  try {
-    await calculatePower();
-  } catch (e) {
-    console.error('Ошибка расчёта мощностей:', e);
-  }
+  // Временно отключено для отладки
+  // try {
+  //   await calculatePower();
+  // } catch (e) {
+  //   console.error('Ошибка расчёта мощностей:', e);
+  // }
 
   // =========================================================================
-  // ШАГ 6: Расчёт потерь напряжения
+  // ШАГ 6: Расчёт потерь напряжения (только при необходимости)
   // =========================================================================
-  try {
-    const voltageDropResult = await calculateVoltageDropAll();
-    if (voltageDropResult.warnings.length > 0) {
-      console.warn('Предупреждения ΔU:', voltageDropResult.warnings);
-    }
-    console.log(`ΔU рассчитан для ${voltageDropResult.connectionsUpdated} связей, max: ${voltageDropResult.maxVoltageDrop.toFixed(2)}%`);
-  } catch (e) {
-    console.error('Ошибка расчёта ΔU:', e);
-  }
+  // Временно отключено для отладки
+  // try {
+  //   const voltageDropResult = await calculateVoltageDropAll();
+  //   if (voltageDropResult.warnings.length > 0) {
+  //     console.warn('Предупреждения ΔU:', voltageDropResult.warnings);
+  //   }
+  //   console.log(`ΔU рассчитан для ${voltageDropResult.connectionsUpdated} связей, max: ${voltageDropResult.maxVoltageDrop.toFixed(2)}%`);
+  // } catch (e) {
+  //   console.error('Ошибка расчёта ΔU:', e);
+  // }
 
   return {
     elementsUpdated,

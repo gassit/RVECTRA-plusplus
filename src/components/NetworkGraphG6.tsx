@@ -917,7 +917,7 @@ export default function NetworkGraphG6({
               if (node.type?.toUpperCase() === 'LOAD' && node.devices?.[0]) {
                 const device = node.devices[0];
                 const pUst = device.pKw || 0;
-                const ki = device.usageFactor || 0.7;
+                const ki = device.usageFactor || 0.8;
                 const pRasch = pUst * ki;
                 return (
                   <div className="border-t border-slate-200 dark:border-slate-700 pt-2">

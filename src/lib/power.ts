@@ -105,8 +105,8 @@ export async function calculatePower(): Promise<PowerResult> {
 
     // Pуст = установленная мощность
     const pInstalled = loadData?.powerP || 0;
-    // Ки = коэффициент использования
-    const usageFactor = loadData?.usageFactor || 0.7;
+    // Ки = коэффициент использования (по умолчанию 0.8)
+    const usageFactor = loadData?.usageFactor || 0.8;
     // Pрасч = Pуст × Ки
     const pCalculated = pInstalled * usageFactor;
 

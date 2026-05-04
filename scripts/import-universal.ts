@@ -208,6 +208,7 @@ interface ExcelFormat {
   stateCol: string | null;
   currentCol: string | null;
   powerCol: string | null;
+  usageFactorCol: string | null;  // Коэффициент использования (Ки)
   locationCol: string | null;
   parentCol: string | null;
   avrCol: string | null;
@@ -231,6 +232,7 @@ interface ElementInfo {
   state?: string;
   current?: number | null;
   power?: number | null;
+  usageFactor?: number | null;  // Коэффициент использования (Ки)
   location?: string | null;
   explicitParent?: string | null;
   // Breaker parameters
@@ -449,7 +451,7 @@ function extractCabinet(elementName: string, elementType: string): string | unde
 function detectExcelFormat(rawData: Record<string, unknown>[]): ExcelFormat {
   const emptyFormat: ExcelFormat = {
     type: 'standard', fromCol: '', toCol: '', connectionCol: null, stateCol: null,
-    currentCol: null, powerCol: null, locationCol: null, parentCol: null,
+    currentCol: null, powerCol: null, usageFactorCol: null, locationCol: null, parentCol: null,
     avrCol: null, avrStateCol: null, idCol: null,
     breakingCapacityCol: null, curveCol: null, leakageCurrentCol: null,
     coresCol: null, lengthCol: null, sectionCol: null, materialCol: null, iDopCol: null
@@ -522,6 +524,8 @@ function detectExcelFormat(rawData: Record<string, unknown>[]): ExcelFormat {
     leakageCurrentCol: findCol([/^ток\s*утечки/i, /^leakage\s*current/i]),
     // Power
     powerCol: findCol([/^мощность\s*\(квт\)/i, /^мощность$/i, /^power$/i, /^p_?квт$/i, /^s_?ква$/i]),
+    // Usage factor (Ки) - коэффициент использования
+    usageFactorCol: findCol([/^к[иі]$/i, /^коэф.*использов/i, /^usage\s*factor$/i]),
     // Location
     locationCol: findCol([/^location$/i, /^расположе/i, /^место$/i, /^помещение$/i]),
     // Parent
@@ -791,6 +795,7 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   if (format.curveCol) console.log(`📌 характеристика="${format.curveCol}"`);
   if (format.leakageCurrentCol) console.log(`📌 ток утечки="${format.leakageCurrentCol}"`);
   if (format.powerCol) console.log(`📌 мощность="${format.powerCol}"`);
+  if (format.usageFactorCol) console.log(`📌 Ки="${format.usageFactorCol}"`);
   if (format.locationCol) console.log(`📌 location="${format.locationCol}"`);
   if (format.parentCol) console.log(`📌 parent="${format.parentCol}"`);
   if (format.coresCol) console.log(`📌 кол-во жил="${format.coresCol}"`);
@@ -858,6 +863,7 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
     
     // Other parameters
     const power = format.powerCol ? parseFloatValue(row[format.powerCol]) : null;
+    const usageFactor = format.usageFactorCol ? parseFloatValue(row[format.usageFactorCol]) : null;
     const location = format.locationCol ? String(row[format.locationCol] || '').trim() || null : null;
     const explicitParent = format.parentCol ? normalizeName(String(row[format.parentCol] || '')) : null;
 
@@ -872,6 +878,7 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
         state,
         current,
         power: null,
+        usageFactor: null,
         location,
         explicitParent: explicitParent || null,
         // Breaker parameters
@@ -897,12 +904,14 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
         state,
         current: null,
         power: toType === 'load' ? power : null,
+        usageFactor: toType === 'load' ? usageFactor : null,
         location,
         explicitParent: null,
       });
     } else {
       const el = elementsMap.get(to)!;
       if (toType === 'load' && power !== null && el.power === null) el.power = power;
+      if (toType === 'load' && usageFactor !== null && el.usageFactor === null) el.usageFactor = usageFactor;
       if (location && !el.location) el.location = location;
     }
 
@@ -1262,6 +1271,7 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
             deviceId: deviceId,
             name: info.name,
             powerP: info.power,
+            usageFactor: info.usageFactor ?? 0.8,  // По умолчанию 0.8 если не указан
             updatedAt: new Date(),
           }
         });

@@ -129,10 +129,17 @@ export default function NetworkGraphG6({
       destroyTimeoutRef.current = null;
     }
 
-    // Проверяем, не существует ли уже граф (может быть создан при предыдущем mount в StrictMode)
-    if (graphRef.current && !(graphRef.current as any).destroyed) {
+    // Проверяем, не существует ли уже граф и он не уничтожен
+    const existingGraph = graphRef.current;
+    if (existingGraph && !(existingGraph as any).destroyed) {
       console.log('Graph already exists, reusing');
       return;
+    }
+
+    // Если граф уничтожен - очищаем ссылку
+    if (existingGraph && (existingGraph as any).destroyed) {
+      console.log('Graph was destroyed, creating new one');
+      graphRef.current = null;
     }
 
     console.log('Creating new graph');
@@ -757,17 +764,27 @@ export default function NetworkGraphG6({
     return () => {
       mountedRef.current = false;
       const graph = graphRef.current;
-      if (graph && !(graph as any).destroyed) {
-        // Откладываем уничтожение на 100мс
-        // Если компонент снова монтируется (StrictMode), уничтожение будет отменено
-        destroyTimeoutRef.current = setTimeout(() => {
-          if (graphRef.current && !(graphRef.current as any).destroyed) {
-            console.log('Destroying graph on unmount');
-            graphRef.current.destroy();
+      if (graph) {
+        if (!(graph as any).destroyed) {
+          // Откладываем уничтожение на 100мс
+          // Если компонент снова монтируется (StrictMode), уничтожение будет отменено
+          destroyTimeoutRef.current = setTimeout(() => {
+            const g = graphRef.current;
+            if (g && !(g as any).destroyed) {
+              console.log('Destroying graph on unmount');
+              try {
+                g.destroy();
+              } catch (e) {
+                console.warn('Error destroying graph:', e);
+              }
+            }
             graphRef.current = null;
-          }
-          destroyTimeoutRef.current = null;
-        }, 100);
+            destroyTimeoutRef.current = null;
+          }, 100);
+        } else {
+          // Граф уже уничтожен - просто очищаем ссылку
+          graphRef.current = null;
+        }
       }
     };
   }, []);

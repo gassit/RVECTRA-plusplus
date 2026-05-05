@@ -201,8 +201,11 @@ export async function calculatePower(): Promise<PowerResult> {
       const childElement = elementMap.get(childId);
       if (!childElement) continue;
 
-      // Проверяем operationalStatus ребёнка
-      if (childElement.operationalStatus === 'OFF') continue;
+      // PASS_THROUGH элементы (BUS, JUNCTION) всегда пропускают мощность
+      const isPassThrough = ['bus', 'junction', 'junctionbox'].includes(childElement.type.toLowerCase());
+      
+      // Проверяем operationalStatus ребёнка (кроме PASS_THROUGH)
+      if (!isPassThrough && childElement.operationalStatus === 'OFF') continue;
 
       // Получаем мощность ребёнка
       const childPower = powerMap.get(childId);

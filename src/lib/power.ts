@@ -161,60 +161,70 @@ export async function calculatePower(): Promise<PowerResult> {
   }
 
   // =========================================================================
-  // ШАГ 3: Сортировка элементов по глубине (от меньшего к большему)
+  // ШАГ 3: Итеративное суммирование до стабилизации
   // =========================================================================
-  // Элементы с меньшей глубиной (ближе к LOAD) обрабатываются первыми
-  // Это гарантирует, что все дети обработаны до родителей
-  
-  const sortedElements = Array.from(depthMap.entries())
-    .filter(([id]) => {
-      const el = elementMap.get(id);
-      return el && el.type.toLowerCase() !== 'load'; // LOAD уже инициализирован
-    })
-    .sort((a, b) => a[1] - b[1]); // Сортировка по возрастанию глубины (сначала близкие к LOAD)
+  // Из-за сложной топологии один проход может не обработать все элементы
+  // Делаем несколько проходов, пока мощности не перестанут меняться
 
-  // =========================================================================
-  // ШАГ 4: Суммирование мощностей в топологическом порядке
-  // =========================================================================
-  // Для каждого элемента: суммируем мощности всех детей
-  
-  for (const [elementId] of sortedElements) {
-    const element = elementMap.get(elementId);
-    if (!element) continue;
+  const MAX_ITERATIONS = 10;
+  let iteration = 0;
+  let changed = true;
 
-    // Инициализируем мощность элемента
-    if (!powerMap.has(elementId)) {
-      powerMap.set(elementId, { pInstalled: 0, pCalculated: 0 });
-    }
+  while (changed && iteration < MAX_ITERATIONS) {
+    changed = false;
+    iteration++;
 
-    // Получаем ИСХОДЯЩИЕ связи (к нижестоящим элементам = детям)
-    const outgoing = outgoingConnections.get(elementId) || [];
+    // Обрабатываем все элементы (кроме LOAD)
+    for (const [elementId] of depthMap.entries()) {
+      const element = elementMap.get(elementId);
+      if (!element || element.type.toLowerCase() === 'load') continue;
 
-    for (const connId of outgoing) {
-      const conn = connectionMap.get(connId);
-      if (!conn) continue;
+      // Инициализируем мощность элемента
+      if (!powerMap.has(elementId)) {
+        powerMap.set(elementId, { pInstalled: 0, pCalculated: 0 });
+      }
 
-      // Проверяем operationalStatus связи
-      if (conn.operationalStatus === 'OFF') continue;
+      const oldPower = { ...powerMap.get(elementId)! };
 
-      const childId = conn.targetId;
-      const childElement = elementMap.get(childId);
-      if (!childElement) continue;
+      // Сбрасываем мощность для пересчёта
+      powerMap.get(elementId)!.pInstalled = 0;
+      powerMap.get(elementId)!.pCalculated = 0;
 
-      // PASS_THROUGH элементы (BUS, JUNCTION) всегда пропускают мощность
-      const isPassThrough = ['bus', 'junction', 'junctionbox'].includes(childElement.type.toLowerCase());
-      
-      // Проверяем operationalStatus ребёнка (кроме PASS_THROUGH)
-      if (!isPassThrough && childElement.operationalStatus === 'OFF') continue;
+      // Получаем ИСХОДЯЩИЕ связи (к нижестоящим элементам = детям)
+      const outgoing = outgoingConnections.get(elementId) || [];
 
-      // Получаем мощность ребёнка
-      const childPower = powerMap.get(childId);
-      if (!childPower) continue;
+      for (const connId of outgoing) {
+        const conn = connectionMap.get(connId);
+        if (!conn) continue;
 
-      // Добавляем мощность ребёнка к текущему элементу
-      const currentPower = powerMap.get(elementId)!;
-      currentPower.pInstalled += childPower.pInstalled;
-      currentPower.pCalculated += childPower.pCalculated;
+        // Проверяем operationalStatus связи
+        if (conn.operationalStatus === 'OFF') continue;
+
+        const childId = conn.targetId;
+        const childElement = elementMap.get(childId);
+        if (!childElement) continue;
+
+        // PASS_THROUGH элементы (BUS, JUNCTION) всегда пропускают мощность
+        const isPassThrough = ['bus', 'junction', 'junctionbox'].includes(childElement.type.toLowerCase());
+
+        // Проверяем operationalStatus ребёнка (кроме PASS_THROUGH)
+        if (!isPassThrough && childElement.operationalStatus === 'OFF') continue;
+
+        // Получаем мощность ребёнка
+        const childPower = powerMap.get(childId);
+        if (!childPower) continue;
+
+        // Добавляем мощность ребёнка к текущему элементу
+        const currentPower = powerMap.get(elementId)!;
+        currentPower.pInstalled += childPower.pInstalled;
+        currentPower.pCalculated += childPower.pCalculated;
+      }
+
+      // Проверяем, изменилась ли мощность
+      const newPower = powerMap.get(elementId)!;
+      if (oldPower.pInstalled !== newPower.pInstalled || oldPower.pCalculated !== newPower.pCalculated) {
+        changed = true;
+      }
     }
   }
 

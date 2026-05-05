@@ -31,6 +31,8 @@ interface NetworkData {
     voltageLevel?: number | null;
     electricalStatus: ElectricalStatus;
     operationalStatus: OperationalStatus;
+    sumPInstalled?: number | null;
+    sumPCalculated?: number | null;
     DeviceSlot?: Array<{
       slotId: string;
       Device?: Array<{
@@ -38,7 +40,7 @@ interface NetworkData {
         deviceType: string;
         model?: string | null;
         manufacturer?: string | null;
-        Load?: { powerP: number; powerQ: number; cosPhi: number } | null;
+        Load?: { powerP: number; powerQ: number; cosPhi: number; usageFactor?: number } | null;
         Breaker?: {
           ratedCurrent: number | null;
           breakerType?: string | null;
@@ -341,21 +343,28 @@ export default function Home() {
     }
   };
 
-  // Принудительное обновление статусов (propagate)
+  // Принудительное обновление статусов и расчёт мощностей
   const handlePropagate = async () => {
     try {
-      const response = await fetch('/api/propagate', { method: 'POST' });
-      const result = await response.json();
-      
-      if (response.ok && result.success) {
-        console.log('Propagate result:', result.data);
+      // 1. Распространение статусов LIVE/DEAD
+      const propagateResponse = await fetch('/api/propagate', { method: 'POST' });
+      const propagateResult = await propagateResponse.json();
+
+      // 2. Расчёт мощностей и ΔU
+      const powerResponse = await fetch('/api/power', { method: 'POST' });
+      const powerResult = await powerResponse.json();
+
+      if (propagateResponse.ok && powerResponse.ok) {
+        console.log('Propagate:', propagateResult);
+        console.log('Power:', powerResult);
+        // 3. Обновляем данные на фронтенде
         await refreshData(false);
       } else {
-        alert(result.error || 'Ошибка при обновлении статусов');
+        alert('Ошибка при обновлении');
       }
     } catch (err) {
       console.error('Error propagating:', err);
-      alert('Ошибка при обновлении статусов');
+      alert('Ошибка при обновлении');
     }
   };
 
@@ -414,14 +423,18 @@ export default function Home() {
         id: e.id,
         type: e.type.toUpperCase() as any,
         name: e.name,
-        posX: e.posX || 0,
-        posY: e.posY || 0,
+        // Передаём координаты только если они есть (G6 сам расставит через dagre если null)
+        posX: e.posX ?? undefined,
+        posY: e.posY ?? undefined,
         hasIssues: false,
         criticalIssues: 0,
         status: e.operationalStatus as any,
         lifeStatus: e.electricalStatus as any,
         voltageLevel: e.voltageLevel || undefined,
         combo: e.parentId || undefined,
+        // Мощности
+        sumPInstalled: e.sumPInstalled || undefined,
+        sumPCalculated: e.sumPCalculated || undefined,
         // Преобразуем DeviceSlot в формат devices для tooltip
         devices: e.DeviceSlot?.flatMap(slot => {
           const devices = slot.Device || [];
@@ -435,6 +448,7 @@ export default function Home() {
             pKw: d.Load?.powerP || undefined,
             qKvar: d.Load?.powerQ || undefined,
             cosPhi: d.Load?.cosPhi || undefined,
+            usageFactor: d.Load?.usageFactor || undefined,
             breakerType: d.Breaker?.breakerType || undefined,
             breakingCapacity: d.Breaker?.breakingCapacity || undefined,
             curve: d.Breaker?.curve || undefined,
@@ -446,9 +460,9 @@ export default function Home() {
       edges: (filteredData?.connections || networkData?.connections || []).map(c => ({
         id: c.id, source: c.sourceId, target: c.targetId, type: 'CABLE' as const,
         status: c.operationalStatus as any, lifeStatus: c.electricalStatus as any,
-        wireType: c.cable?.name?.split(' ')[0] || '',
-        wireSize: c.cable?.section || 0,
-        length: c.cable?.length || 0,
+        wireType: c.cable?.name?.split(' ')[0] || undefined,
+        wireSize: c.cable?.section ?? undefined,
+        length: c.cable?.length ?? undefined,
         cable: c.cable,
       })),
       combos: networkData?.combos || [],

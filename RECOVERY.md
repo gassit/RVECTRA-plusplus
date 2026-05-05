@@ -15,9 +15,37 @@ npx prisma db push
 |-------------|-----|--------|
 | RVectraPRo | https://github.com/gassit/RVectraPRo | ✅ Актуален |
 | RVECTRA-plusplus | https://github.com/gassit/RVECTRA-plusplus | ✅ Актуален |
+| RVA-Q | https://github.com/gassit/RVA-Q | ✅ Актуален |
 | RVectrA-plus | https://github.com/gassit/RVectrA-plus | ❌ Токен истёк |
 
-## Ключевые изменения (последние сессии)
+## Ключевые изменения
+
+### 2026-05-04
+
+#### Исправлен импорт (import-universal.ts)
+- Добавлены поля `sumPInstalled` и `sumPCalculated` в схему Element
+- Исправлена ошибка `PrismaClientKnownRequestError: The column sumPInstalled does not exist`
+- Синхронизация БД: `npx prisma db push`
+
+#### Layout автоматический расчёт
+- Создан API `/api/layout` (POST) для расчёта координат элементов
+- Алгоритм BFS от источников (source) с 24 уровнями
+- Координаты сохраняются в `posX`, `posY`
+
+#### Расчёт потерь напряжения
+- Исправлена формула: ΔU = (P × L) / (U × S × γ)
+- Конвертация кВ в В: 0.4 кВ → 400 В
+- Файл: `src/lib/voltageDropCalc.ts`
+
+#### Tooltip улучшения
+- **Устройства:** табличный формат в 2 колонки (Iном, Pуст, Тип, Откл.спос., Хар-ка, Iут, Полюсов)
+- **Напряжение:** автоматическая конвертация < 1 кВ → в Вольты (0.4 → 400 В)
+- **Мощности:** всегда показывать Σ Pуст и Σ Pрасч (даже если 0)
+- Файл: `src/components/NetworkGraphG6.tsx`
+
+#### Исправлена ошибка postLayout
+- Добавлены проверки: `mountedRef.current`, `!(graph as any).destroyed`, `typeof graph.layout === 'function'`
+- Promise.catch() для обработки ошибок layout
 
 ### 2026-04-28
 
@@ -65,18 +93,23 @@ npx prisma db push
 |------|------------|
 | `prisma/schema.prisma` | Схема базы данных |
 | `src/types/index.ts` | TypeScript типы |
-| `src/components/NetworkGraphG6.tsx` | Визуализация графа (G6) |
+| `src/components/NetworkGraphG6.tsx` | Визуализация графа (G6) + Tooltip |
+| `src/lib/voltageDropCalc.ts` | Расчёт потерь напряжения |
+| `src/lib/power.ts` | Расчёт мощностей |
 | `scripts/import-universal.ts` | Импорт из Excel |
 | `app/api/network/route.ts` | API для графа |
+| `app/api/layout/route.ts` | API для расчёта координат |
 | `upload/ШАБЛОН_ИМПОРТА.xlsx` | Шаблон импорта |
 | `upload/input.xlsx` | Реальные данные |
 
 ## Импорт данных
 
 ```bash
-npx tsx scripts/import-universal.ts
-# или с указанием файла:
-npx tsx -e "import { importUniversal } from './scripts/import-universal'; importUniversal({ filePath: '/home/z/my-project/upload/input.xlsx' });"
+# Импорт с расчётом состояний и layout
+npx tsx scripts/import-universal.ts upload/input.xlsx
+
+# После импорта - рассчитать координаты
+curl -X POST http://localhost:3000/api/layout
 ```
 
 ## Запуск проекта
@@ -90,5 +123,5 @@ npm run dev
 
 ---
 
-**Последнее обновление:** 2026-04-28
-**Коммит:** 93977c4
+**Последнее обновление:** 2026-05-04
+**Коммит:** 3e4881a

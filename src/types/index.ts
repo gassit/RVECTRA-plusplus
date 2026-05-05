@@ -117,6 +117,8 @@ export interface NetworkDevice {
   // Для выключателей
   breakerType?: BreakerType;   // MCB | MCCB | RCD | RCBO
   leakageCurrent?: number;     // Ток утечки (мА)
+  // Для нагрузок
+  usageFactor?: number;        // Коэффициент использования Ки
 }
 
 // Связь
@@ -153,8 +155,8 @@ export interface GraphNode {
   id: string;
   type: ElementType;
   name: string;
-  posX: number;
-  posY: number;
+  posX?: number | null;  // Опционально - G6 сам расставит через dagre layout
+  posY?: number | null;  // Опционально - G6 сам расставит через dagre layout
   hasIssues: boolean;
   criticalIssues: number;
   devices?: NetworkDevice[];
@@ -163,6 +165,9 @@ export interface GraphNode {
   status?: ElementStatus;
   lifeStatus?: ElementLifeStatus;
   voltageLevel?: number;
+  // Мощности
+  sumPInstalled?: number;    // Σ Pуст (кВт)
+  sumPCalculated?: number;   // Σ Pрасч = Σ(Pуст × Ки) (кВт)
 }
 
 // Ребро графа

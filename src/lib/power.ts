@@ -19,8 +19,9 @@
  *   - Не накапливает мощность, только генерирует
  *
  * Алгоритм:
- *   1. Обратный BFS от LOAD вверх к SOURCE
- *   2. Учитываем operationalStatus - если элемент OFF, мощность не передаётся
+ *   1. Топологическая сортировка по глубине от LOAD
+ *   2. Обработка в порядке убывания глубины (сначала LOAD, потом родители)
+ *   3. Гарантирует полную сумму мощности в junction с несколькими входами
  */
 
 import { prisma } from './prisma';
@@ -34,7 +35,7 @@ export interface PowerResult {
 
 /**
  * Главная функция расчёта мощностей
- * Выполняет обратный BFS от нагрузок вверх к источникам
+ * Использует топологическую сортировку для корректного суммирования
  */
 export async function calculatePower(): Promise<PowerResult> {
   // Получаем все элементы с устройствами
@@ -66,16 +67,29 @@ export async function calculatePower(): Promise<PowerResult> {
   // Мапа мощностей
   const powerMap = new Map<string, { pInstalled: number; pCalculated: number }>();
 
+  // =========================================================================
   // Структуры связей
+  // =========================================================================
+  // outgoingConnections[elementId] = [connections где elementId является source]
+  // Это связи, идущие ОТ этого элемента К нижестоящим (в направлении потока энергии)
+  const outgoingConnections = new Map<string, string[]>();
+  
   // incomingConnections[elementId] = [connections где elementId является target]
-  // т.е. связи, идущие К этому элементу (от вышестоящих в направлении потока энергии)
+  // Это связи, идущие К этому элементу от вышестоящих
   const incomingConnections = new Map<string, string[]>();
+  
   const connectionMap = new Map<string, typeof connections[0]>();
 
   for (const conn of connections) {
     connectionMap.set(conn.id, conn);
 
-    // Входящие связи (где этот элемент является target)
+    // Исходящие связи (где элемент является source)
+    if (!outgoingConnections.has(conn.sourceId)) {
+      outgoingConnections.set(conn.sourceId, []);
+    }
+    outgoingConnections.get(conn.sourceId)!.push(conn.id);
+
+    // Входящие связи (где элемент является target)
     if (!incomingConnections.has(conn.targetId)) {
       incomingConnections.set(conn.targetId, []);
     }
@@ -86,7 +100,6 @@ export async function calculatePower(): Promise<PowerResult> {
   // ШАГ 1: Инициализация LOAD элементов
   // =========================================================================
   const loads = elements.filter(el => el.type.toLowerCase() === 'load');
-  const queue: string[] = [];
 
   for (const load of loads) {
     // Находим устройство Load
@@ -102,74 +115,108 @@ export async function calculatePower(): Promise<PowerResult> {
     const pCalculated = pInstalled * usageFactor;
 
     powerMap.set(load.id, { pInstalled, pCalculated });
-    queue.push(load.id);
   }
 
   // =========================================================================
-  // ШАГ 2: Обратный BFS - распространение мощности ВВЕРХ от LOAD к SOURCE
+  // ШАГ 2: Вычисление глубины каждого элемента от LOAD
   // =========================================================================
-  // Структура графа: SOURCE → (connection) → BREAKER → ... → LOAD
-  // sourceId = вышестоящий элемент, targetId = нижестоящий элемент
-  // Для обхода ВВЕРХ нужно использовать incomingConnections (где элемент = target)
-  // и получать sourceId этой связи (родительский элемент)
+  // Глубина = минимальное количество связей до ближайшей нагрузки
+  // LOAD = глубина 0, элемент над LOAD = глубина 1, и т.д.
+  
+  const depthMap = new Map<string, number>();
+  const queue: { id: string; depth: number }[] = [];
 
-  const visited = new Set<string>();
+  // Начинаем с LOAD (глубина 0)
+  for (const load of loads) {
+    queue.push({ id: load.id, depth: 0 });
+    depthMap.set(load.id, 0);
+  }
 
+  // BFS для вычисления глубин
   while (queue.length > 0) {
-    const currentId = queue.shift()!;
-
-    if (visited.has(currentId)) continue;
-    visited.add(currentId);
-
+    const { id: currentId, depth } = queue.shift()!;
     const currentElement = elementMap.get(currentId);
     if (!currentElement) continue;
 
-    // SOURCE не накапливает мощность
-    if (currentElement.type.toLowerCase() === 'source') continue;
-
-    // Получаем мощность текущего элемента
-    const currentPower = powerMap.get(currentId) || { pInstalled: 0, pCalculated: 0 };
-
-    // Получаем ВХОДЯЩИЕ связи (где currentId является target)
-    // Это связи ОТ вышестоящих элементов К этому элементу
+    // Получаем ВХОДЯЩИЕ связи (от вышестоящих элементов)
     const incoming = incomingConnections.get(currentId) || [];
 
     for (const connId of incoming) {
       const conn = connectionMap.get(connId);
       if (!conn) continue;
 
-      // Проверяем operationalStatus связи
-      if (conn.operationalStatus === 'OFF') continue;
-
-      // Проверяем operationalStatus текущего элемента
-      if (currentElement.operationalStatus === 'OFF') continue;
-
       // sourceId - это вышестоящий (родительский) элемент
       const parentId = conn.sourceId;
+      
+      // SOURCE не учитываем
       const parentElement = elementMap.get(parentId);
-      if (!parentElement) continue;
+      if (!parentElement || parentElement.type.toLowerCase() === 'source') continue;
 
-      // SOURCE не накапливает, пропускаем
-      if (parentElement.type.toLowerCase() === 'source') continue;
-
-      // Добавляем мощность текущего элемента к родительскому
-      if (!powerMap.has(parentId)) {
-        powerMap.set(parentId, { pInstalled: 0, pCalculated: 0 });
-      }
-
-      const parentPower = powerMap.get(parentId)!;
-      parentPower.pInstalled += currentPower.pInstalled;
-      parentPower.pCalculated += currentPower.pCalculated;
-
-      // Добавляем родителя в очередь для дальнейшего распространения
-      if (!visited.has(parentId)) {
-        queue.push(parentId);
+      // Если родитель ещё не имеет глубины или найден более короткий путь
+      if (!depthMap.has(parentId) || depthMap.get(parentId)! > depth + 1) {
+        depthMap.set(parentId, depth + 1);
+        queue.push({ id: parentId, depth: depth + 1 });
       }
     }
   }
 
   // =========================================================================
-  // ШАГ 3: Сохранение в БД
+  // ШАГ 3: Сортировка элементов по глубине (от большего к меньшему)
+  // =========================================================================
+  // Элементы с большей глубиной (ближе к LOAD) обрабатываются первыми
+  // Это гарантирует, что все дети обработаны до родителей
+  
+  const sortedElements = Array.from(depthMap.entries())
+    .filter(([id]) => {
+      const el = elementMap.get(id);
+      return el && el.type.toLowerCase() !== 'load'; // LOAD уже инициализирован
+    })
+    .sort((a, b) => b[1] - a[1]); // Сортировка по убыванию глубины
+
+  // =========================================================================
+  // ШАГ 4: Суммирование мощностей в топологическом порядке
+  // =========================================================================
+  // Для каждого элемента: суммируем мощности всех детей
+  
+  for (const [elementId] of sortedElements) {
+    const element = elementMap.get(elementId);
+    if (!element) continue;
+
+    // Инициализируем мощность элемента
+    if (!powerMap.has(elementId)) {
+      powerMap.set(elementId, { pInstalled: 0, pCalculated: 0 });
+    }
+
+    // Получаем ИСХОДЯЩИЕ связи (к нижестоящим элементам = детям)
+    const outgoing = outgoingConnections.get(elementId) || [];
+
+    for (const connId of outgoing) {
+      const conn = connectionMap.get(connId);
+      if (!conn) continue;
+
+      // Проверяем operationalStatus связи
+      if (conn.operationalStatus === 'OFF') continue;
+
+      const childId = conn.targetId;
+      const childElement = elementMap.get(childId);
+      if (!childElement) continue;
+
+      // Проверяем operationalStatus ребёнка
+      if (childElement.operationalStatus === 'OFF') continue;
+
+      // Получаем мощность ребёнка
+      const childPower = powerMap.get(childId);
+      if (!childPower) continue;
+
+      // Добавляем мощность ребёнка к текущему элементу
+      const currentPower = powerMap.get(elementId)!;
+      currentPower.pInstalled += childPower.pInstalled;
+      currentPower.pCalculated += childPower.pCalculated;
+    }
+  }
+
+  // =========================================================================
+  // ШАГ 5: Сохранение в БД
   // =========================================================================
   let elementsUpdated = 0;
 

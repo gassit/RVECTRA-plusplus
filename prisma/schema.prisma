@@ -145,11 +145,10 @@ model Element {
   posY                                    Float?
   electricalStatus                        String       @default("DEAD")
   operationalStatus                       String       @default("ON")
-  // Суммарные мощности нагрузок ниже по дереву
-  sumPInstalled                           Float?       // Σ Pуст (кВт)
-  sumPCalculated                          Float?       // Σ Pрасч = Σ(Pуст × Ки) (кВт)
   createdAt                               DateTime     @default(now())
   updatedAt                               DateTime
+  sumPCalculated                          Float?
+  sumPInstalled                           Float?
   Connection_Connection_sourceIdToElement Connection[] @relation("Connection_sourceIdToElement")
   Connection_Connection_targetIdToElement Connection[] @relation("Connection_targetIdToElement")
   DeviceSlot                              DeviceSlot[]
@@ -223,17 +222,17 @@ model AVRSwitchover {
 }
 
 model Load {
-  id              String   @id
-  deviceId        String   @unique
-  name            String
-  powerP          Float    // Установленная мощность Pуст (кВт)
-  powerQ          Float?
-  cosPhi          Float    @default(0.9)
-  usageFactor     Float    @default(0.7)  // Коэффициент использования Ки
-  category        Int      @default(3)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime
-  Device          Device   @relation(fields: [deviceId], references: [id])
+  id          String   @id
+  deviceId    String   @unique
+  name        String
+  powerP      Float
+  powerQ      Float?
+  cosPhi      Float    @default(0.9)
+  usageFactor Float    @default(0.7)
+  category    Int      @default(3)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  Device      Device   @relation(fields: [deviceId], references: [id])
 }
 
 model Meter {

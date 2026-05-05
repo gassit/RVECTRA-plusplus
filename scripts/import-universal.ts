@@ -527,7 +527,7 @@ function detectExcelFormat(rawData: Record<string, unknown>[]): ExcelFormat {
     // Power
     powerCol: findCol([/^мощность\s*\(квт\)/i, /^мощность$/i, /^power$/i, /^p_?квт$/i, /^s_?ква$/i]),
     // Usage factor (Ки) - коэффициент использования
-    usageFactorCol: findCol([/^к[иі]$/i, /^коэф.*использов/i, /^usage\s*factor$/i]),
+    usageFactorCol: findCol([/(^|[^а-яё])к[иі]($|[^а-яё])/i, /коэф.*использов/i, /usage\s*factor/i]),
     // Location
     locationCol: findCol([/^location$/i, /^расположе/i, /^место$/i, /^помещение$/i]),
     // Parent
@@ -780,7 +780,7 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   const sheetName = options.sheetName || 
     (workbook.SheetNames.includes('Networkall') ? 'Networkall' : workbook.SheetNames[0]);
   const sheet = workbook.Sheets[sheetName];
-  const rawData = xlsx.utils.sheet_to_json<Record<string, unknown>>(sheet);
+  const rawData = xlsx.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
   console.log(`📄 Лист "${sheetName}": ${rawData.length} строк`);
 
   if (rawData.length === 0) {

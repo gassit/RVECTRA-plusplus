@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateId, generateUUID } from '@/lib/utils/id-generator';
 import { propagateFromElement, propagateStates } from '@/lib/propagate';
+import { calculatePower } from '@/lib/power';
 
 // ============================================================================
 // ТИПЫ
@@ -315,6 +316,20 @@ export async function PUT(request: NextRequest) {
       await propagateStates();
     }
 
+    // =========================================================================
+    // АВТОМАТИЧЕСКИЙ РАСЧЁТ МОЩНОСТИ
+    // =========================================================================
+    // Если элемент типа LOAD и изменились параметры мощности - пересчитываем
+    const needsPowerRecalc = updateData.powerP !== undefined ||
+                              updateData.usageFactor !== undefined ||
+                              updateData.powerQ !== undefined ||
+                              updateData.cosPhi !== undefined;
+
+    if (existingElement?.type?.toUpperCase() === 'LOAD' && needsPowerRecalc) {
+      console.log(`Load parameters changed for element ${id}, recalculating power...`);
+      await calculatePower();
+    }
+
     return NextResponse.json({
       success: true,
       data: element,
@@ -403,6 +418,9 @@ export async function DELETE(request: NextRequest) {
     // =========================================================================
     // После удаления элемента пересчитываем статусы
     await propagateStates();
+
+    // После удаления нагрузки пересчитываем мощности
+    await calculatePower();
 
     return NextResponse.json({
       success: true,

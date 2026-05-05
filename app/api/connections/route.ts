@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma';
 import { generateId, generateUUID } from '@/lib/utils/id-generator';
 import { calculateVoltageDropAuto } from '@/lib/calculations/voltageDrop';
 import { propagateFromConnection, propagateFromElement, propagateStates } from '@/lib/propagate';
+import { calculatePower } from '@/lib/power';
 
 // ============================================================================
 // ТИПЫ
@@ -363,6 +364,9 @@ export async function DELETE(request: NextRequest) {
     // =========================================================================
     // После удаления связи - пересчитываем статус для бывшего target элемента
     await propagateFromElement(targetId);
+
+    // После удаления связи пересчитываем мощности
+    await calculatePower();
 
     return NextResponse.json({
       success: true,

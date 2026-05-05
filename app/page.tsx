@@ -243,7 +243,10 @@ export default function Home() {
       if (response.ok && result.success) {
         setShowAddElementModal(false);
         setSelectedElementType(null);
+        // Сначала обновляем данные, затем пересчитываем мощности
         await refreshData();
+        await fetch('/api/power', { method: 'POST' });
+        await refreshData(false); // Обновляем данные после расчёта мощностей
       } else {
         alert(result.error || 'Ошибка при создании элемента');
       }
@@ -280,7 +283,10 @@ export default function Home() {
         setConnectionMode(false);
         setConnectionSource(null);
         setConnectionTarget(null);
+        // Обновляем данные, пересчитываем мощности, снова обновляем
         await refreshData();
+        await fetch('/api/power', { method: 'POST' });
+        await refreshData(false);
       } else {
         alert(result.error || 'Ошибка при создании связи');
       }

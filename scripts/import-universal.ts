@@ -295,8 +295,8 @@ function detectElementType(name: string): string {
   if (/^(\d*)qs[\d\.\s]/i.test(name) || /^(\d*)qs$/i.test(name)) return 'breaker';
   // FU - предохранитель
   if (/^(\d*)fu[\d\.\s]/i.test(name) || /^(\d*)fu$/i.test(name)) return 'breaker';
-  // KM - контактор
-  if (/^(\d*)km[\d\.\s]/i.test(name) || /^(\d*)km$/i.test(name)) return 'breaker';
+  // KM/КМ - контактор (латиница и кириллица)
+  if (/^(\d*)[kк][mм][\d\.\s]/i.test(name) || /^(\d*)[kк][mм]$/i.test(name)) return 'breaker';
   // KA, KV, SA - реле и переключатели
   if (/^(\d*)ka[\d\.\s]/i.test(name) || /^(\d*)ka$/i.test(name)) return 'breaker';
   if (/^(\d*)kv[\d\.\s]/i.test(name) || /^(\d*)kv$/i.test(name)) return 'breaker';

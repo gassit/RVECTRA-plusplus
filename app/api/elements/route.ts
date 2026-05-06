@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateId, generateUUID } from '@/lib/utils/id-generator';
 import { propagateFromElement, propagateStates } from '@/lib/propagate';
+import { calculatePower } from '@/lib/power';
 
 // ============================================================================
 // ТИПЫ
@@ -27,6 +28,7 @@ interface CreateElementRequest {
   pKw?: number;
   qKvar?: number;
   cosPhi?: number;
+  usageFactor?: number;  // Коэффициент использования (Ки)
   voltageNom?: number;
   // Для Breaker
   breakerType?: 'MCB' | 'MCCB' | 'RCD' | 'RCBO';
@@ -103,6 +105,7 @@ export async function POST(request: NextRequest) {
       pKw,
       qKvar,
       cosPhi,
+      usageFactor,
       voltageNom,
       breakerType,
       breakingCapacity,
@@ -181,6 +184,7 @@ export async function POST(request: NextRequest) {
               powerP: pKw || 0,
               powerQ: qKvar || 0,
               cosPhi: cosPhi || 0.92,
+              usageFactor: usageFactor || 0.8,  // Ки по умолчанию 0.8
               updatedAt: new Date(),
             },
           });
@@ -312,6 +316,20 @@ export async function PUT(request: NextRequest) {
       await propagateStates();
     }
 
+    // =========================================================================
+    // АВТОМАТИЧЕСКИЙ РАСЧЁТ МОЩНОСТИ
+    // =========================================================================
+    // Если элемент типа LOAD и изменились параметры мощности - пересчитываем
+    const needsPowerRecalc = updateData.powerP !== undefined ||
+                              updateData.usageFactor !== undefined ||
+                              updateData.powerQ !== undefined ||
+                              updateData.cosPhi !== undefined;
+
+    if (existingElement?.type?.toUpperCase() === 'LOAD' && needsPowerRecalc) {
+      console.log(`Load parameters changed for element ${id}, recalculating power...`);
+      await calculatePower();
+    }
+
     return NextResponse.json({
       success: true,
       data: element,
@@ -400,6 +418,9 @@ export async function DELETE(request: NextRequest) {
     // =========================================================================
     // После удаления элемента пересчитываем статусы
     await propagateStates();
+
+    // После удаления нагрузки пересчитываем мощности
+    await calculatePower();
 
     return NextResponse.json({
       success: true,

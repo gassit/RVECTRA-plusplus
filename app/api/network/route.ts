@@ -16,6 +16,8 @@ export async function GET() {
         voltageLevel: true,
         electricalStatus: true,
         operationalStatus: true,
+        sumPInstalled: true,
+        sumPCalculated: true,
         DeviceSlot: {
           include: {
             Device: {

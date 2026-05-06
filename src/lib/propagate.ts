@@ -32,6 +32,8 @@
  */
 
 import { prisma } from './prisma';
+import { calculatePower } from './power';
+import { calculateVoltageDropAll } from './voltageDropCalc';
 
 export type ElectricalStatus = 'LIVE' | 'DEAD';
 export type OperationalStatus = 'ON' | 'OFF';
@@ -233,6 +235,18 @@ export async function propagateStates(): Promise<PropagationResult> {
   const liveElements = Array.from(electricalStatusMap.values()).filter(s => s === 'LIVE').length;
   const offElements = Array.from(operationalStatusMap.values()).filter(s => s === 'OFF').length;
   const liveConnections = Array.from(connectionElectricalMap.values()).filter(s => s === 'LIVE').length;
+
+  // =========================================================================
+  // ШАГ 5: Расчёт мощностей
+  // =========================================================================
+  // Расчёт мощностей вызывается отдельно через API /api/power
+  // чтобы не вызывать ре-рендер при каждом изменении статуса
+
+  // =========================================================================
+  // ШАГ 6: Расчёт потерь напряжения
+  // =========================================================================
+  // Расчёт ΔU вызывается отдельно через API /api/power
+  // чтобы не вызывать ре-рендер при каждом изменении статуса
 
   return {
     elementsUpdated,

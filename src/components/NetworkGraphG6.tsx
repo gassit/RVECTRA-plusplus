@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Graph } from '@antv/g6';
-import { performElkLayout } from '@/lib/elk-layout';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
 
 interface NetworkGraphG6Props {
@@ -196,8 +195,18 @@ export default function NetworkGraphG6({
           updateEdge: true,
         },
       ],
-      // Layout отключен - ELK управляет позициями напрямую
-      // Позиции передаются через node.x и node.y из performElkLayout
+      // Dagre layout - иерархический с увеличенными отступами
+      layout: {
+        type: 'dagre',
+        rankdir: 'TB',
+        nodesep: 100,
+        ranksep: 150,
+        preventOverlap: true,
+        nodeSize: [180, 100],
+        sortByCombo: false,
+        ranker: 'network-simplex',
+        animate: false,
+      },
       node: {
         type: 'rect',
         style: {
@@ -288,7 +297,6 @@ export default function NetworkGraphG6({
       },
       edge: {
         // Полилинии с ортогональной маршрутизацией (углы 90°)
-        // ELK предоставляет controlPoints для обхода препятствий
         type: 'polyline',
         style: {
           stroke: (d: any) => {
@@ -301,9 +309,6 @@ export default function NetworkGraphG6({
           radius: 8,
           // Смещение для параллельных рёбер (чтобы не сливались)
           offset: 25,
-          // ControlPoints от ELK для обхода препятствий
-          // Если есть controlPoints - используем их для маршрутизации
-          controlPoints: (d: any) => d.data?.controlPoints || undefined,
           // Точки привязки: source = нижний (индекс 1), target = верхний (индекс 0)
           sourceAnchor: 1,  // нижний центр source
           targetAnchor: 0,  // верхний центр target
@@ -686,87 +691,17 @@ export default function NetworkGraphG6({
         data: combo.data,
       })) || [];
 
-      // Проверяем, нужен ли ELK layout
-      const nodesWithPositions = nodes.filter(n => n.data?.posX != null && n.data?.posY != null).length;
-      const needsElkLayout = nodes.length > 0 && nodesWithPositions < nodes.length / 2;
-
-      // Функция для применения ELK layout
-      const applyElkLayout = async () => {
-        if (!needsElkLayout) return { nodes, edges };
-        
-        console.log('[ELK] Starting layout for', nodes.length, 'nodes,', edges.length, 'edges');
-        
-        // Подготавливаем данные для ELK
-        const elkNodes = nodes.map(n => ({
-          id: n.id,
-          type: n.data?.type,
-          size: n.data?.type === 'cabinet' ? [180, 40] as [number, number] : [160, 80] as [number, number]
-        }));
-        
-        const elkEdges = edges.map(e => ({
-          id: e.id,
-          source: e.source,
-          target: e.target
-        }));
-        
-        const layoutResult = await performElkLayout(elkNodes, elkEdges);
-        
-        if (!layoutResult) {
-          console.warn('[ELK] Layout failed, using fallback');
-          return { nodes, edges };
-        }
-        
-        // Применяем позиции к узлам
-        const layoutedNodes = nodes.map(node => {
-          const position = layoutResult.nodes.get(node.id);
-          if (position) {
-            return {
-              ...node,
-              x: position.x,
-              y: position.y
-            };
-          }
-          return node;
-        });
-        
-        // Применяем controlPoints к рёбрам
-        const layoutedEdges = edges.map(edge => {
-          const route = layoutResult.edges.get(edge.id);
-          if (route && route.points.length >= 2) {
-            return {
-              ...edge,
-              data: {
-                ...edge.data,
-                controlPoints: route.points
-              }
-            };
-          }
-          return edge;
-        });
-        
-        console.log('[ELK] Layout applied:', layoutResult.nodes.size, 'positions,', layoutResult.edges.size, 'routes');
-        
-        return { nodes: layoutedNodes, edges: layoutedEdges };
-      };
-
       // Первый рендер
       if (!(graph as any).rendered) {
         if ((graph as any).destroyed) return;
-        
-        // Применяем ELK layout если нужен
-        applyElkLayout().then(({ nodes: layoutedNodes, edges: layoutedEdges }) => {
-          if ((graph as any).destroyed || !mountedRef.current) return;
-          
-          try {
-            graph.setData({ nodes: layoutedNodes, edges: layoutedEdges as any, combos });
-            graph.render();
-            (graph as any).rendered = true;
-            console.log('[G6] First render complete with ELK layout');
-          } catch (renderError) {
-            console.warn('Render error:', renderError);
-          }
-        });
-        
+        try {
+          graph.setData({ nodes, edges: edges as any, combos });
+          graph.render();
+          (graph as any).rendered = true;
+        } catch (renderError) {
+          console.warn('Render error:', renderError);
+          return;
+        }
         prevDataRef.current = {
           nodeIds: new Set(nodes.map(n => n.id)),
           edgeIds: new Set(edges.map(e => e.id)),
@@ -790,7 +725,11 @@ export default function NetworkGraphG6({
         const totalChanges = addedNodes.length + removedNodeIds.length + addedEdges.length + removedEdgeIds.length;
         const totalElements = nodes.length + edges.length;
 
-        if (totalChanges <= 5 && totalElements > 20 && !needsElkLayout) {
+        // Проверяем, есть ли у узлов позиции
+        const nodesWithPositions = nodes.filter(n => n.data?.posX != null && n.data?.posY != null).length;
+        const needsLayout = nodes.length > 0 && nodesWithPositions < nodes.length / 2;
+
+        if (totalChanges <= 5 && totalElements > 20 && !needsLayout) {
           // Инкрементальное обновление без перерисовки layout
           if (removedNodeIds.length > 0) {
             graph.removeData({ nodes: removedNodeIds });
@@ -804,29 +743,30 @@ export default function NetworkGraphG6({
               edges: addedEdges as any,
             });
           }
-          // Обновляем данные существующих элементов без пересчёта layout
           graph.setData({ nodes, edges: edges as any, combos });
         } else {
-          // Много изменений - полный обновление с ELK layout
+          // Много изменений - полный обновление с layout
           if ((graph as any).destroyed) return;
-          
-          applyElkLayout().then(({ nodes: layoutedNodes, edges: layoutedEdges }) => {
-            if ((graph as any).destroyed || !mountedRef.current) return;
-            
-            graph.setData({ nodes: layoutedNodes, edges: layoutedEdges as any, combos });
-            console.log('[G6] Data updated with ELK layout');
-          });
+          graph.setData({ nodes, edges: edges as any, combos });
+          if (mountedRef.current && !(graph as any).destroyed && typeof graph.layout === 'function') {
+            graph.layout().catch((e: any) => {
+              if (mountedRef.current && !(graph as any).destroyed) {
+                console.warn('Layout error:', e?.message || e);
+              }
+            });
+          }
         }
       } else {
-        // Нет предыдущих данных - полный рендер с ELK layout
+        // Нет предыдущих данных - полный рендер
         if ((graph as any).destroyed) return;
-        
-        applyElkLayout().then(({ nodes: layoutedNodes, edges: layoutedEdges }) => {
-          if ((graph as any).destroyed || !mountedRef.current) return;
-          
-          graph.setData({ nodes: layoutedNodes, edges: layoutedEdges as any, combos });
-          console.log('[G6] Full render with ELK layout');
-        });
+        graph.setData({ nodes, edges: edges as any, combos });
+        if (mountedRef.current && !(graph as any).destroyed && typeof graph.layout === 'function') {
+          graph.layout().catch((e: any) => {
+            if (mountedRef.current && !(graph as any).destroyed) {
+              console.warn('Layout error:', e?.message || e);
+            }
+          });
+        }
       }
 
       prevDataRef.current = {

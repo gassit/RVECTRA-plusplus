@@ -303,14 +303,6 @@ export default function NetworkGraphG6({
         // Полилинии с ортогональной маршрутизацией (углы 90°)
         type: 'polyline',
         style: {
-          // Используем controlPoints из ELK если есть, иначе G6 строит автоматически
-          controlPoints: (d: any) => {
-            const cp = d.data?.controlPoints;
-            if (cp && Array.isArray(cp) && cp.length >= 2) {
-              return cp;
-            }
-            return undefined; // G6 построит маршрут автоматически
-          },
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
             return lifeStatus === 'LIVE' ? '#22c55e' : '#94a3b8';
@@ -690,12 +682,26 @@ export default function NetworkGraphG6({
         return nodeData;
       });
 
-      const edges = data.edges.map(edge => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        data: edge as any,
-      }));
+      // Создаём Set существующих ID узлов для валидации рёбер
+      const nodeIds = new Set(data.nodes.map(n => n.id));
+      
+      // Фильтруем рёбра - оставляем только те, у которых source и target существуют
+      const edges = data.edges
+        .filter(edge => {
+          const sourceExists = nodeIds.has(edge.source);
+          const targetExists = nodeIds.has(edge.target);
+          if (!sourceExists || !targetExists) {
+            console.warn(`[G6] Filtering edge ${edge.id}: missing node(s)`);
+            return false;
+          }
+          return true;
+        })
+        .map(edge => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          data: edge as any,
+        }));
 
       // Преобразуем combos если есть
       const combos = data.combos?.map(combo => ({
@@ -805,7 +811,20 @@ export default function NetworkGraphG6({
     // Функция для применения ELK layout
     const applyElk = async () => {
       try {
-        console.log('[ELK] Starting layout for', data.nodes.length, 'nodes,', data.edges.length, 'edges');
+        // Создаём Set существующих ID узлов для валидации
+        const nodeIds = new Set(data.nodes.map(n => n.id));
+        
+        // Фильтруем только валидные рёбра
+        const validEdges = data.edges.filter(edge => 
+          nodeIds.has(edge.source) && nodeIds.has(edge.target)
+        );
+        
+        if (validEdges.length === 0) {
+          console.log('[ELK] No valid edges to layout');
+          return;
+        }
+        
+        console.log('[ELK] Starting layout for', data.nodes.length, 'nodes,', validEdges.length, 'valid edges');
         
         // Подготавливаем данные для ELK
         const elkNodes = data.nodes.map(node => ({
@@ -814,7 +833,7 @@ export default function NetworkGraphG6({
           size: [160, 80] as [number, number],
         }));
         
-        const elkEdges = data.edges.map(edge => ({
+        const elkEdges = validEdges.map(edge => ({
           id: edge.id,
           source: edge.source,
           target: edge.target,
@@ -834,48 +853,50 @@ export default function NetworkGraphG6({
           return;
         }
 
-        console.log('[ELK] Layout complete, applying controlPoints to', layoutResult.edges.size, 'edges');
+        console.log('[ELK] Layout complete, got', layoutResult.edges.size, 'edge routes');
 
-        // Обновляем рёбра с controlPoints
-        const edgesWithControlPoints = data.edges.map(edge => {
-          const route = layoutResult.edges.get(edge.id);
-          if (route && route.points.length >= 2) {
-            return {
-              id: edge.id,
-              source: edge.source,
-              target: edge.target,
-              data: {
-                ...edge,
-                controlPoints: route.points,
-              },
-            };
+        // Получаем текущие данные графа и обновляем только рёбра с controlPoints
+        try {
+          const currentData = graph.getData();
+          if (!currentData || !currentData.edges) {
+            console.log('[ELK] No current graph data');
+            return;
           }
-          return {
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            data: edge,
-          };
-        });
-
-        // Применяем обновлённые данные к графу
-        if (!(graph as any).destroyed && mountedRef.current) {
-          (graph as any).setData({
-            nodes: data.nodes.map(node => ({
-              id: node.id,
-              data: node,
-            })),
-            edges: edgesWithControlPoints,
+          
+          // Обновляем только те рёбра, для которых есть controlPoints
+          const updatedEdges = (currentData.edges as any[]).map(edge => {
+            const route = layoutResult.edges.get(edge.id);
+            if (route && route.points && Array.isArray(route.points) && route.points.length >= 2) {
+              return {
+                ...edge,
+                data: {
+                  ...(edge.data || {}),
+                  controlPoints: route.points,
+                },
+              };
+            }
+            return edge;
           });
-          console.log('[ELK] Applied controlPoints to graph');
+
+          // Применяем только обновлённые рёбра
+          if (!(graph as any).destroyed && mountedRef.current) {
+            (graph as any).setData({
+              nodes: currentData.nodes,
+              edges: updatedEdges,
+              combos: currentData.combos,
+            });
+            console.log('[ELK] Applied controlPoints to', layoutResult.edges.size, 'edges');
+          }
+        } catch (dataError) {
+          console.warn('[ELK] Error updating graph data:', dataError);
         }
       } catch (error) {
         console.error('[ELK] Error during layout:', error);
       }
     };
 
-    // Выполняем ELK layout с небольшой задержкой после основного layout
-    const timeoutId = setTimeout(applyElk, 500);
+    // Выполняем ELK layout с задержкой после основного layout
+    const timeoutId = setTimeout(applyElk, 800);
     
     return () => {
       clearTimeout(timeoutId);

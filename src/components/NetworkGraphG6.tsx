@@ -303,11 +303,6 @@ export default function NetworkGraphG6({
         // Полилинии с ортогональной маршрутизацией (углы 90°)
         type: 'polyline',
         style: {
-          // Router для использования controlPoints из ELK
-          router: {
-            type: 'orth',
-            padding: 20,
-          },
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
             return lifeStatus === 'LIVE' ? '#22c55e' : '#94a3b8';

@@ -218,38 +218,80 @@ export default function NetworkGraphG6({
         style: {
           size: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
+            // Если размер задан в style (от ELK), используем его
+            if (d.style?.size) {
+              return d.style.size;
+            }
+            // Стандартные размеры по типу
             if (nodeType === 'cabinet') {
               return [180, 40];
             }
+            if (nodeType === 'bus') {
+              return [200, 40]; // Базовый размер BUS, ELK может увеличить
+            }
             return [160, 80];
           },
-          radius: 6,
-          fill: '#ffffff',
+          radius: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            // BUS - без скругления для инженерного вида
+            return nodeType === 'bus' ? 0 : 6;
+          },
+          fill: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            // BUS - медный цвет заливки
+            if (nodeType === 'bus') {
+              return 'linear-gradient(90deg, #B87333 0%, #CD7F32 50%, #B87333 100%)';
+            }
+            return '#ffffff';
+          },
           stroke: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
             const hasCritical = d.data?.criticalIssues > 0;
             if (hasCritical) return '#ef4444';
             return TYPE_COLORS[nodeType]?.primary || '#e2e8f0';
           },
-          lineWidth: 2,
+          lineWidth: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            // BUS - более толстая линия
+            return nodeType === 'bus' ? 4 : 2;
+          },
           shadowColor: 'rgba(0, 0, 0, 0.15)',
           shadowBlur: 10,
           shadowOffsetX: 0,
           shadowOffsetY: 4,
           cursor: 'pointer',
           // Точки привязки для рёбер - строго верх/низ для вертикальных линий
-          anchorPoints: [
-            [0.5, 0],   // индекс 0: верхний центр (вход от источника)
-            [0.5, 1],   // индекс 1: нижний центр (выход к нагрузке)
-          ],
+          // Для BUS - множественные точки привязки
+          anchorPoints: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            if (nodeType === 'bus') {
+              // Для BUS - динамические anchor points на основе количества подключений
+              // ELK вычислит позиции портов
+              return [
+                [0.5, 0],   // верхний центр (вход)
+                [0.5, 1],   // нижний центр (выход)
+              ];
+            }
+            return [
+              [0.5, 0],   // индекс 0: верхний центр (вход от источника)
+              [0.5, 1],   // индекс 1: нижний центр (выход к нагрузке)
+            ];
+          },
           // Порты для строгого вертикального подключения
-          port: true,
+          port: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            return nodeType !== 'bus'; // BUS не показывает порты визуально
+          },
           portR: 4,               // Радиус порта
           portLinkToCenter: true, // Соединять с центром узла
           // Основной текст - название
           labelText: (d: any) => {
             const name = d.data?.name || d.id;
             const nodeType = (d.data?.type || 'load').toLowerCase();
+            if (nodeType === 'bus') {
+              // BUS - название сбоку или не отображается
+              return '';
+            }
             if (nodeType === 'cabinet') {
               return name.length > 14 ? name.slice(0, 14) + '...' : name;
             }
@@ -857,15 +899,34 @@ export default function NetworkGraphG6({
           return;
         }
 
-        console.log('[ELK] Layout complete, got', layoutResult.edges.size, 'edge routes');
+        console.log('[ELK] Layout complete, got', layoutResult.edges.size, 'edge routes,', layoutResult.nodes.size, 'node positions');
 
-        // Получаем текущие данные графа и обновляем только рёбра с controlPoints
+        // Получаем текущие данные графа и обновляем рёбра с controlPoints и размеры BUS
         try {
           const currentData = graph.getData();
           if (!currentData || !currentData.edges) {
             console.log('[ELK] No current graph data');
             return;
           }
+          
+          // Обновляем узлы - для BUS применяем вычисленные ELK размеры
+          const updatedNodes = (currentData.nodes as any[]).map(node => {
+            const nodePos = layoutResult.nodes.get(node.id);
+            const isBus = node.data?.type?.toLowerCase() === 'bus';
+            
+            if (nodePos && isBus && nodePos.width) {
+              // BUS узел - применяем вычисленный размер
+              console.log(`[ELK] BUS ${node.id} size: ${nodePos.width}x${nodePos.height || 40}`);
+              return {
+                ...node,
+                style: {
+                  ...(node.style || {}),
+                  size: [nodePos.width, nodePos.height || 40],
+                },
+              };
+            }
+            return node;
+          });
           
           // Обновляем только те рёбра, для которых есть controlPoints
           // ВАЖНО: controlPoints должны быть в style, не в data!
@@ -883,14 +944,14 @@ export default function NetworkGraphG6({
             return edge;
           });
 
-          // Применяем только обновлённые рёбра
+          // Применяем обновлённые узлы и рёбра
           if (!(graph as any).destroyed && mountedRef.current) {
             (graph as any).setData({
-              nodes: currentData.nodes,
+              nodes: updatedNodes,
               edges: updatedEdges,
               combos: currentData.combos,
             });
-            console.log('[ELK] Applied controlPoints to', layoutResult.edges.size, 'edges');
+            console.log('[ELK] Applied controlPoints to', layoutResult.edges.size, 'edges, updated BUS sizes');
           }
         } catch (dataError) {
           console.warn('[ELK] Error updating graph data:', dataError);

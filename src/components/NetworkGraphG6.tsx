@@ -203,10 +203,10 @@ export default function NetworkGraphG6({
       layout: {
         type: 'antv-dagre',
         rankdir: 'TB',           // Сверху вниз (ток от источника к нагрузке)
-        nodesep: 80,             // Расстояние между узлами на одном уровне
-        ranksep: 120,            // Расстояние между уровнями (слоями)
+        nodesep: 120,            // Расстояние между узлами на одном уровне - увеличено
+        ranksep: 150,            // Расстояние между уровнями (слоями)
         preventOverlap: true,    // Предотвращать перекрытие
-        nodeSize: [160, 80],
+        nodeSize: [200, 100],    // Увеличено для учёта cabinet и bus
         sortByCombo: false,
         ranker: 'network-simplex', // Оптимальное размещение
         animate: false,
@@ -732,6 +732,13 @@ export default function NetworkGraphG6({
           };
           nodeData.data.calculatedWidth = busWidth;
           nodeData.data.calculatedHeight = 40;
+        }
+        
+        // Для CABINET задаём размер (шире обычных узлов)
+        if (nodeType === 'cabinet') {
+          nodeData.style = {
+            size: [180, 50],
+          };
         }
         
         // Фиксируем source узлы (источники питания) вверху схемы

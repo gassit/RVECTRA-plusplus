@@ -303,6 +303,11 @@ export default function NetworkGraphG6({
         // Полилинии с ортогональной маршрутизацией (углы 90°)
         type: 'polyline',
         style: {
+          // Router для использования controlPoints из ELK
+          router: {
+            type: 'orth',
+            padding: 20,
+          },
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
             return lifeStatus === 'LIVE' ? '#22c55e' : '#94a3b8';
@@ -864,13 +869,14 @@ export default function NetworkGraphG6({
           }
           
           // Обновляем только те рёбра, для которых есть controlPoints
+          // ВАЖНО: controlPoints должны быть в style, не в data!
           const updatedEdges = (currentData.edges as any[]).map(edge => {
             const route = layoutResult.edges.get(edge.id);
             if (route && route.points && Array.isArray(route.points) && route.points.length >= 2) {
               return {
                 ...edge,
-                data: {
-                  ...(edge.data || {}),
+                style: {
+                  ...(edge.style || {}),
                   controlPoints: route.points,
                 },
               };

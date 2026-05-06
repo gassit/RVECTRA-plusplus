@@ -216,21 +216,8 @@ export default function NetworkGraphG6({
       node: {
         type: 'rect',
         style: {
-          size: (d: any) => {
-            const nodeType = (d.data?.type || 'load').toLowerCase();
-            // Если ELK вычислил размер для BUS - используем его
-            if (nodeType === 'bus' && d.data?.calculatedWidth) {
-              return [d.data.calculatedWidth, d.data.calculatedHeight || 40];
-            }
-            // Стандартные размеры по типу
-            if (nodeType === 'cabinet') {
-              return [180, 40];
-            }
-            if (nodeType === 'bus') {
-              return [200, 40]; // Базовый размер BUS, ELK может увеличить
-            }
-            return [160, 80];
-          },
+          // Размер читается из style.size (задаётся при создании узла)
+          // или используется стандартный
           radius: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
             // BUS - без скругления для инженерного вида
@@ -238,9 +225,9 @@ export default function NetworkGraphG6({
           },
           fill: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            // BUS - медный цвет заливки
+            // BUS - простая медная заливка без градиента
             if (nodeType === 'bus') {
-              return 'linear-gradient(90deg, #B87333 0%, #CD7F32 50%, #B87333 100%)';
+              return '#CD7F32';
             }
             return '#ffffff';
           },
@@ -248,40 +235,35 @@ export default function NetworkGraphG6({
             const nodeType = (d.data?.type || 'load').toLowerCase();
             const hasCritical = d.data?.criticalIssues > 0;
             if (hasCritical) return '#ef4444';
+            // BUS - без дополнительной обводки (тот же цвет что и заливка)
+            if (nodeType === 'bus') {
+              return '#8B5A2B'; // тёмно-коричневый для контура
+            }
             return TYPE_COLORS[nodeType]?.primary || '#e2e8f0';
           },
           lineWidth: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            // BUS - более толстая линия
-            return nodeType === 'bus' ? 4 : 2;
+            // BUS - толстая линия
+            return nodeType === 'bus' ? 3 : 2;
           },
-          shadowColor: 'rgba(0, 0, 0, 0.15)',
-          shadowBlur: 10,
+          shadowColor: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            // BUS - без тени
+            return nodeType === 'bus' ? 'transparent' : 'rgba(0, 0, 0, 0.15)';
+          },
+          shadowBlur: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            return nodeType === 'bus' ? 0 : 10;
+          },
           shadowOffsetX: 0,
           shadowOffsetY: 4,
           cursor: 'pointer',
           // Точки привязки для рёбер - строго верх/низ для вертикальных линий
-          // Для BUS - множественные точки привязки
-          anchorPoints: (d: any) => {
-            const nodeType = (d.data?.type || 'load').toLowerCase();
-            if (nodeType === 'bus') {
-              // Для BUS - динамические anchor points на основе количества подключений
-              // ELK вычислит позиции портов
-              return [
-                [0.5, 0],   // верхний центр (вход)
-                [0.5, 1],   // нижний центр (выход)
-              ];
-            }
-            return [
-              [0.5, 0],   // индекс 0: верхний центр (вход от источника)
-              [0.5, 1],   // индекс 1: нижний центр (выход к нагрузке)
-            ];
-          },
+          anchorPoints: [
+            [0.5, 0],   // индекс 0: верхний центр (вход от источника)
+            [0.5, 1],   // индекс 1: нижний центр (выход к нагрузке)
+          ],
           // Порты для строгого вертикального подключения
-          port: (d: any) => {
-            const nodeType = (d.data?.type || 'load').toLowerCase();
-            return nodeType !== 'bus'; // BUS не показывает порты визуально
-          },
           portR: 4,               // Радиус порта
           portLinkToCenter: true, // Соединять с центром узла
           // Основной текст - название
@@ -708,17 +690,49 @@ export default function NetworkGraphG6({
     if ((graph as any).destroyed) return;
 
     try {
+      // Вычисляем количество подключений для каждого узла (для определения размера BUS)
+      const incomingCount = new Map<string, number>();
+      const outgoingCount = new Map<string, number>();
+      data.nodes.forEach(n => {
+        incomingCount.set(n.id, 0);
+        outgoingCount.set(n.id, 0);
+      });
+      data.edges.forEach(edge => {
+        if (incomingCount.has(edge.target)) {
+          incomingCount.set(edge.target, (incomingCount.get(edge.target) || 0) + 1);
+        }
+        if (outgoingCount.has(edge.source)) {
+          outgoingCount.set(edge.source, (outgoingCount.get(edge.source) || 0) + 1);
+        }
+      });
+      
       // Преобразуем данные в формат G6
       // Source узлы фиксируем вверху схемы
       const nodes = data.nodes.map(node => {
+        const nodeType = node.type?.toLowerCase();
         const nodeData: any = {
           id: node.id,
           combo: (node as any).combo || undefined, // Привязка к combo (cabinet)
           data: {
             ...node,
-            type: node.type.toLowerCase(),
+            type: nodeType,
           },
         };
+        
+        // Для BUS вычисляем размер на основе количества подключений
+        if (nodeType === 'bus') {
+          const total = Math.max(
+            incomingCount.get(node.id) || 0,
+            outgoingCount.get(node.id) || 0
+          );
+          const busWidth = Math.max(200, total * 60 + 80);
+          // Задаём размер напрямую в style
+          nodeData.style = {
+            size: [busWidth, 40],
+          };
+          nodeData.data.calculatedWidth = busWidth;
+          nodeData.data.calculatedHeight = 40;
+        }
         
         // Фиксируем source узлы (источники питания) вверху схемы
         if (node.type?.toLowerCase() === 'source') {
@@ -899,9 +913,10 @@ export default function NetworkGraphG6({
           return;
         }
 
-        console.log('[ELK] Layout complete, got', layoutResult.edges.size, 'edge routes,', layoutResult.nodes.size, 'node positions');
+        console.log('[ELK] Layout complete, got', layoutResult.edges.size, 'edge routes');
 
-        // Получаем текущие данные графа и обновляем рёбра с controlPoints и размеры BUS
+        // Получаем текущие данные графа и обновляем только рёбра с controlPoints
+        // Размер BUS уже вычислен при создании узла
         try {
           const currentData = graph.getData();
           if (!currentData || !currentData.edges) {
@@ -909,31 +924,7 @@ export default function NetworkGraphG6({
             return;
           }
           
-          // Обновляем узлы - для BUS применяем вычисленные ELK размеры
-          // ВАЖНО: размер сохраняем в data, а не в style - G6 читает из data
-          const updatedNodes = (currentData.nodes as any[]).map(node => {
-            const nodePos = layoutResult.nodes.get(node.id);
-            const isBus = node.data?.type?.toLowerCase() === 'bus';
-            
-            if (nodePos && isBus && nodePos.width) {
-              // BUS узел - сохраняем вычисленный размер в data
-              const newWidth = nodePos.width;
-              const newHeight = nodePos.height || 40;
-              console.log(`[ELK] BUS ${node.id} size: ${newWidth}x${newHeight}`);
-              return {
-                ...node,
-                data: {
-                  ...node.data,
-                  calculatedWidth: newWidth,
-                  calculatedHeight: newHeight,
-                },
-              };
-            }
-            return node;
-          });
-          
           // Обновляем только те рёбра, для которых есть controlPoints
-          // ВАЖНО: controlPoints должны быть в style, не в data!
           const updatedEdges = (currentData.edges as any[]).map(edge => {
             const route = layoutResult.edges.get(edge.id);
             if (route && route.points && Array.isArray(route.points) && route.points.length >= 2) {
@@ -948,28 +939,14 @@ export default function NetworkGraphG6({
             return edge;
           });
 
-          // Применяем обновлённые узлы и рёбра
+          // Применяем обновлённые рёбра
           if (!(graph as any).destroyed && mountedRef.current) {
-            // Сначала обновляем рёбра
             (graph as any).setData({
               nodes: currentData.nodes,
               edges: updatedEdges,
               combos: currentData.combos,
             });
-            
-            // Затем обновляем узлы с новым размером через updateNodeData
-            // Это заставляет G6 пересчитать размер
-            const busNodes = updatedNodes.filter((n: any) => n.data?.calculatedWidth);
-            const busCount = busNodes.length;
-            if (busCount > 0 && typeof graph.updateNodeData === 'function') {
-              try {
-                graph.updateNodeData(busNodes);
-              } catch (e) {
-                console.warn('[ELK] updateNodeData error:', e);
-              }
-            }
-            
-            console.log('[ELK] Applied controlPoints to', layoutResult.edges.size, 'edges, updated', busCount, 'BUS sizes');
+            console.log('[ELK] Applied controlPoints to', layoutResult.edges.size, 'edges');
           }
         } catch (dataError) {
           console.warn('[ELK] Error updating graph data:', dataError);

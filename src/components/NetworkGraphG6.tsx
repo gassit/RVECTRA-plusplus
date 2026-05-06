@@ -199,17 +199,19 @@ export default function NetworkGraphG6({
           updateEdge: true,
         },
       ],
-      // Dagre layout - иерархический с увеличенными отступами
+      // AntV Dagre layout - оптимизирован для однолинейных электрических схем
       layout: {
-        type: 'dagre',
-        rankdir: 'TB',
-        nodesep: 100,
-        ranksep: 150,
-        preventOverlap: true,
-        nodeSize: [180, 100],
+        type: 'antv-dagre',
+        rankdir: 'TB',           // Сверху вниз (ток от источника к нагрузке)
+        nodesep: 80,             // Расстояние между узлами на одном уровне
+        ranksep: 120,            // Расстояние между уровнями (слоями)
+        preventOverlap: true,    // Предотвращать перекрытие
+        nodeSize: [160, 80],
         sortByCombo: false,
-        ranker: 'network-simplex',
+        ranker: 'network-simplex', // Оптимальное размещение
         animate: false,
+        // Дополнительные опции для разделения узлов
+        alignment: 'UL',         // Выравнивание вверх-влево для стабильности
       },
       node: {
         type: 'rect',
@@ -235,16 +237,15 @@ export default function NetworkGraphG6({
           shadowOffsetX: 0,
           shadowOffsetY: 4,
           cursor: 'pointer',
-          // Точки привязки для рёбер (верх, низ, лево, право)
-          // G6 использует нормализованные координаты [0-1]
+          // Точки привязки для рёбер - строго верх/низ для вертикальных линий
           anchorPoints: [
-            [0.5, 0],   // верхний центр (вход от источника)
-            [0.5, 1],   // нижний центр (выход к нагрузке)
-            [0, 0.5],   // левый центр
-            [1, 0.5],   // правый центр
+            [0.5, 0],   // индекс 0: верхний центр (вход от источника)
+            [0.5, 1],   // индекс 1: нижний центр (выход к нагрузке)
           ],
-          // Порт для подключения рёбер (по умолчанию нижний - выход)
+          // Порты для строгого вертикального подключения
           port: true,
+          portR: 4,               // Радиус порта
+          portLinkToCenter: true, // Соединять с центром узла
           // Основной текст - название
           labelText: (d: any) => {
             const name = d.data?.name || d.id;
@@ -311,11 +312,14 @@ export default function NetworkGraphG6({
           endArrow: false,
           // Ортогональные изгибы с радиусом скругления (плавные углы)
           radius: 8,
-          // Смещение для параллельных рёбер (чтобы не сливались)
-          offset: 25,
+          // Смещение для параллельных рёбер (чтобы не сливались) - увеличено
+          offset: 40,
+          // Смещение для петель (когда source = target)
+          loopOffset: 50,
           // Точки привязки: source = нижний (индекс 1), target = верхний (индекс 0)
-          sourceAnchor: 1,  // нижний центр source
-          targetAnchor: 0,  // верхний центр target
+          // Строго вертикальное подключение для однолинейной схемы
+          sourceAnchor: 1,  // нижний центр source (выход тока)
+          targetAnchor: 0,  // верхний центр target (вход тока)
           opacity: (d: any) => {
             const status = d.data?.status;
             return status === 'OFF' ? 0.4 : 1;

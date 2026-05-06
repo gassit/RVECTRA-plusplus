@@ -363,18 +363,14 @@ export function applyElkLayoutToG6Data(
         ...node,
         x: position.x,
         y: position.y,
-        // Для BUS обновляем размер
-        ...(isBus && position.width && position.height && {
-          style: {
-            ...(node.style || {}),
-            size: [position.width, position.height],
-          },
-        }),
         data: {
           ...node.data,
           elkPositioned: true,
-          // Сохраняем вычисленный размер для BUS
-          ...(isBus && position.width && { calculatedWidth: position.width }),
+          // Сохраняем вычисленный размер для BUS в data (не в style!)
+          ...(isBus && position.width && {
+            calculatedWidth: position.width,
+            calculatedHeight: position.height || 40,
+          }),
         }
       };
     }

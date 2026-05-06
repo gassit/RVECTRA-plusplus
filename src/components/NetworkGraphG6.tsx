@@ -218,9 +218,9 @@ export default function NetworkGraphG6({
         style: {
           size: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            // Если размер задан в style (от ELK), используем его
-            if (d.style?.size) {
-              return d.style.size;
+            // Если ELK вычислил размер для BUS - используем его
+            if (nodeType === 'bus' && d.data?.calculatedWidth) {
+              return [d.data.calculatedWidth, d.data.calculatedHeight || 40];
             }
             // Стандартные размеры по типу
             if (nodeType === 'cabinet') {
@@ -910,18 +910,22 @@ export default function NetworkGraphG6({
           }
           
           // Обновляем узлы - для BUS применяем вычисленные ELK размеры
+          // ВАЖНО: размер сохраняем в data, а не в style - G6 читает из data
           const updatedNodes = (currentData.nodes as any[]).map(node => {
             const nodePos = layoutResult.nodes.get(node.id);
             const isBus = node.data?.type?.toLowerCase() === 'bus';
             
             if (nodePos && isBus && nodePos.width) {
-              // BUS узел - применяем вычисленный размер
-              console.log(`[ELK] BUS ${node.id} size: ${nodePos.width}x${nodePos.height || 40}`);
+              // BUS узел - сохраняем вычисленный размер в data
+              const newWidth = nodePos.width;
+              const newHeight = nodePos.height || 40;
+              console.log(`[ELK] BUS ${node.id} size: ${newWidth}x${newHeight}`);
               return {
                 ...node,
-                style: {
-                  ...(node.style || {}),
-                  size: [nodePos.width, nodePos.height || 40],
+                data: {
+                  ...node.data,
+                  calculatedWidth: newWidth,
+                  calculatedHeight: newHeight,
                 },
               };
             }
@@ -946,12 +950,26 @@ export default function NetworkGraphG6({
 
           // Применяем обновлённые узлы и рёбра
           if (!(graph as any).destroyed && mountedRef.current) {
+            // Сначала обновляем рёбра
             (graph as any).setData({
-              nodes: updatedNodes,
+              nodes: currentData.nodes,
               edges: updatedEdges,
               combos: currentData.combos,
             });
-            console.log('[ELK] Applied controlPoints to', layoutResult.edges.size, 'edges, updated BUS sizes');
+            
+            // Затем обновляем узлы с новым размером через updateNodeData
+            // Это заставляет G6 пересчитать размер
+            const busNodes = updatedNodes.filter((n: any) => n.data?.calculatedWidth);
+            const busCount = busNodes.length;
+            if (busCount > 0 && typeof graph.updateNodeData === 'function') {
+              try {
+                graph.updateNodeData(busNodes);
+              } catch (e) {
+                console.warn('[ELK] updateNodeData error:', e);
+              }
+            }
+            
+            console.log('[ELK] Applied controlPoints to', layoutResult.edges.size, 'edges, updated', busCount, 'BUS sizes');
           }
         } catch (dataError) {
           console.warn('[ELK] Error updating graph data:', dataError);

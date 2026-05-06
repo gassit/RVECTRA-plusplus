@@ -179,27 +179,32 @@ export default function NetworkGraphG6({
           type: 'collapse-expand',
           trigger: 'dblclick',
         },
-        // Drag element - включаем всегда, но управляем через enable
+        // Drag element с динамическим обновлением рёбер
         {
           type: 'drag-element',
           enable: () => editModeRef.current && !connectionModeRef.current,
+          // Обновлять рёбра во время перетаскивания
+          updateEdge: true,
         },
         // Drag combo - перетаскивание групп (cabinets)
         {
           type: 'drag-element',
           enable: (evt: any) => {
-            // Разрешаем drag combo всегда в режиме редактирования
             return editModeRef.current && !connectionModeRef.current;
           },
+          updateEdge: true,
         },
       ],
       layout: {
         type: 'dagre',
         rankdir: 'TB',
-        nodesep: 60,
-        ranksep: 100,
+        // Увеличенные отступы для читаемости
+        nodesep: 80,        // Расстояние между узлами на одном уровне
+        ranksep: 120,       // Расстояние между уровнями иерархии
         preventOverlap: true,
-        nodeSize: [160, 80],
+        nodeSize: [160, 80],  // Соответствует размеру обычных узлов
+        // Фиксация позиции для source-узлов
+        sortByCombo: false,
         // Отключаем анимацию для предотвращения race conditions
         animate: false,
       },
@@ -227,6 +232,16 @@ export default function NetworkGraphG6({
           shadowOffsetX: 0,
           shadowOffsetY: 4,
           cursor: 'pointer',
+          // Точки привязки для рёбер (верх, низ, лево, право)
+          // G6 использует нормализованные координаты [0-1]
+          anchorPoints: [
+            [0.5, 0],   // верхний центр (вход от источника)
+            [0.5, 1],   // нижний центр (выход к нагрузке)
+            [0, 0.5],   // левый центр
+            [1, 0.5],   // правый центр
+          ],
+          // Порт для подключения рёбер (по умолчанию нижний - выход)
+          port: true,
           // Основной текст - название
           labelText: (d: any) => {
             const name = d.data?.name || d.id;
@@ -282,7 +297,8 @@ export default function NetworkGraphG6({
         },
       },
       edge: {
-        type: 'cubic-vertical',
+        // Полилинии с ортогональной маршрутизацией (углы 90°)
+        type: 'polyline',
         style: {
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
@@ -290,6 +306,14 @@ export default function NetworkGraphG6({
           },
           lineWidth: 2,
           endArrow: false,
+          // Ортогональные изгибы с радиусом скругления
+          radius: 8,
+          // Смещение для параллельных рёбер (чтобы не сливались)
+          offset: 20,
+          // Точки привязки: source = нижний (индекс 1), target = верхний (индекс 0)
+          // Это обеспечивает вертикальный поток энергии сверху вниз
+          sourceAnchor: 1,  // нижний центр source
+          targetAnchor: 0,  // верхний центр target
           opacity: (d: any) => {
             const status = d.data?.status;
             return status === 'OFF' ? 0.4 : 1;
@@ -312,6 +336,8 @@ export default function NetworkGraphG6({
           labelBackgroundOpacity: 0.95,
           labelBackgroundRadius: 4,
           labelPadding: [2, 4, 2, 4],
+          // Позиция подписи по центру линии
+          labelPlacement: 'center',
         },
         state: {
           selected: {
@@ -573,10 +599,22 @@ export default function NetworkGraphG6({
 
     // Событие окончания перетаскивания узла
     graph.on('node:dragend', (evt: any) => {
-      if (editModeRef.current && onNodeDrop) {
+      const graph = graphRef.current;
+      if (!graph || (graph as any).destroyed) return;
+      
+      if (editModeRef.current) {
         const nodeId = evt.target.id;
         const { x, y } = evt;
-        onNodeDrop(nodeId, x, y);
+        
+        // Сохраняем позицию
+        if (onNodeDrop) {
+          onNodeDrop(nodeId, x, y);
+        }
+        
+        // Пересчитываем layout для обновления ортогональных рёбер
+        if (typeof graph.layout === 'function') {
+          graph.layout();
+        }
       }
     });
 

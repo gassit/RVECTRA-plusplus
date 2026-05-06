@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
+import { performElkLayout, applyElkLayoutToG6Data } from '@/lib/elk-layout';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -28,6 +29,8 @@ interface NetworkGraphG6Props {
   onUpdateNodeStatus?: (nodeId: string, operationalStatus: 'ON' | 'OFF') => Promise<void>;
   // Принудительное обновление статусов (propagate)
   onPropagate?: () => void;
+  // Использовать ELK layout для профессиональной ортогональной маршрутизации
+  useElkLayout?: boolean;
 }
 
 // ============================================================================
@@ -73,6 +76,7 @@ export default function NetworkGraphG6({
   onDeleteNode,
   onUpdateNodeStatus,
   onPropagate,
+  useElkLayout = true,
 }: NetworkGraphG6Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
@@ -299,6 +303,14 @@ export default function NetworkGraphG6({
         // Полилинии с ортогональной маршрутизацией (углы 90°)
         type: 'polyline',
         style: {
+          // Используем controlPoints из ELK если есть, иначе G6 строит автоматически
+          controlPoints: (d: any) => {
+            const cp = d.data?.controlPoints;
+            if (cp && Array.isArray(cp) && cp.length >= 2) {
+              return cp;
+            }
+            return undefined; // G6 построит маршрут автоматически
+          },
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
             return lifeStatus === 'LIVE' ? '#22c55e' : '#94a3b8';
@@ -776,6 +788,98 @@ export default function NetworkGraphG6({
     } catch (e) {
       console.error('Graph update error:', e);
     }
+  }, [data]);
+
+  // Ref для useElkLayout (чтобы использовать в async useEffect)
+  const useElkLayoutRef = useRef(useElkLayout);
+  useEffect(() => {
+    useElkLayoutRef.current = useElkLayout;
+  }, [useElkLayout]);
+
+  // ELK Layout - профессиональная ортогональная маршрутизация рёбер
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph || !data || !useElkLayoutRef.current) return;
+    if ((graph as any).destroyed || !(graph as any).rendered) return;
+
+    // Функция для применения ELK layout
+    const applyElk = async () => {
+      try {
+        console.log('[ELK] Starting layout for', data.nodes.length, 'nodes,', data.edges.length, 'edges');
+        
+        // Подготавливаем данные для ELK
+        const elkNodes = data.nodes.map(node => ({
+          id: node.id,
+          type: node.type,
+          size: [160, 80] as [number, number],
+        }));
+        
+        const elkEdges = data.edges.map(edge => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+        }));
+
+        // Выполняем ELK layout
+        const layoutResult = await performElkLayout(elkNodes, elkEdges);
+        
+        if (!layoutResult || !mountedRef.current) {
+          console.log('[ELK] Layout result is null or component unmounted');
+          return;
+        }
+
+        // Проверяем что граф ещё существует
+        if ((graph as any).destroyed) {
+          console.log('[ELK] Graph was destroyed during layout');
+          return;
+        }
+
+        console.log('[ELK] Layout complete, applying controlPoints to', layoutResult.edges.size, 'edges');
+
+        // Обновляем рёбра с controlPoints
+        const edgesWithControlPoints = data.edges.map(edge => {
+          const route = layoutResult.edges.get(edge.id);
+          if (route && route.points.length >= 2) {
+            return {
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              data: {
+                ...edge,
+                controlPoints: route.points,
+              },
+            };
+          }
+          return {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            data: edge,
+          };
+        });
+
+        // Применяем обновлённые данные к графу
+        if (!(graph as any).destroyed && mountedRef.current) {
+          (graph as any).setData({
+            nodes: data.nodes.map(node => ({
+              id: node.id,
+              data: node,
+            })),
+            edges: edgesWithControlPoints,
+          });
+          console.log('[ELK] Applied controlPoints to graph');
+        }
+      } catch (error) {
+        console.error('[ELK] Error during layout:', error);
+      }
+    };
+
+    // Выполняем ELK layout с небольшой задержкой после основного layout
+    const timeoutId = setTimeout(applyElk, 500);
+    
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [data]);
 
 

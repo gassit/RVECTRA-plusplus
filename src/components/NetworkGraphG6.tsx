@@ -299,10 +299,6 @@ export default function NetworkGraphG6({
       edge: {
         // Полилинии с ортогональной маршрутизацией (углы 90°)
         type: 'polyline',
-        // Маршрутизатор для обхода препятствий
-        router: {
-          type: 'orth',
-        },
         style: {
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;

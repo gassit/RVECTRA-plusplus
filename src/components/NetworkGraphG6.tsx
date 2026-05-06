@@ -198,13 +198,14 @@ export default function NetworkGraphG6({
       layout: {
         type: 'dagre',
         rankdir: 'TB',
-        // Увеличенные отступы для читаемости
-        nodesep: 80,        // Расстояние между узлами на одном уровне
-        ranksep: 120,       // Расстояние между уровнями иерархии
+        // Увеличенные отступы для читаемости и пространства для ортогональных линий
+        nodesep: 100,        // Расстояние между узлами на одном уровне (больше для разделения линий)
+        ranksep: 150,       // Расстояние между уровнями иерархии (больше для длинных линий)
         preventOverlap: true,
-        nodeSize: [160, 80],  // Соответствует размеру обычных узлов
-        // Фиксация позиции для source-узлов
+        nodeSize: [180, 100],  // Размер с запасом для предотвращения пересечений
+        // Фиксация позиции для source-узлов через ranker
         sortByCombo: false,
+        ranker: 'network-simplex',  // Оптимальный алгоритм для минимизации пересечений
         // Отключаем анимацию для предотвращения race conditions
         animate: false,
       },
@@ -298,6 +299,7 @@ export default function NetworkGraphG6({
       },
       edge: {
         // Полилинии с ортогональной маршрутизацией (углы 90°)
+        // В G6 v5 polyline автоматически строит ломаные линии
         type: 'polyline',
         style: {
           stroke: (d: any) => {
@@ -306,10 +308,10 @@ export default function NetworkGraphG6({
           },
           lineWidth: 2,
           endArrow: false,
-          // Ортогональные изгибы с радиусом скругления
-          radius: 8,
+          // Ортогональные изгибы с радиусом скругления (плавные углы)
+          radius: 10,
           // Смещение для параллельных рёбер (чтобы не сливались)
-          offset: 20,
+          offset: 30,
           // Точки привязки: source = нижний (индекс 1), target = верхний (индекс 0)
           // Это обеспечивает вертикальный поток энергии сверху вниз
           sourceAnchor: 1,  // нижний центр source
@@ -661,14 +663,24 @@ export default function NetworkGraphG6({
 
     try {
       // Преобразуем данные в формат G6
-      const nodes = data.nodes.map(node => ({
-        id: node.id,
-        combo: (node as any).combo || undefined, // Привязка к combo (cabinet)
-        data: {
-          ...node,
-          type: node.type.toLowerCase(),
-        },
-      }));
+      // Source узлы фиксируем вверху схемы
+      const nodes = data.nodes.map(node => {
+        const nodeData: any = {
+          id: node.id,
+          combo: (node as any).combo || undefined, // Привязка к combo (cabinet)
+          data: {
+            ...node,
+            type: node.type.toLowerCase(),
+          },
+        };
+        
+        // Фиксируем source узлы (источники питания) вверху схемы
+        if (node.type?.toLowerCase() === 'source') {
+          nodeData.fix = true;  // G6 v5: фиксация позиции
+        }
+        
+        return nodeData;
+      });
 
       const edges = data.edges.map(edge => ({
         id: edge.id,

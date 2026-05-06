@@ -107,8 +107,29 @@ export async function performElkLayout(
   edges: Array<{ id: string; source: string; target: string }>
 ): Promise<LayoutResult | null> {
   try {
+    // Валидация: создаём Set существующих ID узлов
+    const nodeIds = new Set(nodes.map(n => n.id));
+    
+    // Фильтруем рёбра - оставляем только те, у которых source и target существуют
+    const validEdges = edges.filter(edge => {
+      const sourceExists = nodeIds.has(edge.source);
+      const targetExists = nodeIds.has(edge.target);
+      if (!sourceExists || !targetExists) {
+        console.warn(`[ELK] Edge ${edge.id} references missing node(s): source=${edge.source}(${sourceExists}), target=${edge.target}(${targetExists})`);
+        return false;
+      }
+      return true;
+    });
+    
+    if (nodes.length === 0) {
+      console.warn('[ELK] No nodes to layout');
+      return null;
+    }
+    
+    console.log('[ELK] Valid nodes:', nodes.length, ', valid edges:', validEdges.length);
+    
     const elk = getElk();
-    const elkGraph = convertToElkGraph(nodes, edges);
+    const elkGraph = convertToElkGraph(nodes, validEdges);
 
     // Выполняем layout
     const layoutedGraph = await elk.layout(elkGraph, {

@@ -320,11 +320,12 @@ export default function NetworkGraphG6({
       node: {
         type: 'rect',
         style: {
-          // КРИТИЧЕСКИ ВАЖНО: размер читается из node.width/height (данные)
-          // или используется дефолтный
+          // КРИТИЧЕСКИ ВАЖНО: размер читается из style.width/height (G6 v6)
+          // или из корня для обратной совместимости
           size: (d: any) => {
-            const w = d.width || 160;
-            const h = d.height || 80;
+            // В G6 v6 данные приходят в d.style или в корне
+            const w = d.style?.width || d.width || 160;
+            const h = d.style?.height || d.height || 80;
             return [w, h];
           },
           radius: (d: any) => {
@@ -706,144 +707,122 @@ export default function NetworkGraphG6({
     };
   }, []); // Граф создаётся один раз
 
-  // Обновление данных с пре-процессингом для ELK
+  // Единый эффект: обработка данных + ELK layout + рендер
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph || !data) return;
 
     if ((graph as any).destroyed) return;
 
-    try {
-      // ===== ПРЕ-ПРОЦЕССИНГ: добавляем размеры и порты =====
-      const { nodes, edges, combos } = processDataForElk(data);
-
-      console.log('[G6] Processed nodes with sizes:', nodes.length);
-      console.log('[G6] Sample node data:', nodes.slice(0, 3).map(n => ({ id: n.id, width: n.width, height: n.height, type: n.data?.type })));
-
-      // Первый рендер - БЕЗ вызова render(), только setData
-      // render() вызовется после ELK layout
-      if (!(graph as any).rendered) {
-        if ((graph as any).destroyed) return;
-        try {
-          graph.setData({ nodes: nodes as any, edges: edges as any, combos });
-          // НЕ вызываем render() здесь - ждём ELK
-          (graph as any).rendered = true;
-          (graph as any).dataLoaded = true;
-          console.log('[G6] Data loaded (waiting for ELK layout)');
-        } catch (renderError) {
-          console.warn('Render error:', renderError);
-          return;
-        }
-        return;
-      }
-
-      // Инкрементальное обновление
-      if ((graph as any).destroyed) return;
-      graph.setData({ nodes: nodes as any, edges: edges as any, combos });
-
-    } catch (e) {
-      console.error('Graph update error:', e);
-    }
-  }, [data]);
-
-  // ELK Layout - применяется через elkjs напрямую
-  useEffect(() => {
-    const graph = graphRef.current;
-    if (!graph || !data) return;
-    if ((graph as any).destroyed || !(graph as any).dataLoaded) return;
-
-    const applyElkLayout = async () => {
+    const processDataAndLayout = async () => {
       try {
-        console.log('[ELK] Starting layout via elkjs...');
+        console.log('[G6] Processing data and applying ELK layout...');
 
-        // Подготавливаем данные для ELK
-        const elkNodes = data.nodes.map(node => ({
+        // ===== ШАГ 1: Пре-процессинг данных =====
+        const { nodes, edges, combos } = processDataForElk(data);
+        console.log('[G6] Processed nodes:', nodes.length, 'edges:', edges.length);
+
+        // ===== ШАГ 2: Выполняем ELK layout =====
+        const elkNodes = nodes.map(node => ({
           id: node.id,
-          type: node.type,
+          type: node.data?.type,
         }));
 
-        const elkEdges = data.edges
-          .filter(edge => {
-            const nodeIds = new Set(data.nodes.map(n => n.id));
-            return nodeIds.has(edge.source) && nodeIds.has(edge.target);
-          })
-          .map(edge => ({
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-          }));
+        const elkEdges = edges.map(edge => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+        }));
 
-        // Выполняем ELK layout
-        const result = await performElkLayout(elkNodes, elkEdges);
+        const elkResult = await performElkLayout(elkNodes, elkEdges);
 
-        if (!result || (graph as any).destroyed) {
-          console.log('[ELK] Layout cancelled or graph destroyed');
-          return;
-        }
-
-        // Получаем текущие данные графа
-        const currentData = graph.getData();
-        if (!currentData || !currentData.nodes) {
-          console.log('[ELK] No current graph data');
-          return;
-        }
-
-        // Обновляем узлы с позициями
-        const updatedNodes = (currentData.nodes as any[]).map(node => {
-          const pos = result.nodes.get(node.id);
-          if (pos) {
-            console.log('[G6] Applying position to', node.id, ': x=', pos.x, 'y=', pos.y);
-            return {
-              ...node,
-              x: pos.x,
-              y: pos.y,
-              width: pos.width,
-              height: pos.height,
-            };
-          }
-          console.warn('[G6] No position for node', node.id);
-          return node;
-        });
-
-        console.log('[G6] Updated nodes sample:', updatedNodes.slice(0, 3).map(n => ({ id: n.id, x: n.x, y: n.y })));
-
-        // Обновляем рёбра с маршрутами
-        const updatedEdges = (currentData.edges as any[]).map(edge => {
-          const route = result.edges.get(edge.id);
+        // ===== ШАГ 3: Подготавливаем данные для рёбер с маршрутами =====
+        const edgesData = edges.map(edge => {
+          const route = elkResult?.edges.get(edge.id);
           if (route && route.points.length >= 2) {
             return {
-              ...edge,
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              data: edge.data,
               style: {
-                ...(edge.style || {}),
                 controlPoints: route.points,
               },
             };
           }
-          return edge;
+          return {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            data: edge.data,
+          };
         });
 
-        // Применяем обновления
-        if (!(graph as any).destroyed) {
-          graph.setData({
-            nodes: updatedNodes,
-            edges: updatedEdges,
-            combos: currentData.combos,
-          });
-          console.log('[ELK] Applied layout to graph');
+        // ===== ШАГ 4: Применяем к графу =====
+        if ((graph as any).destroyed) return;
 
-          // КРИТИЧЕСКИ ВАЖНО: заставляем G6 перерисоваться с новыми позициями
+        const isFirstRender = !(graph as any).rendered;
+
+        // Подготавливаем данные узлов БЕЗ позиций (позиции установим через API)
+        const nodesData = nodes.map(node => ({
+          id: node.id,
+          data: node.data,
+          combo: node.combo,
+          style: {
+            width: node.width,
+            height: node.height,
+          },
+        }));
+
+        if (isFirstRender) {
+          // Первый раз - setData + render
+          graph.setData({
+            nodes: nodesData as any,
+            edges: edgesData as any,
+            combos,
+          });
           graph.render();
-          graph.fitView();
-          console.log('[ELK] Rendered and fitView called');
+          (graph as any).rendered = true;
+          console.log('[G6] First render done');
+        } else {
+          // Инкрементальное обновление
+          graph.setData({
+            nodes: nodesData as any,
+            edges: edgesData as any,
+            combos,
+          });
+          console.log('[G6] Data updated');
         }
+
+        // ===== ШАГ 5: Устанавливаем позиции через API =====
+        // translateNodeTo - правильный метод для перемещения узлов в G6 v6
+        // Используем (graph as any) т.к. метод не экспортируется в типах
+        let movedCount = 0;
+        for (const node of nodes) {
+          const pos = elkResult?.nodes.get(node.id);
+          if (pos) {
+            try {
+              (graph as any).translateNodeTo(node.id, { x: pos.x, y: pos.y });
+              movedCount++;
+            } catch (e) {
+              // Игнорируем ошибки
+            }
+          }
+        }
+
+        console.log('[G6] Nodes moved via translateNodeTo:', movedCount);
+
+        // Фит к экрану
+        graph.fitView();
+        console.log('[G6] Layout complete, fitView applied');
+
       } catch (error) {
-        console.error('[ELK] Error:', error);
+        console.error('[G6] Process error:', error);
       }
     };
 
-    // Запускаем с небольшой задержкой
-    const timeoutId = setTimeout(applyElkLayout, 500);
-    return () => clearTimeout(timeoutId);
+    processDataAndLayout();
+
   }, [data]);
 
   // Внешний zoom

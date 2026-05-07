@@ -199,9 +199,12 @@ export default function NetworkGraphG6({
           updateEdge: true,
         },
       ],
-      // Layout отключен - координаты задаём вручную через ELK адаптер
-      // G6 v5 не имеет встроенного 'preset' плагина, поэтому полностью отключаем layout
-      // и используем предрасчитанные координаты из elk-engine.ts
+      // ============================================================
+      // ELK INTEGRATION: G6 как пассивный рендерер
+      // ============================================================
+      // layout: undefined - отключаем автоматический лейаут G6
+      // Координаты рассчитывает ELK, G6 только рендерит
+      // ============================================================
       node: {
         type: 'rect',
         style: {
@@ -336,8 +339,9 @@ export default function NetworkGraphG6({
         },
       },
       edge: {
-        // Полилинии с ортогональной маршрутизацией (углы 90°)
-        type: 'polyline',
+        // ELK INTEGRATION: 'line' вместо 'polyline'
+        // Отключаем умную маршрутизацию G6 - маршрут задаёт ELK через controlPoints
+        type: 'line',
         style: {
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
@@ -345,16 +349,8 @@ export default function NetworkGraphG6({
           },
           lineWidth: 2,
           endArrow: false,
-          // Ортогональные изгибы с радиусом скругления (плавные углы)
-          radius: 8,
-          // Смещение для параллельных рёбер (чтобы не сливались) - увеличено
-          offset: 40,
-          // Смещение для петель (когда source = target)
-          loopOffset: 50,
-          // Точки привязки: source = нижний (индекс 1), target = верхний (индекс 0)
-          // Строго вертикальное подключение для однолинейной схемы
-          sourceAnchor: 1,  // нижний центр source (выход тока)
-          targetAnchor: 0,  // верхний центр target (вход тока)
+          // ELK controlPoints передаются в данных ребра
+          // G6 не пересчитывает маршрут
           opacity: (d: any) => {
             const status = d.data?.status;
             return status === 'OFF' ? 0.4 : 1;

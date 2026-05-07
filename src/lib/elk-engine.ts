@@ -9,16 +9,28 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 const elk = new ELK();
 
 // Конфигурация для однолинейной электрической схемы
+// КЛЮЧЕВЫЕ НАСТРОЙКИ ДЛЯ КОМПАКТНОСТИ:
 const ELK_OPTIONS = {
   'elk.algorithm': 'layered',
   'elk.direction': 'DOWN', // Сверху вниз (Источник -> Потребитель)
-  'elk.layered.spacing.nodeNodeBetweenLayers': '150', // Расстояние по вертикали
-  'elk.spacing.nodeNode': '80', // Расстояние по горизонтали
-  'elk.spacing.edgeEdge': '20', // Расстояние между параллельными линиями
+  
+  // Расстояния - уменьшаем для компактности
+  'elk.layered.spacing.nodeNodeBetweenLayers': '80',  // было 150 - вертикальное расстояние
+  'elk.spacing.nodeNode': '40',  // было 80 - горизонтальное расстояние
+  'elk.spacing.edgeEdge': '10',  // было 20 - между параллельными линиями
+  'elk.spacing.portPort': '5',   // расстояние между портами
+  
+  // Компактность
+  'elk.layered.compaction.postCompaction.strategy': 'LEFT',  // сжимаем влево
+  'elk.layered.compaction.connectedComponents': 'true',      // сжимать компоненты
   'elk.layered.unnecessaryBendpoints': 'true',
-  'elk.layered.cycleBreaking.strategy': 'INTERACTIVE',
+  
+  // Оптимизация для вертикальной схемы
+  'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+  'elk.layered.cycleBreaking.strategy': 'GREEDY',
+  
+  // Порты
   'elk.portConstraints': 'FIXED_SIDE',
-  'elk.alignment': 'CENTER',
 };
 
 interface RawNode {
@@ -279,7 +291,18 @@ export async function applyElkLayout(
       };
     });
 
+    // Вычисляем bounds схемы
+    const bounds = newNodes.reduce((acc: any, n: any) => ({
+      minX: Math.min(acc.minX, n.x - n.width / 2),
+      maxX: Math.max(acc.maxX, n.x + n.width / 2),
+      minY: Math.min(acc.minY, n.y - n.height / 2),
+      maxY: Math.max(acc.maxY, n.y + n.height / 2),
+    }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+
     console.log('[ELK] Layout complete:', newNodes.length, 'nodes,', newEdges.length, 'edges');
+    console.log('[ELK] Schema bounds: width=' + Math.round(bounds.maxX - bounds.minX) + 
+                ', height=' + Math.round(bounds.maxY - bounds.minY) +
+                ' | minX=' + Math.round(bounds.minX) + ', minY=' + Math.round(bounds.minY));
 
     return { nodes: newNodes, edges: newEdges };
   } catch (error) {

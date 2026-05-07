@@ -840,13 +840,12 @@ export default function NetworkGraphG6({
         // ЛОГИРОВАНИЕ: что G6 "видит" после render
         console.log('[G6] Post-render check:');
         try {
-          const allNodeIds = graph.getNodeData();
-          console.log('[G6] Node count in graph:', allNodeIds?.length);
-          if (allNodeIds && allNodeIds.length > 0) {
-            const sampleIds = allNodeIds.slice(0, 3);
-            sampleIds.forEach((nodeId: any) => {
-              const nodeData = graph.getNodeData(nodeId);
-              console.log(`  ${nodeId}: data=`, nodeData);
+          const allNodes = graph.getNodeData();
+          console.log('[G6] Node count in graph:', allNodes?.length);
+          if (allNodes && allNodes.length > 0) {
+            // allNodes - это массив объектов узлов, не ID
+            allNodes.slice(0, 3).forEach((nodeData: any) => {
+              console.log(`  ${nodeData.id}: x=${nodeData.x}, y=${nodeData.y}`);
             });
           }
         } catch (e) {

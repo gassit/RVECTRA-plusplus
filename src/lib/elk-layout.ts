@@ -1,7 +1,7 @@
 /**
  * ELK Layout Integration for G6
- * Профессиональная ортогональная маршрутизация рёбер с обходом препятствий
- * Автоматический расчёт размера BUS по количеству портов
+ * Полноценный движок раскладки: позиции узлов + маршрутизация рёбер
+ * Оптимизировано для однолинейных электрических схем
  */
 
 import { useRef } from 'react';
@@ -11,16 +11,25 @@ import ELK, { type ElkNode, type ElkExtendedEdge, type ElkPort } from 'elkjs';
 type ElkNodeType = ElkNode;
 type ElkEdgeType = ElkExtendedEdge;
 
-interface ElkEdgeSection {
-  startPoint: { x: number; y: number };
-  endPoint: { x: number; y: number };
-  bendPoints?: { x: number; y: number }[];
-}
-
 interface LayoutResult {
   nodes: Map<string, { x: number; y: number; width?: number; height?: number }>;
   edges: Map<string, { points: { x: number; y: number }[] }>;
 }
+
+// ============================================================================
+// РАЗМЕРЫ УЗЛОВ ПО ТИПАМ
+// ============================================================================
+
+const NODE_SIZES: Record<string, [number, number]> = {
+  source: [160, 80],
+  bus: [200, 40],        // Будет расширяться по количеству портов
+  breaker: [140, 70],
+  meter: [140, 70],
+  load: [160, 80],
+  cabinet: [180, 50],
+  junction: [40, 40],
+  default: [160, 80],
+};
 
 // Минимальная ширина BUS
 const BUS_MIN_WIDTH = 200;
@@ -111,15 +120,19 @@ function convertToElkGraph(
   const edgeTargetPort = new Map<string, string>();
   
   const elkNodes = nodes.map(node => {
-    const isBus = node.type?.toLowerCase() === 'bus';
-    const isSource = node.type?.toLowerCase() === 'source';
-    const isJunction = node.type?.toLowerCase() === 'junction';
+    const nodeType = (node.type || 'default').toLowerCase();
+    const isBus = nodeType === 'bus';
+    const isSource = nodeType === 'source';
+    const isJunction = nodeType === 'junction';
     
     const nodeIncoming = incomingEdges.get(node.id) || [];
     const nodeOutgoing = outgoingEdges.get(node.id) || [];
     
-    let width = node.size?.[0] || 160;
-    let height = node.size?.[1] || 80;
+    // Получаем размер из карты или используем переданный
+    const defaultSize = NODE_SIZES[nodeType] || NODE_SIZES.default;
+    let width = node.size?.[0] || defaultSize[0];
+    let height = node.size?.[1] || defaultSize[1];
+    
     let ports: ElkPort[] = [];
     let portConstraints = 'FIXED_SIDE';
     
@@ -128,8 +141,8 @@ function convertToElkGraph(
       const busResult = createBusPorts(node.id, nodeIncoming, nodeOutgoing);
       ports = busResult.ports;
       width = busResult.calculatedWidth;
-      height = 40; // BUS тонкий и широкий
-      portConstraints = 'FIXED_ORDER'; // Порты распределяются по порядку
+      height = 40;
+      portConstraints = 'FIXED_ORDER';
       
       // Сохраняем связь ребро -> порт
       nodeIncoming.forEach((edge, idx) => {
@@ -138,26 +151,19 @@ function convertToElkGraph(
       nodeOutgoing.forEach((edge, idx) => {
         edgeSourcePort.set(edge.id, `${node.id}_OUT_${idx}`);
       });
-      
-      console.log(`[ELK] BUS ${node.id}: ${nodeIncoming.length} in, ${nodeOutgoing.length} out, width=${width}`);
     } else {
-      // Обычный узел - стандартные порты TOP/BOTTOM
+      // Обычный узел - порты TOP (вход) и BOTTOM (выход)
       ports = [
         {
           id: `${node.id}_TOP`,
-          layoutOptions: {
-            'org.eclipse.elk.port.side': 'NORTH',
-          }
+          layoutOptions: { 'org.eclipse.elk.port.side': 'NORTH' }
         },
         {
           id: `${node.id}_BOTTOM`,
-          layoutOptions: {
-            'org.eclipse.elk.port.side': 'SOUTH',
-          }
+          layoutOptions: { 'org.eclipse.elk.port.side': 'SOUTH' }
         }
       ];
       
-      // Стандартное сопоставление ребро -> порт
       nodeIncoming.forEach(edge => {
         edgeTargetPort.set(edge.id, `${node.id}_TOP`);
       });
@@ -212,43 +218,40 @@ function convertToElkGraph(
 }
 
 /**
- * Основные опции ELK для ортогональной маршрутизации
- * Оптимизировано для однолинейных электрических схем
+ * Основные опции ELK для однолинейных электрических схем
+ * БОЛЬШИЕ ОТСТУПЫ для читаемости
  */
 const ELK_OPTIONS: Record<string, string> = {
-  // ===== АЛГОРИТМ =====
+  // ===== АЛГОРИТМ И НАПРАВЛЕНИЕ =====
   'elk.algorithm': 'layered',
+  'elk.direction': 'DOWN',              // Ток течёт сверху вниз
   
-  // ===== НАПРАВЛЕНИЕ =====
-  'elk.direction': 'DOWN',  // Ток течёт сверху вниз
+  // ===== РАССТОЯНИЯ - УВЕЛИЧЕНЫ ДЛЯ ЧИТАЕМОСТИ =====
+  'elk.spacing.nodeNode': '100',                    // Между узлами на одном уровне (горизонталь)
+  'elk.layered.spacing.nodeNodeBetweenLayers': '150', // Между слоями (вертикаль)
+  'elk.spacing.edgeNode': '50',                     // Отступ линии от узла
+  'elk.spacing.edgeEdge': '30',                     // Между параллельными линиями
+  'elk.spacing.componentComponent': '100',          // Между несвязанными компонентами
   
   // ===== МАРШРУТИЗАЦИЯ РЁБЕР =====
-  'elk.edgeRouting': 'ORTHOGONAL',  // Строго 90° углы
+  'elk.edgeRouting': 'ORTHOGONAL',                   // Строго 90° углы
   'elk.layered.edgeRouting.orthogonalEdges.routingStrategy': 'ORTHOGONAL',
+  'elk.layered.edgeRouting.orthogonalEdges.edgeSpacing': '30',
   
-  // ===== РАССТОЯНИЯ - УВЕЛИЧЕНЫ ДЛЯ РАЗДЕЛЕНИЯ ЛИНИЙ =====
-  'elk.spacing.nodeNode': '120',           // Расстояние между узлами на одном уровне
-  'elk.layered.spacing.nodeNodeBetweenLayers': '180',  // Расстояние между слоями
-  'elk.spacing.edgeNode': '40',             // Отступ ребра от узла
-  'elk.spacing.edgeEdge': '40',            // Расстояние между параллельными рёбрами - КЛЮЧЕВОЙ ПАРАМЕТР
-  'elk.layered.edgeRouting.orthogonalEdges.edgeSpacing': '40',
+  // ===== РАЗМЕЩЕНИЕ УЗЛОВ =====
+  'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+  'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
   
   // ===== МИНИМИЗАЦИЯ ПЕРЕСЕЧЕНИЙ =====
   'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
   'elk.layered.crossingMinimization.semiInteractiveCrossingMinimization': 'true',
-  'elk.layered.crossingMinimization.horizontalConstraint': 'BALANCED',
   
-  // ===== РАЗМЕЩЕНИЕ УЗЛОВ =====
-  'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',  // Оптимальное выравнивание
-  'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
-  
-  // ===== ПОРТЫ И ТОЧКИ ПОДКЛЮЧЕНИЯ =====
+  // ===== ПОРТЫ =====
+  'elk.portConstraints': 'FIXED_SIDE',               // Порты на фиксированных сторонах
   'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-  'elk.portConstraints': 'FIXED_SIDE',     // Порты фиксируются на сторонах
   
-  // ===== РАЗДЕЛЕНИЕ КОМПОНЕНТОВ =====
-  'elk.separateConnectedComponents': 'true',
-  'elk.spacing.componentComponent': '80',  // Расстояние между компонентами
+  // ===== ИЕРАРХИЯ =====
+  'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
 };
 
 /**

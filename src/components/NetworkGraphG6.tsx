@@ -199,18 +199,9 @@ export default function NetworkGraphG6({
           updateEdge: true,
         },
       ],
-      // AntV Dagre layout - оптимизирован для однолинейных электрических схем
-      layout: {
-        type: 'antv-dagre',
-        rankdir: 'TB',           // Сверху вниз (ток от источника к нагрузке)
-        nodesep: 150,            // Расстояние между узлами на одном уровне (горизонталь)
-        ranksep: 200,            // Расстояние между уровнями (вертикаль) - увеличено
-        preventOverlap: true,    // Предотвращать перекрытие
-        nodeSize: [200, 120],    // Размер для расчёта перекрытий
-        sortByCombo: false,
-        ranker: 'network-simplex', // Оптимальное размещение
-        animate: false,
-      },
+      // ELK layout применяется отдельно в useEffect (performElkLayout)
+      // G6 встроенный layout отключён - ELK вычисляет и позиции узлов, и маршрутизацию рёбер
+      // layout опция не указана - позиции будут заданы через node.x, node.y
       node: {
         type: 'rect',
         style: {
@@ -804,28 +795,13 @@ export default function NetworkGraphG6({
         const addedEdges = edges.filter(e => !prevIds.edgeIds.has(e.id));
         const removedEdgeIds = [...prevIds.edgeIds].filter(id => !newEdgeIds.has(id));
 
-        // ВСЕГДА запускаем layout для правильного размещения узлов
-        // Позиции из БД (posX/posY) игнорируются - dagre вычисляет оптимальные
+        // Устанавливаем данные без layout - ELK применяется отдельно в useEffect
         if ((graph as any).destroyed) return;
         graph.setData({ nodes, edges: edges as any, combos });
-        if (mountedRef.current && !(graph as any).destroyed && typeof graph.layout === 'function') {
-          graph.layout().catch((e: any) => {
-            if (mountedRef.current && !(graph as any).destroyed) {
-              console.warn('Layout error:', e?.message || e);
-            }
-          });
-        }
       } else {
         // Нет предыдущих данных - полный рендер
         if ((graph as any).destroyed) return;
         graph.setData({ nodes, edges: edges as any, combos });
-        if (mountedRef.current && !(graph as any).destroyed && typeof graph.layout === 'function') {
-          graph.layout().catch((e: any) => {
-            if (mountedRef.current && !(graph as any).destroyed) {
-              console.warn('Layout error:', e?.message || e);
-            }
-          });
-        }
       }
 
       prevDataRef.current = {
@@ -849,7 +825,7 @@ export default function NetworkGraphG6({
     if (!graph || !data || !useElkLayoutRef.current) return;
     if ((graph as any).destroyed || !(graph as any).rendered) return;
 
-    // Функция для применения ELK layout
+    // Функция для применения ELK layout (позиции узлов + маршрутизация рёбер)
     const applyElk = async () => {
       try {
         // Создаём Set существующих ID узлов для валидации
@@ -860,18 +836,18 @@ export default function NetworkGraphG6({
           nodeIds.has(edge.source) && nodeIds.has(edge.target)
         );
         
-        if (validEdges.length === 0) {
-          console.log('[ELK] No valid edges to layout');
+        if (data.nodes.length === 0) {
+          console.log('[ELK] No nodes to layout');
           return;
         }
         
-        console.log('[ELK] Starting layout for', data.nodes.length, 'nodes,', validEdges.length, 'valid edges');
+        console.log('[ELK] Starting full layout for', data.nodes.length, 'nodes,', validEdges.length, 'edges');
         
-        // Подготавливаем данные для ELK
+        // Подготавливаем данные для ELK с размерами по типам
         const elkNodes = data.nodes.map(node => ({
           id: node.id,
           type: node.type,
-          size: [160, 80] as [number, number],
+          // Размер передаётся в performElkLayout, но можно задать явно
         }));
         
         const elkEdges = validEdges.map(edge => ({
@@ -880,7 +856,7 @@ export default function NetworkGraphG6({
           target: edge.target,
         }));
 
-        // Выполняем ELK layout
+        // Выполняем ELK layout - получаем позиции узлов И маршруты рёбер
         const layoutResult = await performElkLayout(elkNodes, elkEdges);
         
         if (!layoutResult || !mountedRef.current) {
@@ -894,18 +870,34 @@ export default function NetworkGraphG6({
           return;
         }
 
-        console.log('[ELK] Layout complete, got', layoutResult.edges.size, 'edge routes');
+        console.log('[ELK] Layout complete:', layoutResult.nodes.size, 'nodes,', layoutResult.edges.size, 'edges');
 
-        // Получаем текущие данные графа и обновляем только рёбра с controlPoints
-        // Размер BUS уже вычислен при создании узла
+        // Получаем текущие данные графа
         try {
           const currentData = graph.getData();
-          if (!currentData || !currentData.edges) {
+          if (!currentData || !currentData.nodes) {
             console.log('[ELK] No current graph data');
             return;
           }
           
-          // Обновляем только те рёбра, для которых есть controlPoints
+          // Обновляем узлы с позициями из ELK
+          const updatedNodes = (currentData.nodes as any[]).map(node => {
+            const pos = layoutResult.nodes.get(node.id);
+            if (pos) {
+              return {
+                ...node,
+                x: pos.x,
+                y: pos.y,
+                style: {
+                  ...(node.style || {}),
+                  size: [pos.width, pos.height],
+                },
+              };
+            }
+            return node;
+          });
+          
+          // Обновляем рёбра с controlPoints из ELK
           const updatedEdges = (currentData.edges as any[]).map(edge => {
             const route = layoutResult.edges.get(edge.id);
             if (route && route.points && Array.isArray(route.points) && route.points.length >= 2) {
@@ -920,14 +912,14 @@ export default function NetworkGraphG6({
             return edge;
           });
 
-          // Применяем обновлённые рёбра
+          // Применяем обновлённые данные
           if (!(graph as any).destroyed && mountedRef.current) {
             (graph as any).setData({
-              nodes: currentData.nodes,
+              nodes: updatedNodes,
               edges: updatedEdges,
               combos: currentData.combos,
             });
-            console.log('[ELK] Applied controlPoints to', layoutResult.edges.size, 'edges');
+            console.log('[ELK] Applied positions to', layoutResult.nodes.size, 'nodes, routes to', layoutResult.edges.size, 'edges');
           }
         } catch (dataError) {
           console.warn('[ELK] Error updating graph data:', dataError);

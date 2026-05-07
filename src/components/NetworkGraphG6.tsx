@@ -179,7 +179,7 @@ function processDataForElk(data: GraphData): {
       },
       width,
       height,
-      ports,
+      // ports ВРЕМЕННО УДАЛЕНЫ для диагностики
     };
   });
 
@@ -314,40 +314,13 @@ export default function NetworkGraphG6({
           updateEdge: true,
         },
       ],
-      // ===== ELK LAYOUT - КРИТИЧЕСКИ ВАЖНО: параметры внутри options =====
-      layout: useElkLayoutRef.current ? {
-        type: 'elk',
-        options: {
-          // Алгоритм и направление
-          'elk.algorithm': 'layered',
-          'elk.direction': 'DOWN',
-
-          // Отступы
-          'elk.spacing.nodeNode': '100',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '150',
-          'elk.spacing.edgeNode': '50',
-          'elk.spacing.edgeEdge': '20',
-          'elk.spacing.componentComponent': '100',
-
-          // Маршрутизация рёбер
-          'elk.edgeRouting': 'ORTHOGONAL',
-
-          // Размещение узлов
-          'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-          'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
-
-          // Минимизация пересечений
-          'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-          'elk.layered.crossingMinimization.semiInteractiveCrossingMinimization': 'true',
-
-          // Порты - ВРЕМЕННО ОТКЛЮЧЕНО для диагностики
-          // 'elk.portConstraints': 'FIXED_SIDE',
-          'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-
-          // Иерархия
-          'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-        },
-      } : undefined,
+      // ===== DAGRE LAYOUT - для диагностики (если работает - проблема в ELK) =====
+      layout: {
+        type: 'dagre',
+        direction: 'TB',
+        ranksep: 150,
+        nodesep: 100,
+      },
       node: {
         type: 'rect',
         style: {

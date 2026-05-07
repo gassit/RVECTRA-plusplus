@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
-// Регистрируем ELK layout plugin
-import '@/lib/elk-layout-plugin';
+// Standalone ELK engine — G6 пассивный рендерер
+import { computeElkLayout, NODE_SIZES } from '@/lib/elk-engine';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -209,11 +209,10 @@ export default function NetworkGraphG6({
         },
       ],
       // ============================================================
-      // ELK LAYOUT: используем зарегистрированный plugin
+      // G6 — ПАССИВНЫЙ РЕНДЕРЕР
+      // Layout рассчитывается ELK отдельно, координаты передаются через style.x/y
+      // Свойство layout НЕ задано — G6 не запускает свой движок раскладки
       // ============================================================
-      layout: {
-        type: 'elk-layout',
-      },
       node: {
         type: 'rect',
         style: {
@@ -714,7 +713,7 @@ export default function NetworkGraphG6({
 
     const processDataAndRender = async () => {
       try {
-        console.log('[G6] Processing data with ELK layout...');
+        console.log('[G6] ELK layout → passive render...');
 
         // Фильтруем рёбра с валидными source/target
         const nodeIds = new Set(data.nodes.map(n => n.id));
@@ -722,22 +721,70 @@ export default function NetworkGraphG6({
           nodeIds.has(edge.source) && nodeIds.has(edge.target)
         );
 
-        // Подготавливаем данные для G6
-        const nodes = data.nodes.map(node => ({
-          id: node.id,
-          combo: (node as any).combo || undefined,
-          data: {
-            ...node,
-            type: (node.type || 'load').toLowerCase(),
-          },
-        }));
+        // ============================================================
+        // ШАГ 1: Рассчитываем layout через ELK (вне G6)
+        // ============================================================
+        const layoutResult = await computeElkLayout(
+          data.nodes.map(n => ({
+            id: n.id,
+            type: n.type,
+            data: n,
+            combo: (n as any).combo,
+          })),
+          validEdges.map(e => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            data: e,
+          })),
+        );
 
-        const edges = validEdges.map(edge => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          data: edge as any,
-        }));
+        // Маппинг: nodeId → ELK координаты
+        const elkMap = new Map(layoutResult.nodes.map(n => [n.id, n]));
+        const elkEdgeMap = new Map(layoutResult.edges.map(e => [e.id, e]));
+
+        // ============================================================
+        // ШАГ 2: Подготавливаем данные для G6 с готовыми координатами
+        // ============================================================
+        const nodes = data.nodes.map(node => {
+          const elk = elkMap.get(node.id);
+          const type = (node.type || 'load').toLowerCase();
+          const size = NODE_SIZES[type] || { width: 120, height: 60 };
+
+          return {
+            id: node.id,
+            combo: (node as any).combo || undefined,
+            data: {
+              ...node,
+              type: type,
+            },
+            // Координаты от ELK — G6 просто рендерит
+            style: {
+              x: elk?.x ?? 0,
+              y: elk?.y ?? 0,
+              size: [elk?.width || size.width, elk?.height || size.height],
+            },
+          };
+        });
+
+        const edges = validEdges.map(edge => {
+          const elkEdge = elkEdgeMap.get(edge.id);
+          const edgeData: any = {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            data: edge as any,
+          };
+
+          // Контрольные точки от ELK для polyline
+          if (elkEdge?.controlPoints?.length) {
+            edgeData.style = {
+              controlPoints: elkEdge.controlPoints,
+            };
+          }
+
+          return edgeData;
+        });
 
         const combos = data.combos?.map(combo => ({
           id: combo.id,
@@ -745,7 +792,7 @@ export default function NetworkGraphG6({
         })) || [];
 
         // ============================================================
-        // ELK LAYOUT через зарегистрированный plugin
+        // ШАГ 3: G6 — только рендер (без layout движка)
         // ============================================================
         graph.setData({
           nodes: nodes as any,
@@ -753,29 +800,35 @@ export default function NetworkGraphG6({
           combos,
         });
 
-        // render() автоматически вызывает зарегистрированный elk-layout
-        // graph.layout() НЕ вызываем — это вызывает ошибку postLayout
-        await graph.render();
-        (graph as any).rendered = true;
+        if (!(graph as any).rendered) {
+          await graph.render();
+          (graph as any).rendered = true;
+        }
+
         graph.fitView();
-        console.log('[G6] Render with ELK complete');
+        console.log('[G6] Passive render complete — ELK coordinates applied');
 
       } catch (error) {
-        console.error('[G6] Error:', error);
+        console.error('[G6] ELK/Render error:', error);
 
-        // Fallback - сетка
-        const nodes = data.nodes.map((node, index) => ({
-          id: node.id,
-          style: {
-            x: 100 + (index % 10) * 150,
-            y: 100 + Math.floor(index / 10) * 100,
-          },
-          combo: (node as any).combo || undefined,
-          data: {
-            ...node,
-            type: node.type?.toLowerCase(),
-          },
-        }));
+        // Fallback — сетка
+        const nodes = data.nodes.map((node, index) => {
+          const type = (node.type || 'load').toLowerCase();
+          const size = NODE_SIZES[type] || { width: 120, height: 60 };
+          return {
+            id: node.id,
+            style: {
+              x: size.width / 2 + 100 + (index % 10) * 150,
+              y: size.height / 2 + 100 + Math.floor(index / 10) * 100,
+              size: [size.width, size.height],
+            },
+            combo: (node as any).combo || undefined,
+            data: {
+              ...node,
+              type: type,
+            },
+          };
+        });
 
         const edges = data.edges.map(edge => ({
           id: edge.id,

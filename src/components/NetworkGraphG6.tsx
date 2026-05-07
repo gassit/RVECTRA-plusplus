@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
-import { performElkLayout } from '@/lib/elk-layout';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -297,6 +296,15 @@ export default function NetworkGraphG6({
       height,
       autoFit: 'view',
       padding: [100, 100, 100, 100],
+      // Используем встроенный DagreLayout (ELK недоступен в @antv/layout 2.0.0)
+      layout: {
+        type: 'dagre',
+        rankdir: 'TB', // Top to Bottom
+        nodesep: 80,   // Расстояние между узлами на одном уровне
+        ranksep: 120,  // Расстояние между уровнями
+        preventOverlap: true,
+        nodeSize: [160, 80],
+      },
       behaviors: [
         'drag-canvas',
         'zoom-canvas',
@@ -707,112 +715,57 @@ export default function NetworkGraphG6({
     };
   }, []); // Граф создаётся один раз
 
-  // Единый эффект: обработка данных + ELK layout + рендер
+  // Единый эффект: обработка данных + рендер
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph || !data) return;
 
     if ((graph as any).destroyed) return;
 
-    const processDataAndLayout = async () => {
-      try {
-        console.log('[G6] Processing data and applying ELK layout...');
+    try {
+      // Пре-процессинг данных
+      const { nodes, edges, combos } = processDataForElk(data);
+      console.log('[G6] Processed nodes:', nodes.length, 'edges:', edges.length);
 
-        // ===== ШАГ 1: Пре-процессинг данных =====
-        const { nodes, edges, combos } = processDataForElk(data);
-        console.log('[G6] Processed nodes:', nodes.length, 'edges:', edges.length);
+      // Подготавливаем данные узлов
+      const nodesData = nodes.map(node => ({
+        id: node.id,
+        data: node.data,
+        combo: node.combo,
+      }));
 
-        // ===== ШАГ 2: Выполняем ELK layout =====
-        const elkNodes = nodes.map(node => ({
-          id: node.id,
-          type: node.data?.type,
-        }));
+      // Подготавливаем данные рёбер
+      const edgesData = edges.map(edge => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        data: edge.data,
+      }));
 
-        const elkEdges = edges.map(edge => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-        }));
+      // Применяем к графу
+      const isFirstRender = !(graph as any).rendered;
 
-        const elkResult = await performElkLayout(elkNodes, elkEdges);
-
-        // ===== ШАГ 3: Подготавливаем данные узлов С позициями =====
-        // Позиции должны быть в style.x и style.y
-        const nodesData = nodes.map(node => {
-          const pos = elkResult?.nodes.get(node.id);
-          return {
-            id: node.id,
-            data: node.data,
-            combo: node.combo,
-            style: {
-              x: pos?.x ?? 0,
-              y: pos?.y ?? 0,
-              width: node.width,
-              height: node.height,
-            },
-          };
+      if (isFirstRender) {
+        graph.setData({
+          nodes: nodesData as any,
+          edges: edgesData as any,
+          combos,
         });
-
-        // ===== ШАГ 4: Подготавливаем данные для рёбер с маршрутами =====
-        const edgesData = edges.map(edge => {
-          const route = elkResult?.edges.get(edge.id);
-          if (route && route.points.length >= 2) {
-            return {
-              id: edge.id,
-              source: edge.source,
-              target: edge.target,
-              data: edge.data,
-              style: {
-                controlPoints: route.points,
-              },
-            };
-          }
-          return {
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            data: edge.data,
-          };
+        graph.render();
+        (graph as any).rendered = true;
+        console.log('[G6] First render done, dagre layout applied');
+      } else {
+        graph.setData({
+          nodes: nodesData as any,
+          edges: edgesData as any,
+          combos,
         });
-
-        console.log('[G6] Sample node data with position:', nodesData.slice(0, 3).map(n => ({ id: n.id, style: n.style })));
-
-        // ===== ШАГ 5: Применяем к графу =====
-        if ((graph as any).destroyed) return;
-
-        const isFirstRender = !(graph as any).rendered;
-
-        if (isFirstRender) {
-          // Первый раз - setData + render
-          graph.setData({
-            nodes: nodesData as any,
-            edges: edgesData as any,
-            combos,
-          });
-          graph.render();
-          (graph as any).rendered = true;
-          console.log('[G6] First render with positions done');
-        } else {
-          // Инкрементальное обновление
-          graph.setData({
-            nodes: nodesData as any,
-            edges: edgesData as any,
-            combos,
-          });
-          console.log('[G6] Data updated with positions');
-        }
-
-        // Фит к экрану
-        graph.fitView();
-        console.log('[G6] Layout complete, fitView applied');
-
-      } catch (error) {
-        console.error('[G6] Process error:', error);
+        console.log('[G6] Data updated');
       }
-    };
 
-    processDataAndLayout();
-
+    } catch (error) {
+      console.error('[G6] Process error:', error);
+    }
   }, [data]);
 
   // Внешний zoom

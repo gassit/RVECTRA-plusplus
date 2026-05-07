@@ -200,9 +200,22 @@ export async function applyElkLayout(
 
   try {
     console.log('[ELK] Starting layout for', nodes.length, 'nodes,', validEdges.length, 'edges');
+    console.log('[ELK] Input nodes sample:', nodes.slice(0, 3).map(n => ({ id: n.id, type: n.type })));
 
     // 4. Запуск расчета макета
     const layout = await elk.layout(graph);
+
+    // ЛОГИРОВАНИЕ: сырой результат от ELK (до трансформации)
+    console.log('[ELK] RAW layout result:');
+    console.log('  - layout.children exists:', !!layout.children);
+    console.log('  - layout.children length:', layout.children?.length);
+    if (layout.children && layout.children.length > 0) {
+      const sample = layout.children.slice(0, 3);
+      console.log('  - RAW nodes sample (top-left coords from ELK):');
+      sample.forEach((n: any) => {
+        console.log(`    ${n.id}: x=${n.x}, y=${n.y}, w=${n.width}, h=${n.height}`);
+      });
+    }
 
     // 5. Преобразование результата обратно в формат G6
     if (!layout.children) {
@@ -224,6 +237,22 @@ export async function applyElkLayout(
         height: node.height,
       };
     });
+
+    // ЛОГИРОВАНИЕ: результат после трансформации (center coords for G6)
+    console.log('[ELK] TRANSFORMED nodes (center coords for G6):');
+    newNodes.slice(0, 3).forEach((n: any) => {
+      console.log(`  ${n.id}: x=${n.x?.toFixed(1)}, y=${n.y?.toFixed(1)}, w=${n.width}, h=${n.height}`);
+    });
+    // Проверка на NaN или undefined
+    const invalidNodes = newNodes.filter((n: any) => 
+      typeof n.x !== 'number' || typeof n.y !== 'number' || isNaN(n.x) || isNaN(n.y)
+    );
+    if (invalidNodes.length > 0) {
+      console.error('[ELK] INVALID nodes found:', invalidNodes.length);
+      invalidNodes.slice(0, 5).forEach((n: any) => {
+        console.error(`  ${n.id}: x=${n.x}, y=${n.y}`);
+      });
+    }
 
     // Обработка контрольных точек для рёбер (ортогональная маршрутизация)
     const newEdges = (layout.edges || []).map((edge: any) => {

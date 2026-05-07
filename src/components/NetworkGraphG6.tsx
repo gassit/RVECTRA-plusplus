@@ -778,6 +778,19 @@ export default function NetworkGraphG6({
           });
 
           console.log('[G6] ELK layout applied:', processedNodes.length, 'nodes,', processedEdges.length, 'edges');
+
+          // ЛОГИРОВАНИЕ: что передаётся в graph.setData
+          console.log('[G6] processedNodes sample (what goes to setData):');
+          processedNodes.slice(0, 3).forEach((n: any) => {
+            console.log(`  ${n.id}: x=${n.x?.toFixed?.(1) || n.x}, y=${n.y?.toFixed?.(1) || n.y}, style.size=${JSON.stringify(n.style?.size)}`);
+          });
+          // Проверка на невалидные координаты
+          const invalidProcessed = processedNodes.filter((n: any) => 
+            typeof n.x !== 'number' || typeof n.y !== 'number' || isNaN(n.x) || isNaN(n.y)
+          );
+          if (invalidProcessed.length > 0) {
+            console.error('[G6] INVALID processedNodes:', invalidProcessed.length, 'of', processedNodes.length);
+          }
         } else {
           // Без ELK - используем данные как есть
           processedNodes = data.nodes.map(node => ({
@@ -822,6 +835,22 @@ export default function NetworkGraphG6({
             combos,
           });
           console.log('[G6] Data updated');
+        }
+
+        // ЛОГИРОВАНИЕ: что G6 "видит" после render
+        console.log('[G6] Post-render check:');
+        try {
+          const allNodeIds = graph.getNodeData();
+          console.log('[G6] Node count in graph:', allNodeIds?.length);
+          if (allNodeIds && allNodeIds.length > 0) {
+            const sampleIds = allNodeIds.slice(0, 3);
+            sampleIds.forEach((nodeId: any) => {
+              const nodeData = graph.getNodeData(nodeId);
+              console.log(`  ${nodeId}: data=`, nodeData);
+            });
+          }
+        } catch (e) {
+          console.log('[G6] Could not get node data:', e);
         }
 
         // Фит к экрану

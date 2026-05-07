@@ -3,8 +3,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
-// Регистрируем ELK layout plugin
-import '@/lib/elk-layout-plugin';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -208,11 +206,11 @@ export default function NetworkGraphG6({
           updateEdge: true,
         },
       ],
-      // ============================================================
-      // ELK LAYOUT: используем зарегистрированный plugin
-      // ============================================================
       layout: {
-        type: 'elk-layout',
+        type: 'dagre',
+        direction: 'TB',
+        nodesep: 50,
+        ranksep: 80,
       },
       node: {
         type: 'rect',
@@ -753,12 +751,10 @@ export default function NetworkGraphG6({
           combos,
         });
 
-        // render() автоматически вызывает зарегистрированный elk-layout
-        // graph.layout() НЕ вызываем — это вызывает ошибку postLayout
         await graph.render();
         (graph as any).rendered = true;
         graph.fitView();
-        console.log('[G6] Render with ELK complete');
+        console.log('[G6] Render complete');
 
       } catch (error) {
         console.error('[G6] Error:', error);

@@ -183,53 +183,15 @@ function processDataForElk(data: GraphData): {
     };
   });
 
-  // Обрабатываем рёбра с привязкой к портам
+  // Обрабатываем рёбра - БЕЗ портов для диагностики
   const edges: ProcessedEdge[] = data.edges
     .filter(edge => nodeIds.has(edge.source) && nodeIds.has(edge.target))
     .map(edge => {
-      const sourceNode = data.nodes.find(n => n.id === edge.source);
-      const targetNode = data.nodes.find(n => n.id === edge.target);
-
-      const sourceType = (sourceNode?.type || 'default').toLowerCase();
-      const targetType = (targetNode?.type || 'default').toLowerCase();
-
-      let sourcePort: string | undefined;
-      let targetPort: string | undefined;
-
-      // Определяем порты источника
-      if (sourceType === 'source') {
-        sourcePort = `${edge.source}_OUT`;
-      } else if (sourceType === 'bus') {
-        // Находим индекс исходящего ребра для BUS
-        const nodeOutgoing = outgoingEdges.get(edge.source) || [];
-        const idx = nodeOutgoing.findIndex(e => e.id === edge.id);
-        if (idx >= 0) {
-          sourcePort = `${edge.source}_OUT_${idx}`;
-        }
-      } else {
-        sourcePort = `${edge.source}_OUT`;
-      }
-
-      // Определяем порты цели
-      if (targetType === 'load') {
-        targetPort = `${edge.target}_IN`;
-      } else if (targetType === 'bus') {
-        // Находим индекс входящего ребра для BUS
-        const nodeIncoming = incomingEdges.get(edge.target) || [];
-        const idx = nodeIncoming.findIndex(e => e.id === edge.id);
-        if (idx >= 0) {
-          targetPort = `${edge.target}_IN_${idx}`;
-        }
-      } else {
-        targetPort = `${edge.target}_IN`;
-      }
-
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        sourcePort,
-        targetPort,
+        // sourcePort и targetPort ВРЕМЕННО ОТКЛЮЧЕНЫ для диагностики
         data: edge,
       };
     });
@@ -378,8 +340,8 @@ export default function NetworkGraphG6({
           'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
           'elk.layered.crossingMinimization.semiInteractiveCrossingMinimization': 'true',
 
-          // Порты - FIXED_SIDE требует объявления портов в узлах
-          'elk.portConstraints': 'FIXED_SIDE',
+          // Порты - ВРЕМЕННО ОТКЛЮЧЕНО для диагностики
+          // 'elk.portConstraints': 'FIXED_SIDE',
           'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
 
           // Иерархия

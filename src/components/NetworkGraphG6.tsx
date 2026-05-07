@@ -726,21 +726,31 @@ export default function NetworkGraphG6({
         console.log('[G6] ELK result sample:', layoutResult.nodes.slice(0, 3));
 
         // Формируем данные для G6 с рассчитанными координатами
+        // G6 v5 требует координаты в style.x, style.y
         const nodes = data.nodes.map(node => {
           const layout = nodeLayoutMap.get(node.id);
           const type = (node.type || 'load').toLowerCase();
           const sizes = NODE_SIZES[type] || { width: 120, height: 60 };
           
+          const x = layout?.x ?? 0;
+          const y = layout?.y ?? 0;
+          const width = layout?.width ?? sizes.width;
+          const height = layout?.height ?? sizes.height;
+          
           return {
             id: node.id,
-            x: layout?.x ?? 0,
-            y: layout?.y ?? 0,
+            // КРИТИЧНО: G6 v5 ожидает координаты в style!
+            style: {
+              x: x,
+              y: y,
+              size: [width, height],
+            },
             combo: (node as any).combo || undefined,
             data: {
               ...node,
               type: type,
-              width: layout?.width ?? sizes.width,
-              height: layout?.height ?? sizes.height,
+              width: width,
+              height: height,
             },
           };
         });
@@ -748,8 +758,8 @@ export default function NetworkGraphG6({
         // Логируем что передаём в G6
         console.log('[G6] Nodes for G6:', nodes.slice(0, 3).map(n => ({
           id: n.id,
-          x: n.x,
-          y: n.y,
+          styleX: n.style?.x,
+          styleY: n.style?.y,
         })));
 
         const edges = validEdges.map(edge => {
@@ -802,9 +812,13 @@ export default function NetworkGraphG6({
       } catch (error) {
         console.error('[G6] Error processing data:', error);
 
-        // Fallback - рендерим без ELK
-        const nodes = data.nodes.map(node => ({
+        // Fallback - рендерим с координатами по умолчанию
+        const nodes = data.nodes.map((node, index) => ({
           id: node.id,
+          style: {
+            x: 100 + (index % 10) * 150,
+            y: 100 + Math.floor(index / 10) * 100,
+          },
           combo: (node as any).combo || undefined,
           data: {
             ...node,

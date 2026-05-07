@@ -8,13 +8,24 @@ import type { GraphData } from '@antv/g6';
 import ELK from 'elkjs/lib/elk.bundled.js';
 
 // Конфигурация ELK для электрической схемы
+// Ключевая идея: сохраняем порядок узлов и связей как во входных данных
 const ELK_OPTIONS = {
   'elk.algorithm': 'layered',
-  'elk.direction': 'DOWN',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '80',
-  'elk.spacing.nodeNode': '40',
-  'elk.spacing.edgeEdge': '10',
-  'elk.layered.compaction.postCompaction.strategy': 'LEFT',
+  'elk.direction': 'DOWN',  // Поток энергии сверху вниз
+  // КРИТИЧНО: сохраняем порядок узлов и связей
+  'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+  'elk.cycleBreaking.strategy': 'MODEL_ORDER',
+  // Иерархия: каждый уровень обрабатывается независимо
+  'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
+  // Размещение узлов
+  'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+  // Отступы
+  'elk.spacing.nodeNode': '20',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '50',
+  'elk.spacing.edgeEdge': '8',
+  // Ортогональная маршрутизация рёбер
+  'elk.edgeRouting': 'ORTHOGONAL',
+  // Убираем лишние точки изгиба
   'elk.layered.unnecessaryBendpoints': 'true',
 };
 
@@ -52,23 +63,34 @@ class ElkLayout extends BaseLayout {
     console.log('[ElkLayout] Starting layout for', model.nodes.length, 'nodes');
 
     // Подготавливаем узлы для ELK
-    const elkNodes = model.nodes.map((node: any) => {
+    const elkNodes = model.nodes.map((node: any, index: number) => {
       const type = (node.data?.type || node.type || 'load').toLowerCase();
       const size = NODE_SIZES[type] || { width: 120, height: 60 };
+
+      // Порты для ортогональных соединений
+      // FIXED_ORDER гарантирует что ELK не перемешивает порты
+      const ports = type === 'source'
+        ? [{ id: `${node.id}_out`, properties: { 'port.side': 'SOUTH' } }]
+        : type === 'load'
+        ? [{ id: `${node.id}_in`, properties: { 'port.side': 'NORTH' } }]
+        : [
+          { id: `${node.id}_in`, properties: { 'port.side': 'NORTH' } },
+          { id: `${node.id}_out`, properties: { 'port.side': 'SOUTH' } },
+        ];
 
       return {
         id: node.id,
         width: size.width,
         height: size.height,
-        // Порты для ортогональных соединений
-        ports: type === 'source'
-          ? [{ id: `${node.id}_out`, properties: { 'port.side': 'SOUTH' } }]
-          : type === 'load'
-          ? [{ id: `${node.id}_in`, properties: { 'port.side': 'NORTH' } }]
-          : [
-            { id: `${node.id}_in`, properties: { 'port.side': 'NORTH' } },
-            { id: `${node.id}_out`, properties: { 'port.side': 'SOUTH' } },
-          ],
+        // Фиксированный порядок портов
+        ports,
+        properties: {
+          'portConstraints': 'FIXED_ORDER',
+        },
+        // Сохраняем исходный индекс для considerModelOrder
+        layoutOptions: {
+          'elk.position': `(x=${index * 200})`,
+        },
       };
     });
 

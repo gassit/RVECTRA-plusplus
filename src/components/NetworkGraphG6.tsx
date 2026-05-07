@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
-import { applyElkLayout, NODE_SIZES } from '@/lib/elk-engine';
+// Регистрируем ELK layout plugin
+import '@/lib/elk-layout-plugin';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -197,9 +198,11 @@ export default function NetworkGraphG6({
         },
       ],
       // ============================================================
-      // ELK LAYOUT: координаты рассчитываются заранее
-      // Layout отключен - G6 только рендерит
+      // ELK LAYOUT: используем зарегистрированный plugin
       // ============================================================
+      layout: {
+        type: 'elk-layout',
+      },
       node: {
         type: 'rect',
         style: {
@@ -680,8 +683,7 @@ export default function NetworkGraphG6({
   // Кэш предыдущих данных для инкрементального обновления
   const prevDataRef = useRef<{ nodeIds: Set<string>; edgeIds: Set<string> } | null>(null);
 
-  // Основной useEffect: загрузка данных
-  // G6 сам вызовет ELK layout plugin через layout pipeline
+  // Основной useEffect: загрузка данных через ELK layout plugin
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph || !data) return;
@@ -690,156 +692,65 @@ export default function NetworkGraphG6({
 
     const processDataAndRender = async () => {
       try {
-        console.log('[G6] Processing data...');
+        console.log('[G6] Processing data with ELK layout...');
 
-        // Создаём Set существующих ID узлов для валидации
+        // Фильтруем рёбра с валидными source/target
         const nodeIds = new Set(data.nodes.map(n => n.id));
-
-        // Фильтруем рёбра
         const validEdges = data.edges.filter(edge => 
           nodeIds.has(edge.source) && nodeIds.has(edge.target)
         );
 
-        // ============================================================
-        // ELK LAYOUT: рассчитываем координаты ДО рендеринга
-        // ============================================================
-        console.log('[G6] Calculating ELK layout...');
-        
-        const elkNodes = data.nodes.map(node => ({
+        // Подготавливаем данные для G6
+        const nodes = data.nodes.map(node => ({
           id: node.id,
-          type: node.type,
+          combo: (node as any).combo || undefined,
+          data: {
+            ...node,
+            type: (node.type || 'load').toLowerCase(),
+          },
         }));
 
-        const elkEdges = validEdges.map(edge => ({
+        const edges = validEdges.map(edge => ({
           id: edge.id,
           source: edge.source,
           target: edge.target,
+          data: edge as any,
         }));
-
-        const layoutResult = await applyElkLayout(elkNodes, elkEdges);
-
-        // Создаём мапу для быстрого поиска
-        const nodeLayoutMap = new Map(layoutResult.nodes.map(n => [n.id, n]));
-        const edgeLayoutMap = new Map(layoutResult.edges.map(e => [e.id, e]));
-
-        // Логируем результат ELK
-        console.log('[G6] ELK result sample:', layoutResult.nodes.slice(0, 3));
-
-        // Формируем данные для G6 с рассчитанными координатами
-        // G6 v5 требует координаты в style.x, style.y
-        const nodes = data.nodes.map(node => {
-          const layout = nodeLayoutMap.get(node.id);
-          const type = (node.type || 'load').toLowerCase();
-          const sizes = NODE_SIZES[type] || { width: 120, height: 60 };
-          
-          const x = layout?.x ?? 0;
-          const y = layout?.y ?? 0;
-          const width = layout?.width ?? sizes.width;
-          const height = layout?.height ?? sizes.height;
-          
-          return {
-            id: node.id,
-            // КРИТИЧНО: G6 v5 ожидает координаты в style!
-            style: {
-              x: x,
-              y: y,
-              size: [width, height],
-            },
-            combo: (node as any).combo || undefined,
-            data: {
-              ...node,
-              type: type,
-              width: width,
-              height: height,
-            },
-          };
-        });
-
-        // Логируем что передаём в G6
-        console.log('[G6] Nodes for G6:', nodes.slice(0, 3).map(n => ({
-          id: n.id,
-          styleX: n.style?.x,
-          styleY: n.style?.y,
-        })));
-
-        const edges = validEdges.map(edge => {
-          const layout = edgeLayoutMap.get(edge.id);
-          return {
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            data: edge as any,
-            // Контрольные точки для ортогональной маршрутизации
-            ...(layout?.controlPoints?.length ? {
-              style: { controlPoints: layout.controlPoints },
-            } : {}),
-          };
-        });
 
         const combos = data.combos?.map(combo => ({
           id: combo.id,
           data: combo.data,
         })) || [];
 
-        // Применяем к графу
+        // ============================================================
+        // ELK LAYOUT через зарегистрированный plugin
+        // ============================================================
+        graph.setData({
+          nodes: nodes as any,
+          edges: edges as any,
+          combos,
+        });
+
         const isFirstRender = !(graph as any).rendered;
 
-        // ============================================================
-        // G6 v5 FIX: Рендерим узлы ПЕРЕД рёбрами
-        // Это решает ошибку "opposite.getPosition is not a function"
-        // ============================================================
-
         if (isFirstRender) {
-          // Первый рендер: сначала только узлы
-          graph.setData({
-            nodes: nodes as any,
-            edges: [], // Без рёбер!
-            combos,
-          });
-
+          // Вызываем layout ПЕРЕД render
+          await graph.layout();
           await graph.render();
           (graph as any).rendered = true;
-          console.log('[G6] Nodes rendered, now adding edges...');
-
-          // Теперь добавляем рёбра после того как узлы готовы
-          // Используем setTimeout чтобы G6 успел завершить рендеринг узлов
-          await new Promise(resolve => setTimeout(resolve, 0));
-
-          // Добавляем рёбра инкрементально
-          if (edges.length > 0) {
-            graph.addData({ edges: edges as any });
-            console.log('[G6] Edges added:', edges.length);
-          }
-
-          // Проверяем что G6 видит
-          const nodeData = graph.getNodeData();
-          console.log('[G6] G6 node data after render:', nodeData?.slice?.(0, 3)?.map?.((n: any) => ({
-            id: n.id,
-            x: n.x,
-            y: n.y,
-            style: n.style,
-          })));
+          console.log('[G6] First render with ELK complete');
         } else {
-          // Обновление данных: сначала обновляем узлы, потом рёбра
-          graph.setData({
-            nodes: nodes as any,
-            edges: [], // Сначала без рёбер
-            combos,
-          });
-          console.log('[G6] Data updated');
-
-          // Добавляем рёбра
-          if (edges.length > 0) {
-            graph.addData({ edges: edges as any });
-          }
+          // При обновлении данных пересчитываем layout
+          await graph.layout();
+          console.log('[G6] Layout recalculated');
         }
 
         graph.fitView();
 
       } catch (error) {
-        console.error('[G6] Error processing data:', error);
+        console.error('[G6] Error:', error);
 
-        // Fallback - рендерим с координатами по умолчанию
+        // Fallback - сетка
         const nodes = data.nodes.map((node, index) => ({
           id: node.id,
           style: {
@@ -865,20 +776,11 @@ export default function NetworkGraphG6({
           data: combo.data,
         })) || [];
 
+        graph.setData({ nodes: nodes as any, edges: edges as any, combos });
+
         if (!(graph as any).rendered) {
-          // Сначала рендерим узлы
-          graph.setData({ nodes: nodes as any, edges: [], combos });
-          graph.render();
+          await graph.render();
           (graph as any).rendered = true;
-          // Потом добавляем рёбра
-          if (edges.length > 0) {
-            graph.addData({ edges: edges as any });
-          }
-        } else {
-          graph.setData({ nodes: nodes as any, edges: [], combos });
-          if (edges.length > 0) {
-            graph.addData({ edges: edges as any });
-          }
         }
         graph.fitView();
       }

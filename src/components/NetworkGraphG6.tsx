@@ -171,7 +171,18 @@ export default function NetworkGraphG6({
       padding: [100, 100, 100, 100],
       behaviors: [
         'drag-canvas',
-        'zoom-canvas',
+        {
+          type: 'zoom-canvas',
+          key: 'zoom-wheel',
+          trigger: ['wheel'],
+          sensitivity: 1,
+        },
+        {
+          type: 'zoom-canvas',
+          key: 'zoom-pinch',
+          trigger: ['pinch'],
+          sensitivity: 1,
+        },
         {
           type: 'click-select',
           trigger: 'click',
@@ -658,6 +669,15 @@ export default function NetworkGraphG6({
       onZoomChange?.(zoom);
     });
 
+    // Отключаем passive touch listeners для корректной работы pinch-to-zoom
+    const preventTouchDefaults = (e: TouchEvent) => {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
+    };
+    container.addEventListener('touchmove', preventTouchDefaults, { passive: false });
+    container.addEventListener('touchstart', preventTouchDefaults, { passive: false });
+
     // Респонсив
     const resizeObserver = new ResizeObserver((entries) => {
       const graph = graphRef.current;
@@ -675,6 +695,8 @@ export default function NetworkGraphG6({
     // Это важно для React StrictMode в development
     return () => {
       resizeObserver.disconnect();
+      container.removeEventListener('touchmove', preventTouchDefaults);
+      container.removeEventListener('touchstart', preventTouchDefaults);
       // Граф уничтожается только при размонтировании компонента
       // Но в StrictMode это вызывается дважды, поэтому проверяем ref
     };
@@ -856,7 +878,52 @@ export default function NetworkGraphG6({
       <div
         ref={containerRef}
         className="h-full w-full"
+        style={{ touchAction: 'none' }}
       />
+
+      {/* Кнопки зума */}
+      <div className="absolute bottom-4 left-4 flex flex-col gap-2 z-20">
+        <button
+          onClick={() => {
+            const graph = graphRef.current;
+            if (graph && !(graph as any).destroyed) {
+              const currentZoom = graph.getZoom();
+              graph.zoomTo(currentZoom * 1.2);
+            }
+          }}
+          className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-xl font-bold"
+          title="Увеличить"
+        >
+          +
+        </button>
+        <button
+          onClick={() => {
+            const graph = graphRef.current;
+            if (graph && !(graph as any).destroyed) {
+              const currentZoom = graph.getZoom();
+              graph.zoomTo(currentZoom / 1.2);
+            }
+          }}
+          className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-xl font-bold"
+          title="Уменьшить"
+        >
+          −
+        </button>
+        <button
+          onClick={() => {
+            const graph = graphRef.current;
+            if (graph && !(graph as any).destroyed) {
+              graph.fitView();
+            }
+          }}
+          className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+          title="Вписать в экран"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+        </button>
+      </div>
 
       {/* Индикатор режима редактирования */}
       {editMode && (

@@ -3,10 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
-import { registerELKLayout } from '@/lib/elk-layout-plugin';
-
-// Регистрируем ELK layout плагин (один раз при загрузке модуля)
-registerELKLayout();
+import { applyElkLayout, NODE_SIZES } from '@/lib/elk-engine';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -200,14 +197,9 @@ export default function NetworkGraphG6({
         },
       ],
       // ============================================================
-      // ELK LAYOUT PLUGIN
+      // ELK LAYOUT: координаты рассчитываются заранее
+      // Layout отключен - G6 только рендерит
       // ============================================================
-      // Используем зарегистрированный 'elk-layout' плагин
-      // G6 автоматически вызовет execute() при рендеринге
-      // ============================================================
-      layout: {
-        type: 'elk-layout',
-      },
       node: {
         type: 'rect',
         style: {
@@ -342,9 +334,8 @@ export default function NetworkGraphG6({
         },
       },
       edge: {
-        // ELK INTEGRATION: 'line' вместо 'polyline'
-        // Отключаем умную маршрутизацию G6 - маршрут задаёт ELK через controlPoints
-        type: 'line',
+        // Polyline для поддержки controlPoints от ELK
+        type: 'polyline',
         style: {
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
@@ -352,8 +343,8 @@ export default function NetworkGraphG6({
           },
           lineWidth: 2,
           endArrow: false,
-          // ELK controlPoints передаются в данных ребра
-          // G6 не пересчитывает маршрут
+          // Скругление углов
+          radius: 6,
           opacity: (d: any) => {
             const status = d.data?.status;
             return status === 'OFF' ? 0.4 : 1;
@@ -704,32 +695,67 @@ export default function NetworkGraphG6({
         // Создаём Set существующих ID узлов для валидации
         const nodeIds = new Set(data.nodes.map(n => n.id));
 
-        // Фильтруем рёбра - оставляем только те, у которых source и target существуют
-        const validEdges = data.edges.filter(edge => {
-          const sourceExists = nodeIds.has(edge.source);
-          const targetExists = nodeIds.has(edge.target);
-          return sourceExists && targetExists;
-        });
+        // Фильтруем рёбра
+        const validEdges = data.edges.filter(edge => 
+          nodeIds.has(edge.source) && nodeIds.has(edge.target)
+        );
 
-        // Подготавливаем данные для G6
-        // ELK layout plugin сам рассчитает координаты
-        const nodes = data.nodes.map(node => ({
+        // ============================================================
+        // ELK LAYOUT: рассчитываем координаты ДО рендеринга
+        // ============================================================
+        console.log('[G6] Calculating ELK layout...');
+        
+        const elkNodes = data.nodes.map(node => ({
           id: node.id,
-          combo: (node as any).combo || undefined,
-          data: {
-            ...node,
-            type: node.type?.toLowerCase(),
-          },
+          type: node.type,
         }));
 
-        const edges = validEdges.map(edge => ({
+        const elkEdges = validEdges.map(edge => ({
           id: edge.id,
           source: edge.source,
           target: edge.target,
-          data: edge as any,
         }));
 
-        // Преобразуем combos если есть
+        const layoutResult = await applyElkLayout(elkNodes, elkEdges);
+
+        // Создаём мапу для быстрого поиска
+        const nodeLayoutMap = new Map(layoutResult.nodes.map(n => [n.id, n]));
+        const edgeLayoutMap = new Map(layoutResult.edges.map(e => [e.id, e]));
+
+        // Формируем данные для G6 с рассчитанными координатами
+        const nodes = data.nodes.map(node => {
+          const layout = nodeLayoutMap.get(node.id);
+          const type = (node.type || 'load').toLowerCase();
+          const sizes = NODE_SIZES[type] || { width: 120, height: 60 };
+          
+          return {
+            id: node.id,
+            x: layout?.x ?? 0,
+            y: layout?.y ?? 0,
+            combo: (node as any).combo || undefined,
+            data: {
+              ...node,
+              type: type,
+              width: layout?.width ?? sizes.width,
+              height: layout?.height ?? sizes.height,
+            },
+          };
+        });
+
+        const edges = validEdges.map(edge => {
+          const layout = edgeLayoutMap.get(edge.id);
+          return {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            data: edge as any,
+            // Контрольные точки для ортогональной маршрутизации
+            ...(layout?.controlPoints?.length ? {
+              style: { controlPoints: layout.controlPoints },
+            } : {}),
+          };
+        });
+
         const combos = data.combos?.map(combo => ({
           id: combo.id,
           data: combo.data,
@@ -738,7 +764,6 @@ export default function NetworkGraphG6({
         // Применяем к графу
         const isFirstRender = !(graph as any).rendered;
 
-        // КРИТИЧНО: setData -> layout() -> render()
         graph.setData({
           nodes: nodes as any,
           edges: edges as any,
@@ -746,18 +771,13 @@ export default function NetworkGraphG6({
         });
 
         if (isFirstRender) {
-          // КРИТИЧНО: await graph.layout() дожидается асинхронного ELK
-          await graph.layout();
           await graph.render();
           (graph as any).rendered = true;
           console.log('[G6] First render complete');
         } else {
-          // При обновлении данных тоже пересчитываем layout
-          await graph.layout();
-          console.log('[G6] Data updated with layout');
+          console.log('[G6] Data updated');
         }
 
-        // Фит к экрану
         graph.fitView();
 
       } catch (error) {

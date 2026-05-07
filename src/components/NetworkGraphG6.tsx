@@ -753,21 +753,12 @@ export default function NetworkGraphG6({
           combos,
         });
 
-        const isFirstRender = !(graph as any).rendered;
-
-        if (isFirstRender) {
-          // Вызываем layout ПЕРЕД render
-          await graph.layout();
-          await graph.render();
-          (graph as any).rendered = true;
-          console.log('[G6] First render with ELK complete');
-        } else {
-          // При обновлении данных пересчитываем layout
-          await graph.layout();
-          console.log('[G6] Layout recalculated');
-        }
-
+        // render() автоматически вызывает зарегистрированный elk-layout
+        // graph.layout() НЕ вызываем — это вызывает ошибку postLayout
+        await graph.render();
+        (graph as any).rendered = true;
         graph.fitView();
+        console.log('[G6] Render with ELK complete');
 
       } catch (error) {
         console.error('[G6] Error:', error);

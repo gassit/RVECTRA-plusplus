@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
+import { performElkLayout } from '@/lib/elk-layout';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -314,13 +315,8 @@ export default function NetworkGraphG6({
           updateEdge: true,
         },
       ],
-      // ===== DAGRE LAYOUT - для диагностики (если работает - проблема в ELK) =====
-      layout: {
-        type: 'dagre',
-        direction: 'TB',
-        ranksep: 150,
-        nodesep: 100,
-      },
+      // ELK layout применяется отдельно через elkjs (не встроенный в G6)
+      // @antv/layout 2.0.0 НЕ содержит ELK
       node: {
         type: 'rect',
         style: {
@@ -722,7 +718,7 @@ export default function NetworkGraphG6({
       const { nodes, edges, combos } = processDataForElk(data);
 
       console.log('[G6] Processed nodes with sizes:', nodes.length);
-      console.log('[G6] Nodes with ports:', nodes.filter(n => n.ports && n.ports.length > 0).map(n => ({ id: n.id, ports: n.ports })));
+      console.log('[G6] Sample node data:', nodes.slice(0, 3).map(n => ({ id: n.id, width: n.width, height: n.height, type: n.data?.type })));
 
       // Первый рендер
       if (!(graph as any).rendered) {
@@ -746,6 +742,97 @@ export default function NetworkGraphG6({
     } catch (e) {
       console.error('Graph update error:', e);
     }
+  }, [data]);
+
+  // ELK Layout - применяется через elkjs напрямую
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph || !data) return;
+    if ((graph as any).destroyed || !(graph as any).rendered) return;
+
+    const applyElkLayout = async () => {
+      try {
+        console.log('[ELK] Starting layout via elkjs...');
+
+        // Подготавливаем данные для ELK
+        const elkNodes = data.nodes.map(node => ({
+          id: node.id,
+          type: node.type,
+        }));
+
+        const elkEdges = data.edges
+          .filter(edge => {
+            const nodeIds = new Set(data.nodes.map(n => n.id));
+            return nodeIds.has(edge.source) && nodeIds.has(edge.target);
+          })
+          .map(edge => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+          }));
+
+        // Выполняем ELK layout
+        const result = await performElkLayout(elkNodes, elkEdges);
+
+        if (!result || (graph as any).destroyed) {
+          console.log('[ELK] Layout cancelled or graph destroyed');
+          return;
+        }
+
+        // Получаем текущие данные графа
+        const currentData = graph.getData();
+        if (!currentData || !currentData.nodes) {
+          console.log('[ELK] No current graph data');
+          return;
+        }
+
+        // Обновляем узлы с позициями
+        const updatedNodes = (currentData.nodes as any[]).map(node => {
+          const pos = result.nodes.get(node.id);
+          if (pos) {
+            return {
+              ...node,
+              x: pos.x,
+              y: pos.y,
+              width: pos.width,
+              height: pos.height,
+            };
+          }
+          return node;
+        });
+
+        // Обновляем рёбра с маршрутами
+        const updatedEdges = (currentData.edges as any[]).map(edge => {
+          const route = result.edges.get(edge.id);
+          if (route && route.points.length >= 2) {
+            return {
+              ...edge,
+              style: {
+                ...(edge.style || {}),
+                controlPoints: route.points,
+              },
+            };
+          }
+          return edge;
+        });
+
+        // Применяем обновления
+        if (!(graph as any).destroyed) {
+          graph.setData({
+            nodes: updatedNodes,
+            edges: updatedEdges,
+            combos: currentData.combos,
+          });
+          console.log('[ELK] Applied layout to graph');
+        }
+      } catch (error) {
+        console.error('[ELK] Error:', error);
+      }
+    };
+
+    // Запускаем с небольшой задержкой
+    const timeoutId = setTimeout(applyElkLayout, 500);
+    return () => clearTimeout(timeoutId);
   }, [data]);
 
   // Внешний zoom

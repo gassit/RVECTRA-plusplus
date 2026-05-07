@@ -784,17 +784,33 @@ export default function NetworkGraphG6({
         // Применяем к графу
         const isFirstRender = !(graph as any).rendered;
 
-        graph.setData({
-          nodes: nodes as any,
-          edges: edges as any,
-          combos,
-        });
+        // ============================================================
+        // G6 v5 FIX: Рендерим узлы ПЕРЕД рёбрами
+        // Это решает ошибку "opposite.getPosition is not a function"
+        // ============================================================
 
         if (isFirstRender) {
+          // Первый рендер: сначала только узлы
+          graph.setData({
+            nodes: nodes as any,
+            edges: [], // Без рёбер!
+            combos,
+          });
+
           await graph.render();
           (graph as any).rendered = true;
-          console.log('[G6] First render complete');
-          
+          console.log('[G6] Nodes rendered, now adding edges...');
+
+          // Теперь добавляем рёбра после того как узлы готовы
+          // Используем setTimeout чтобы G6 успел завершить рендеринг узлов
+          await new Promise(resolve => setTimeout(resolve, 0));
+
+          // Добавляем рёбра инкрементально
+          if (edges.length > 0) {
+            graph.addData({ edges: edges as any });
+            console.log('[G6] Edges added:', edges.length);
+          }
+
           // Проверяем что G6 видит
           const nodeData = graph.getNodeData();
           console.log('[G6] G6 node data after render:', nodeData?.slice?.(0, 3)?.map?.((n: any) => ({
@@ -804,7 +820,18 @@ export default function NetworkGraphG6({
             style: n.style,
           })));
         } else {
+          // Обновление данных: сначала обновляем узлы, потом рёбра
+          graph.setData({
+            nodes: nodes as any,
+            edges: [], // Сначала без рёбер
+            combos,
+          });
           console.log('[G6] Data updated');
+
+          // Добавляем рёбра
+          if (edges.length > 0) {
+            graph.addData({ edges: edges as any });
+          }
         }
 
         graph.fitView();
@@ -839,11 +866,19 @@ export default function NetworkGraphG6({
         })) || [];
 
         if (!(graph as any).rendered) {
-          graph.setData({ nodes: nodes as any, edges: edges as any, combos });
+          // Сначала рендерим узлы
+          graph.setData({ nodes: nodes as any, edges: [], combos });
           graph.render();
           (graph as any).rendered = true;
+          // Потом добавляем рёбра
+          if (edges.length > 0) {
+            graph.addData({ edges: edges as any });
+          }
         } else {
-          graph.setData({ nodes: nodes as any, edges: edges as any, combos });
+          graph.setData({ nodes: nodes as any, edges: [], combos });
+          if (edges.length > 0) {
+            graph.addData({ edges: edges as any });
+          }
         }
         graph.fitView();
       }

@@ -736,7 +736,24 @@ export default function NetworkGraphG6({
 
         const elkResult = await performElkLayout(elkNodes, elkEdges);
 
-        // ===== ШАГ 3: Подготавливаем данные для рёбер с маршрутами =====
+        // ===== ШАГ 3: Подготавливаем данные узлов С позициями =====
+        // Позиции должны быть в style.x и style.y
+        const nodesData = nodes.map(node => {
+          const pos = elkResult?.nodes.get(node.id);
+          return {
+            id: node.id,
+            data: node.data,
+            combo: node.combo,
+            style: {
+              x: pos?.x ?? 0,
+              y: pos?.y ?? 0,
+              width: node.width,
+              height: node.height,
+            },
+          };
+        });
+
+        // ===== ШАГ 4: Подготавливаем данные для рёбер с маршрутами =====
         const edgesData = edges.map(edge => {
           const route = elkResult?.edges.get(edge.id);
           if (route && route.points.length >= 2) {
@@ -758,21 +775,12 @@ export default function NetworkGraphG6({
           };
         });
 
-        // ===== ШАГ 4: Применяем к графу =====
+        console.log('[G6] Sample node data with position:', nodesData.slice(0, 3).map(n => ({ id: n.id, style: n.style })));
+
+        // ===== ШАГ 5: Применяем к графу =====
         if ((graph as any).destroyed) return;
 
         const isFirstRender = !(graph as any).rendered;
-
-        // Подготавливаем данные узлов БЕЗ позиций (позиции установим через API)
-        const nodesData = nodes.map(node => ({
-          id: node.id,
-          data: node.data,
-          combo: node.combo,
-          style: {
-            width: node.width,
-            height: node.height,
-          },
-        }));
 
         if (isFirstRender) {
           // Первый раз - setData + render
@@ -783,7 +791,7 @@ export default function NetworkGraphG6({
           });
           graph.render();
           (graph as any).rendered = true;
-          console.log('[G6] First render done');
+          console.log('[G6] First render with positions done');
         } else {
           // Инкрементальное обновление
           graph.setData({
@@ -791,26 +799,8 @@ export default function NetworkGraphG6({
             edges: edgesData as any,
             combos,
           });
-          console.log('[G6] Data updated');
+          console.log('[G6] Data updated with positions');
         }
-
-        // ===== ШАГ 5: Устанавливаем позиции через API =====
-        // translateNodeTo - правильный метод для перемещения узлов в G6 v6
-        // Используем (graph as any) т.к. метод не экспортируется в типах
-        let movedCount = 0;
-        for (const node of nodes) {
-          const pos = elkResult?.nodes.get(node.id);
-          if (pos) {
-            try {
-              (graph as any).translateNodeTo(node.id, { x: pos.x, y: pos.y });
-              movedCount++;
-            } catch (e) {
-              // Игнорируем ошибки
-            }
-          }
-        }
-
-        console.log('[G6] Nodes moved via translateNodeTo:', movedCount);
 
         // Фит к экрану
         graph.fitView();

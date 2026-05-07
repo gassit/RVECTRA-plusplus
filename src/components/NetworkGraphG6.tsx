@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
+// Регистрируем ELK layout plugin
+import '@/lib/elk-layout-plugin';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -33,6 +35,17 @@ interface NetworkGraphG6Props {
 // ============================================================================
 // КОНСТАНТЫ ДИЗАЙНА
 // ============================================================================
+
+// Цвета заголовков по типам элементов
+const TYPE_COLORS: Record<string, { primary: string; gradient: string }> = {
+  source: { primary: '#fbbf24', gradient: 'l(0) 0:#eab308 0.5:#22c55e 1:#ef4444' },
+  bus: { primary: '#B87333', gradient: 'l(0) 0:#B87333 0.5:#CD7F32 1:#B87333' },
+  junction: { primary: '#9ca3af', gradient: 'l(0) 0:#9ca3af 1:#6b7280' },
+  breaker: { primary: '#1f2937', gradient: 'l(0) 0:#1f2937 1:#111827' },
+  meter: { primary: '#3b82f6', gradient: 'l(0) 0:#3b82f6 1:#2563eb' },
+  load: { primary: '#ffffff', gradient: 'l(0) 0:#ffffff 1:#f3f4f6' },
+  cabinet: { primary: '#d97706', gradient: 'l(0) 0:#B87333 0.5:#CD7F32 1:#B87333' },
+};
 
 // Типы элементов, которые имеют operationalStatus (можно включить/выключить)
 const SWITCHABLE_TYPES = ['SOURCE', 'BREAKER', 'LOAD', 'METER'];
@@ -149,13 +162,13 @@ export default function NetworkGraphG6({
     const width = container.clientWidth || 800;
     const height = container.clientHeight || 600;
 
-    // Создаём граф G6 — стоковая конфигурация
+    // Создаём граф G6
     const graph = new Graph({
       container,
       width,
       height,
       autoFit: 'view',
-      padding: [50, 50, 50, 50],
+      padding: [100, 100, 100, 100],
       behaviors: [
         'drag-canvas',
         {
@@ -175,27 +188,200 @@ export default function NetworkGraphG6({
           trigger: 'click',
           multiple: false,
         },
+        {
+          type: 'collapse-expand',
+          trigger: 'dblclick',
+        },
+        // Drag element с динамическим обновлением рёбер
+        {
+          type: 'drag-element',
+          enable: () => editModeRef.current && !connectionModeRef.current,
+          // Обновлять рёбра во время перетаскивания
+          updateEdge: true,
+        },
+        // Drag combo - перетаскивание групп (cabinets)
+        {
+          type: 'drag-element',
+          enable: (evt: any) => {
+            return editModeRef.current && !connectionModeRef.current;
+          },
+          updateEdge: true,
+        },
       ],
+      // ============================================================
+      // ELK LAYOUT: используем зарегистрированный plugin
+      // ============================================================
       layout: {
-        type: 'dendrogram',
-        direction: 'TB',
-        nodeSep: 40,
-        rankSep: 80,
-        radial: false,
+        type: 'elk-layout',
       },
       node: {
         type: 'rect',
         style: {
-          size: [120, 60],
-          radius: 6,
-          fill: '#ffffff',
-          stroke: '#e2e8f0',
-          lineWidth: 2,
+          // Размер узла: приоритет из style.size (задаётся ELK), иначе из data, иначе дефолт по типу
+          size: (d: any) => {
+            // Если size уже установлен в данных (из ELK адаптера)
+            if (d.style?.size) return d.style.size;
+            // Если width/height в data
+            if (d.data?.width && d.data?.height) {
+              return [d.data.width, d.data.height];
+            }
+            // Дефолтные размеры по типу
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            const sizes: Record<string, [number, number]> = {
+              source: [160, 80],
+              bus: [200, 40],
+              breaker: [140, 70],
+              meter: [140, 70],
+              load: [160, 80],
+              cabinet: [180, 50],
+              junction: [40, 40],
+              transformer: [140, 80],
+            };
+            return sizes[nodeType] || [160, 80];
+          },
+          // Размер читается из style.size (задаётся при создании узла)
+          // или используется стандартный
+          radius: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            // BUS - без скругления для инженерного вида
+            return nodeType === 'bus' ? 0 : 6;
+          },
+          fill: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            // BUS - простая медная заливка без градиента
+            if (nodeType === 'bus') {
+              return '#CD7F32';
+            }
+            return '#ffffff';
+          },
+          stroke: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            const hasCritical = d.data?.criticalIssues > 0;
+            if (hasCritical) return '#ef4444';
+            // BUS - без дополнительной обводки (тот же цвет что и заливка)
+            if (nodeType === 'bus') {
+              return '#8B5A2B'; // тёмно-коричневый для контура
+            }
+            return TYPE_COLORS[nodeType]?.primary || '#e2e8f0';
+          },
+          lineWidth: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            // BUS - толстая линия
+            return nodeType === 'bus' ? 3 : 2;
+          },
+          shadowColor: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            // BUS - без тени
+            return nodeType === 'bus' ? 'transparent' : 'rgba(0, 0, 0, 0.15)';
+          },
+          shadowBlur: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            return nodeType === 'bus' ? 0 : 10;
+          },
+          shadowOffsetX: 0,
+          shadowOffsetY: 4,
           cursor: 'pointer',
-          labelText: (d: any) => d.data?.name || d.id,
+          // Точки привязки для рёбер - строго верх/низ для вертикальных линий
+          anchorPoints: [
+            [0.5, 0],   // индекс 0: верхний центр (вход от источника)
+            [0.5, 1],   // индекс 1: нижний центр (выход к нагрузке)
+          ],
+          // Порты для строгого вертикального подключения
+          portR: 4,               // Радиус порта
+          portLinkToCenter: true, // Соединять с центром узла
+          // Основной текст - название
+          labelText: (d: any) => {
+            const name = d.data?.name || d.id;
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            if (nodeType === 'bus') {
+              // BUS - название сбоку или не отображается
+              return '';
+            }
+            if (nodeType === 'cabinet') {
+              return name.length > 14 ? name.slice(0, 14) + '...' : name;
+            }
+            return name.length > 18 ? name.slice(0, 18) + '...' : name;
+          },
           labelFill: '#000000',
-          labelFontSize: 12,
+          labelFontSize: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            return nodeType === 'cabinet' ? 17 : 12;
+          },
           labelFontWeight: 'bold',
+          labelPlacement: 'center',
+          labelOffsetY: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            return nodeType === 'cabinet' ? 0 : -15;
+          },
+          labelMaxWidth: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            return nodeType === 'cabinet' ? 160 : 140;
+          },
+        },
+        state: {
+          selected: {
+            stroke: '#3b82f6',
+            lineWidth: 4,
+            shadowColor: 'rgba(59, 130, 246, 0.4)',
+            shadowBlur: 20,
+          },
+          hover: {
+            stroke: '#60a5fa',
+            lineWidth: 3,
+            shadowColor: 'rgba(96, 165, 250, 0.3)',
+            shadowBlur: 15,
+          },
+          // Состояние для начала связи
+          connectionSource: {
+            stroke: '#22c55e',
+            lineWidth: 4,
+            shadowColor: 'rgba(34, 197, 94, 0.5)',
+            shadowBlur: 20,
+          },
+          // Состояние для потенциальной цели связи
+          connectionTarget: {
+            stroke: '#f59e0b',
+            lineWidth: 3,
+            shadowColor: 'rgba(245, 158, 11, 0.4)',
+            shadowBlur: 15,
+          },
+        },
+      },
+      edge: {
+        // Polyline для поддержки controlPoints от ELK
+        type: 'polyline',
+        style: {
+          stroke: (d: any) => {
+            const lifeStatus = d.data?.lifeStatus;
+            return lifeStatus === 'LIVE' ? '#22c55e' : '#94a3b8';
+          },
+          lineWidth: 2,
+          endArrow: false,
+          // Скругление углов
+          radius: 6,
+          opacity: (d: any) => {
+            const status = d.data?.status;
+            return status === 'OFF' ? 0.4 : 1;
+          },
+          // Подпись кабеля
+          labelText: (d: any) => {
+            const wireType = d.data?.wireType;
+            const wireSize = d.data?.wireSize;
+            if (wireType && wireSize) {
+              const length = d.data?.length;
+              const text = `${wireType} ${wireSize}мм²`;
+              return length ? `${text} ${length}м` : text;
+            }
+            return '';
+          },
+          labelFill: '#64748b',
+          labelFontSize: 9,
+          labelBackground: true,
+          labelBackgroundFill: '#ffffff',
+          labelBackgroundOpacity: 0.95,
+          labelBackgroundRadius: 4,
+          labelPadding: [2, 4, 2, 4],
+          // Позиция подписи по центру линии
           labelPlacement: 'center',
         },
         state: {
@@ -209,21 +395,35 @@ export default function NetworkGraphG6({
           },
         },
       },
-      edge: {
-        type: 'cubic-horizontal',
+      combo: {
+        type: 'rect',
         style: {
-          stroke: '#94a3b8',
+          radius: 8,
+          fill: '#f8fafc',
+          stroke: '#d97706',
           lineWidth: 2,
-          endArrow: false,
+          lineDash: [5, 5],
+          opacity: 0.9,
+          labelText: (d: any) => d.data?.name || '',
+          labelFill: '#92400e',
+          labelFontSize: 12,
+          labelFontWeight: 'bold',
+          labelPlacement: 'top',
+          labelOffsetY: -5,
+          padding: [30, 20, 20, 20],
         },
         state: {
           selected: {
-            stroke: '#3b82f6',
-            lineWidth: 4,
+            stroke: '#f59e0b',
+            lineWidth: 3,
           },
           hover: {
-            stroke: '#60a5fa',
-            lineWidth: 3,
+            stroke: '#fbbf24',
+            lineWidth: 2,
+          },
+          collapsed: {
+            fill: '#fef3c7',
+            lineDash: [],
           },
         },
       },
@@ -525,6 +725,7 @@ export default function NetworkGraphG6({
         // Подготавливаем данные для G6
         const nodes = data.nodes.map(node => ({
           id: node.id,
+          combo: (node as any).combo || undefined,
           data: {
             ...node,
             type: (node.type || 'load').toLowerCase(),
@@ -538,18 +739,26 @@ export default function NetworkGraphG6({
           data: edge as any,
         }));
 
+        const combos = data.combos?.map(combo => ({
+          id: combo.id,
+          data: combo.data,
+        })) || [];
+
         // ============================================================
-        // Данные в G6 (без combos — dagre их не поддерживает)
+        // ELK LAYOUT через зарегистрированный plugin
         // ============================================================
         graph.setData({
           nodes: nodes as any,
           edges: edges as any,
+          combos,
         });
 
+        // render() автоматически вызывает зарегистрированный elk-layout
+        // graph.layout() НЕ вызываем — это вызывает ошибку postLayout
         await graph.render();
         (graph as any).rendered = true;
         graph.fitView();
-        console.log('[G6] Render complete');
+        console.log('[G6] Render with ELK complete');
 
       } catch (error) {
         console.error('[G6] Error:', error);

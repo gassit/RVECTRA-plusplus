@@ -7,26 +7,10 @@ import { BaseLayout, ExtensionCategory, register } from '@antv/g6';
 import type { GraphData } from '@antv/g6';
 import ELK from 'elkjs/lib/elk.bundled.js';
 
-// Конфигурация ELK для электрической схемы
-// Ключевая идея: сохраняем порядок узлов и связей как во входных данных
+// Стоковая конфигурация ELK
 const ELK_OPTIONS = {
   'elk.algorithm': 'layered',
-  'elk.direction': 'DOWN',  // Поток энергии сверху вниз
-  // КРИТИЧНО: сохраняем порядок узлов и связей
-  'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-  'elk.cycleBreaking.strategy': 'MODEL_ORDER',
-  // Иерархия: каждый уровень обрабатывается независимо
-  'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
-  // Размещение узлов
-  'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-  // Отступы
-  'elk.spacing.nodeNode': '20',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '50',
-  'elk.spacing.edgeEdge': '8',
-  // Ортогональная маршрутизация рёбер
-  'elk.edgeRouting': 'ORTHOGONAL',
-  // Убираем лишние точки изгиба
-  'elk.layered.unnecessaryBendpoints': 'true',
+  'elk.direction': 'DOWN',
 };
 
 // Размеры узлов по типам
@@ -82,14 +66,9 @@ class ElkLayout extends BaseLayout {
         id: node.id,
         width: size.width,
         height: size.height,
-        // Фиксированный порядок портов
         ports,
         properties: {
           'portConstraints': 'FIXED_ORDER',
-        },
-        // Сохраняем исходный индекс для considerModelOrder
-        layoutOptions: {
-          'elk.position': `(x=${index * 200})`,
         },
       };
     });

@@ -201,17 +201,7 @@ export default function NetworkGraphG6({
       ],
       // AntV Dagre layout - оптимизирован для однолинейных электрических схем
       layout: {
-        type: 'antv-dagre',
-        rankdir: 'TB',           // Сверху вниз (ток от источника к нагрузке)
-        nodesep: 120,            // Расстояние между узлами на одном уровне - увеличено
-        ranksep: 150,            // Расстояние между уровнями (слоями)
-        preventOverlap: true,    // Предотвращать перекрытие
-        nodeSize: [200, 100],    // Увеличено для учёта cabinet и bus
-        sortByCombo: false,
-        ranker: 'network-simplex', // Оптимальное размещение
-        animate: false,
-        // Дополнительные опции для разделения узлов
-        alignment: 'UL',         // Выравнивание вверх-влево для стабильности
+        type: 'dagre',
       },
       node: {
         type: 'rect',

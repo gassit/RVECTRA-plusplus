@@ -722,6 +722,9 @@ export default function NetworkGraphG6({
         const nodeLayoutMap = new Map(layoutResult.nodes.map(n => [n.id, n]));
         const edgeLayoutMap = new Map(layoutResult.edges.map(e => [e.id, e]));
 
+        // Логируем результат ELK
+        console.log('[G6] ELK result sample:', layoutResult.nodes.slice(0, 3));
+
         // Формируем данные для G6 с рассчитанными координатами
         const nodes = data.nodes.map(node => {
           const layout = nodeLayoutMap.get(node.id);
@@ -741,6 +744,13 @@ export default function NetworkGraphG6({
             },
           };
         });
+
+        // Логируем что передаём в G6
+        console.log('[G6] Nodes for G6:', nodes.slice(0, 3).map(n => ({
+          id: n.id,
+          x: n.x,
+          y: n.y,
+        })));
 
         const edges = validEdges.map(edge => {
           const layout = edgeLayoutMap.get(edge.id);
@@ -774,6 +784,15 @@ export default function NetworkGraphG6({
           await graph.render();
           (graph as any).rendered = true;
           console.log('[G6] First render complete');
+          
+          // Проверяем что G6 видит
+          const nodeData = graph.getNodeData();
+          console.log('[G6] G6 node data after render:', nodeData?.slice?.(0, 3)?.map?.((n: any) => ({
+            id: n.id,
+            x: n.x,
+            y: n.y,
+            style: n.style,
+          })));
         } else {
           console.log('[G6] Data updated');
         }

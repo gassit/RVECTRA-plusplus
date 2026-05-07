@@ -212,14 +212,16 @@ export async function applyElkLayout(
     const newNodes = layout.children.map((node: any) => {
       const originalNode = nodes.find(n => n.id === node.id);
 
+      // ВАЖНО: spread оператор первым, чтобы width/height не были перезаписаны
+      // ELK возвращает координаты верхнего левого угла (top-left)
+      // G6 ожидает координаты центра узла, поэтому добавляем width/2 и height/2
       return {
+        ...originalNode,
         id: node.id,
         x: node.x + node.width / 2, // G6 использует центр узла
         y: node.y + node.height / 2,
         width: node.width,
         height: node.height,
-        // Сохраняем оригинальные данные
-        ...originalNode,
       };
     });
 
@@ -233,18 +235,18 @@ export async function applyElkLayout(
       const sections = edge.sections?.[0];
       const controlPoints: Array<{ x: number; y: number }> = [];
 
-      // Добавляем точки изгиба (bendPoints)
+      // Добавляем точки изгиба (bendPoints) для ортогональной маршрутизации
       if (sections?.bendPoints) {
         controlPoints.push(...sections.bendPoints.map((bp: any) => ({ x: bp.x, y: bp.y })));
       }
 
+      // ВАЖНО: spread оператор первым, чтобы id/source/target не были перезаписаны
       return {
+        ...originalEdge,
         id: edge.id,
         source: edge.sources[0],
         target: edge.targets[0],
         controlPoints,
-        // Сохраняем оригинальные данные
-        ...originalEdge,
       };
     });
 

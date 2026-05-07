@@ -199,13 +199,34 @@ export default function NetworkGraphG6({
           updateEdge: true,
         },
       ],
-      // Layout: preset = координаты задаём вручную через ELK адаптер
-      layout: {
-        type: 'preset',
-      },
+      // Layout отключен - координаты задаём вручную через ELK адаптер
+      // G6 v5 не имеет встроенного 'preset' плагина, поэтому полностью отключаем layout
+      // и используем предрасчитанные координаты из elk-engine.ts
       node: {
         type: 'rect',
         style: {
+          // Размер узла: приоритет из style.size (задаётся ELK), иначе из data, иначе дефолт по типу
+          size: (d: any) => {
+            // Если size уже установлен в данных (из ELK адаптера)
+            if (d.style?.size) return d.style.size;
+            // Если width/height в data
+            if (d.data?.width && d.data?.height) {
+              return [d.data.width, d.data.height];
+            }
+            // Дефолтные размеры по типу
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            const sizes: Record<string, [number, number]> = {
+              source: [160, 80],
+              bus: [200, 40],
+              breaker: [140, 70],
+              meter: [140, 70],
+              load: [160, 80],
+              cabinet: [180, 50],
+              junction: [40, 40],
+              transformer: [140, 80],
+            };
+            return sizes[nodeType] || [160, 80];
+          },
           // Размер читается из style.size (задаётся при создании узла)
           // или используется стандартный
           radius: (d: any) => {
@@ -631,10 +652,8 @@ export default function NetworkGraphG6({
           onNodeDrop(nodeId, x, y);
         }
         
-        // Пересчитываем layout для обновления ортогональных рёбер
-        if (typeof graph.layout === 'function') {
-          graph.layout();
-        }
+        // После перетаскивания не вызываем graph.layout() - это триггерит ошибку
+        // 'preset is not registered'. Рёбра обновляются автоматически через updateEdge: true
       }
     });
 
@@ -719,17 +738,33 @@ export default function NetworkGraphG6({
 
           const layoutResult = await applyElkLayout(elkNodes, elkEdges);
 
+          // Логируем результат ELK для отладки
+          console.log('[G6] ELK result sample:', layoutResult.nodes.slice(0, 3).map(n => ({
+            id: n.id,
+            x: n.x,
+            y: n.y,
+            width: n.width,
+            height: n.height,
+          })));
+
           // Преобразуем результат в формат G6
+          // ВАЖНО: добавляем size из ELK результата
           processedNodes = layoutResult.nodes.map(node => {
             const originalNode = data.nodes.find(n => n.id === node.id);
             return {
               id: node.id,
               x: node.x,
               y: node.y,
+              // G6 v5 требует size как [width, height] массив или { width, height }
+              style: {
+                size: [node.width, node.height],
+              },
               combo: (originalNode as any)?.combo || undefined,
               data: {
                 ...originalNode,
                 type: originalNode?.type?.toLowerCase(),
+                width: node.width,
+                height: node.height,
               },
             };
           });

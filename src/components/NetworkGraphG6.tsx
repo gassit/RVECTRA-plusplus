@@ -203,15 +203,13 @@ export default function NetworkGraphG6({
       layout: {
         type: 'antv-dagre',
         rankdir: 'TB',           // Сверху вниз (ток от источника к нагрузке)
-        nodesep: 120,            // Расстояние между узлами на одном уровне - увеличено
-        ranksep: 150,            // Расстояние между уровнями (слоями)
+        nodesep: 150,            // Расстояние между узлами на одном уровне (горизонталь)
+        ranksep: 200,            // Расстояние между уровнями (вертикаль) - увеличено
         preventOverlap: true,    // Предотвращать перекрытие
-        nodeSize: [200, 100],    // Увеличено для учёта cabinet и bus
+        nodeSize: [200, 120],    // Размер для расчёта перекрытий
         sortByCombo: false,
         ranker: 'network-simplex', // Оптимальное размещение
         animate: false,
-        // Дополнительные опции для разделения узлов
-        alignment: 'UL',         // Выравнивание вверх-влево для стабильности
       },
       node: {
         type: 'rect',
@@ -806,40 +804,16 @@ export default function NetworkGraphG6({
         const addedEdges = edges.filter(e => !prevIds.edgeIds.has(e.id));
         const removedEdgeIds = [...prevIds.edgeIds].filter(id => !newEdgeIds.has(id));
 
-        // Если изменений немного - обновляем инкрементально
-        const totalChanges = addedNodes.length + removedNodeIds.length + addedEdges.length + removedEdgeIds.length;
-        const totalElements = nodes.length + edges.length;
-
-        // Проверяем, есть ли у узлов позиции
-        const nodesWithPositions = nodes.filter(n => n.data?.posX != null && n.data?.posY != null).length;
-        const needsLayout = nodes.length > 0 && nodesWithPositions < nodes.length / 2;
-
-        if (totalChanges <= 5 && totalElements > 20 && !needsLayout) {
-          // Инкрементальное обновление без перерисовки layout
-          if (removedNodeIds.length > 0) {
-            graph.removeData({ nodes: removedNodeIds });
-          }
-          if (removedEdgeIds.length > 0) {
-            graph.removeData({ edges: removedEdgeIds });
-          }
-          if (addedNodes.length > 0 || addedEdges.length > 0) {
-            graph.addData({
-              nodes: addedNodes,
-              edges: addedEdges as any,
-            });
-          }
-          graph.setData({ nodes, edges: edges as any, combos });
-        } else {
-          // Много изменений - полный обновление с layout
-          if ((graph as any).destroyed) return;
-          graph.setData({ nodes, edges: edges as any, combos });
-          if (mountedRef.current && !(graph as any).destroyed && typeof graph.layout === 'function') {
-            graph.layout().catch((e: any) => {
-              if (mountedRef.current && !(graph as any).destroyed) {
-                console.warn('Layout error:', e?.message || e);
-              }
-            });
-          }
+        // ВСЕГДА запускаем layout для правильного размещения узлов
+        // Позиции из БД (posX/posY) игнорируются - dagre вычисляет оптимальные
+        if ((graph as any).destroyed) return;
+        graph.setData({ nodes, edges: edges as any, combos });
+        if (mountedRef.current && !(graph as any).destroyed && typeof graph.layout === 'function') {
+          graph.layout().catch((e: any) => {
+            if (mountedRef.current && !(graph as any).destroyed) {
+              console.warn('Layout error:', e?.message || e);
+            }
+          });
         }
       } else {
         // Нет предыдущих данных - полный рендер

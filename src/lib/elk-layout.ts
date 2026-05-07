@@ -115,10 +115,13 @@ export async function performElkLayout(
     };
 
     console.log('[ELK] Starting layout with options:', layoutOptions);
-    console.log('[ELK] Nodes:', elkNodes.length, 'Edges:', elkEdges.length);
+    console.log('[ELK] Input nodes:', elkNodes.map(n => ({ id: n.id, w: n.width, h: n.height })));
+    console.log('[ELK] Input edges:', elkEdges.map(e => ({ id: e.id, s: e.sources[0], t: e.targets[0] })));
 
     // Выполняем layout
     const layoutedGraph = await elk.layout(elkGraph, { layoutOptions });
+
+    console.log('[ELK] Raw result:', layoutedGraph);
 
     if (!layoutedGraph) {
       console.error('[ELK] Layout returned null');
@@ -129,7 +132,9 @@ export async function performElkLayout(
     const nodePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
 
     if (layoutedGraph.children) {
+      console.log('[ELK] Result children count:', layoutedGraph.children.length);
       for (const node of layoutedGraph.children) {
+        console.log('[ELK] Node result:', node.id, 'x=', node.x, 'y=', node.y, 'w=', node.width, 'h=', node.height);
         if (node.x !== undefined && node.y !== undefined) {
           nodePositions.set(node.id, {
             x: node.x + (node.width || 0) / 2, // Центр узла
@@ -140,6 +145,8 @@ export async function performElkLayout(
         }
       }
     }
+
+    console.log('[ELK] Final node positions:', Array.from(nodePositions.entries()).map(([id, pos]) => ({ id, ...pos })));
 
     // Извлекаем маршруты рёбер
     const edgeRoutes = new Map<string, { points: { x: number; y: number }[] }>();

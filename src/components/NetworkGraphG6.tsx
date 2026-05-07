@@ -790,6 +790,7 @@ export default function NetworkGraphG6({
         const updatedNodes = (currentData.nodes as any[]).map(node => {
           const pos = result.nodes.get(node.id);
           if (pos) {
+            console.log('[G6] Applying position to', node.id, ': x=', pos.x, 'y=', pos.y);
             return {
               ...node,
               x: pos.x,
@@ -798,8 +799,11 @@ export default function NetworkGraphG6({
               height: pos.height,
             };
           }
+          console.warn('[G6] No position for node', node.id);
           return node;
         });
+
+        console.log('[G6] Updated nodes sample:', updatedNodes.slice(0, 3).map(n => ({ id: n.id, x: n.x, y: n.y })));
 
         // Обновляем рёбра с маршрутами
         const updatedEdges = (currentData.edges as any[]).map(edge => {

@@ -720,14 +720,16 @@ export default function NetworkGraphG6({
       console.log('[G6] Processed nodes with sizes:', nodes.length);
       console.log('[G6] Sample node data:', nodes.slice(0, 3).map(n => ({ id: n.id, width: n.width, height: n.height, type: n.data?.type })));
 
-      // Первый рендер
+      // Первый рендер - БЕЗ вызова render(), только setData
+      // render() вызовется после ELK layout
       if (!(graph as any).rendered) {
         if ((graph as any).destroyed) return;
         try {
           graph.setData({ nodes: nodes as any, edges: edges as any, combos });
-          graph.render();
+          // НЕ вызываем render() здесь - ждём ELK
           (graph as any).rendered = true;
-          console.log('[G6] First render complete with', nodes.length, 'nodes,', edges.length, 'edges');
+          (graph as any).dataLoaded = true;
+          console.log('[G6] Data loaded (waiting for ELK layout)');
         } catch (renderError) {
           console.warn('Render error:', renderError);
           return;
@@ -748,7 +750,7 @@ export default function NetworkGraphG6({
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph || !data) return;
-    if ((graph as any).destroyed || !(graph as any).rendered) return;
+    if ((graph as any).destroyed || !(graph as any).dataLoaded) return;
 
     const applyElkLayout = async () => {
       try {
@@ -828,6 +830,11 @@ export default function NetworkGraphG6({
             combos: currentData.combos,
           });
           console.log('[ELK] Applied layout to graph');
+
+          // КРИТИЧЕСКИ ВАЖНО: заставляем G6 перерисоваться с новыми позициями
+          graph.render();
+          graph.fitView();
+          console.log('[ELK] Rendered and fitView called');
         }
       } catch (error) {
         console.error('[ELK] Error:', error);

@@ -226,17 +226,17 @@ const ELK_OPTIONS: Record<string, string> = {
   'elk.algorithm': 'layered',
   'elk.direction': 'DOWN',              // Ток течёт сверху вниз
   
-  // ===== РАССТОЯНИЯ - УВЕЛИЧЕНЫ ДЛЯ ЧИТАЕМОСТИ =====
+  // ===== РАССТОЯНИЯ - ОПТИМИЗИРОВАНО ДЛЯ ЧИТАЕМОСТИ =====
   'elk.spacing.nodeNode': '100',                    // Между узлами на одном уровне (горизонталь)
   'elk.layered.spacing.nodeNodeBetweenLayers': '150', // Между слоями (вертикаль)
   'elk.spacing.edgeNode': '50',                     // Отступ линии от узла
-  'elk.spacing.edgeEdge': '30',                     // Между параллельными линиями
+  'elk.spacing.edgeEdge': '20',                     // Между параллельными линиями (рекомендовано)
   'elk.spacing.componentComponent': '100',          // Между несвязанными компонентами
   
   // ===== МАРШРУТИЗАЦИЯ РЁБЕР =====
   'elk.edgeRouting': 'ORTHOGONAL',                   // Строго 90° углы
   'elk.layered.edgeRouting.orthogonalEdges.routingStrategy': 'ORTHOGONAL',
-  'elk.layered.edgeRouting.orthogonalEdges.edgeSpacing': '30',
+  'elk.layered.edgeRouting.orthogonalEdges.edgeSpacing': '20',
   
   // ===== РАЗМЕЩЕНИЕ УЗЛОВ =====
   'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',

@@ -177,10 +177,11 @@ export default function NetworkGraphG6({
         },
       ],
       layout: {
-        type: 'dagre',
+        type: 'dendrogram',
         direction: 'TB',
-        nodesep: 50,
-        ranksep: 80,
+        nodeSep: 40,
+        rankSep: 80,
+        radial: false,
       },
       node: {
         type: 'rect',
@@ -209,7 +210,7 @@ export default function NetworkGraphG6({
         },
       },
       edge: {
-        type: 'line',
+        type: 'cubic-horizontal',
         style: {
           stroke: '#94a3b8',
           lineWidth: 2,

@@ -76,7 +76,7 @@ export default function NetworkGraphG6({
   onDeleteNode,
   onUpdateNodeStatus,
   onPropagate,
-  useElkLayout = true,
+  useElkLayout = false,  // ELK отключен - ошибка с портами
 }: NetworkGraphG6Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);

@@ -738,23 +738,23 @@ export default function NetworkGraphG6({
         // Применяем к графу
         const isFirstRender = !(graph as any).rendered;
 
+        // КРИТИЧНО: setData -> layout() -> render()
+        graph.setData({
+          nodes: nodes as any,
+          edges: edges as any,
+          combos,
+        });
+
         if (isFirstRender) {
-          graph.setData({
-            nodes: nodes as any,
-            edges: edges as any,
-            combos,
-          });
-          // render() вызовет ELK layout plugin автоматически
+          // КРИТИЧНО: await graph.layout() дожидается асинхронного ELK
+          await graph.layout();
           await graph.render();
           (graph as any).rendered = true;
           console.log('[G6] First render complete');
         } else {
-          graph.setData({
-            nodes: nodes as any,
-            edges: edges as any,
-            combos,
-          });
-          console.log('[G6] Data updated');
+          // При обновлении данных тоже пересчитываем layout
+          await graph.layout();
+          console.log('[G6] Data updated with layout');
         }
 
         // Фит к экрану
@@ -792,6 +792,7 @@ export default function NetworkGraphG6({
         } else {
           graph.setData({ nodes: nodes as any, edges: edges as any, combos });
         }
+        graph.fitView();
       }
     };
 

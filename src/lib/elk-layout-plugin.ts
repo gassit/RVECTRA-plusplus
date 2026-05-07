@@ -150,32 +150,59 @@ export class ELKLayout extends BaseLayout<ELKLayoutOptions> {
 
   /**
    * Конвертация ELK -> G6 формат
+   * КРИТИЧНО: G6 v5 ожидает координаты в style.x, style.y
    */
   private convertToG6Format(layoutedGraph: any, originalData: GraphData): GraphData {
     const layoutedNodes: any[] = layoutedGraph.children || [];
     const layoutedEdges: any[] = layoutedGraph.edges || [];
+    
+    // Логируем сырой результат ELK для отладки
+    console.log('[ELK-Plugin] RAW result sample:', layoutedNodes.slice(0, 3).map((n: any) => ({
+      id: n.id,
+      x: n.x,
+      y: n.y,
+      width: n.width,
+      height: n.height,
+    })));
+    
     const nodeMap = new Map(layoutedNodes.map((n) => [n.id, n]));
 
-    // Обновляем узлы
-    const updatedNodes = originalData.nodes!.map(originalNode => {
+    // Обновляем узлы - КРИТИЧНО: x,y в style для G6 v5
+    const updatedNodes = originalData.nodes!.map((originalNode, index) => {
       const layoutedNode = nodeMap.get(originalNode.id);
       
       if (layoutedNode && typeof layoutedNode.x === 'number' && typeof layoutedNode.y === 'number') {
-        const x = layoutedNode.x + layoutedNode.width / 2;
-        const y = layoutedNode.y + layoutedNode.height / 2;
+        // ELK возвращает top-left, G6 ожидает center
+        const centerX = layoutedNode.x + layoutedNode.width / 2;
+        const centerY = layoutedNode.y + layoutedNode.height / 2;
 
         return {
           ...originalNode,
-          x,
-          y,
+          // КРИТИЧНО для G6 v5: координаты в style
+          style: {
+            ...(originalNode.style as any || {}),
+            x: centerX,
+            y: centerY,
+            size: [layoutedNode.width, layoutedNode.height] as [number, number],
+          },
           data: {
             ...(originalNode.data as any || {}),
-            width: layoutedNode!.width,
-            height: layoutedNode!.height,
+            width: layoutedNode.width,
+            height: layoutedNode.height,
           },
         };
       }
-      return originalNode;
+      
+      // Fallback если ELK не вернул координаты
+      console.warn('[ELK-Plugin] No coords for node:', originalNode.id);
+      return {
+        ...originalNode,
+        style: {
+          ...(originalNode.style as any || {}),
+          x: 100 * (index % 10),
+          y: 100 * Math.floor(index / 10),
+        },
+      };
     });
 
     // Обновляем рёбра
@@ -199,6 +226,12 @@ export class ELKLayout extends BaseLayout<ELKLayoutOptions> {
       }
       return originalEdge;
     }) || [];
+
+    console.log('[ELK-Plugin] Transformed nodes sample:', updatedNodes.slice(0, 3).map((n: any) => ({
+      id: n.id,
+      styleX: n.style?.x,
+      styleY: n.style?.y,
+    })));
 
     return { ...originalData, nodes: updatedNodes, edges: updatedEdges };
   }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
-import { performElkLayout, applyElkLayoutToG6Data } from '@/lib/elk-layout';
+import { applyElkLayout } from '@/lib/elk-engine';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -76,7 +76,7 @@ export default function NetworkGraphG6({
   onDeleteNode,
   onUpdateNodeStatus,
   onPropagate,
-  useElkLayout = false,  // ELK отключен - ошибка с портами
+  useElkLayout = true,  // ELK включен через новый адаптер
 }: NetworkGraphG6Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
@@ -199,9 +199,9 @@ export default function NetworkGraphG6({
           updateEdge: true,
         },
       ],
-      // AntV Dagre layout - оптимизирован для однолинейных электрических схем
+      // Layout: preset = координаты задаём вручную через ELK адаптер
       layout: {
-        type: 'dagre',
+        type: 'preset',
       },
       node: {
         type: 'rect',
@@ -671,294 +671,167 @@ export default function NetworkGraphG6({
   // Кэш предыдущих данных для инкрементального обновления
   const prevDataRef = useRef<{ nodeIds: Set<string>; edgeIds: Set<string> } | null>(null);
 
-  // Обновление данных
-  useEffect(() => {
-    const graph = graphRef.current;
-    if (!graph || !data) return;
-
-    // Проверка что граф не уничтожен
-    if ((graph as any).destroyed) return;
-
-    try {
-      // Вычисляем количество подключений для каждого узла (для определения размера BUS)
-      const incomingCount = new Map<string, number>();
-      const outgoingCount = new Map<string, number>();
-      data.nodes.forEach(n => {
-        incomingCount.set(n.id, 0);
-        outgoingCount.set(n.id, 0);
-      });
-      data.edges.forEach(edge => {
-        if (incomingCount.has(edge.target)) {
-          incomingCount.set(edge.target, (incomingCount.get(edge.target) || 0) + 1);
-        }
-        if (outgoingCount.has(edge.source)) {
-          outgoingCount.set(edge.source, (outgoingCount.get(edge.source) || 0) + 1);
-        }
-      });
-      
-      // Преобразуем данные в формат G6
-      // Source узлы фиксируем вверху схемы
-      const nodes = data.nodes.map(node => {
-        const nodeType = node.type?.toLowerCase();
-        const nodeData: any = {
-          id: node.id,
-          combo: (node as any).combo || undefined, // Привязка к combo (cabinet)
-          data: {
-            ...node,
-            type: nodeType,
-          },
-        };
-        
-        // Для BUS вычисляем размер на основе количества подключений
-        if (nodeType === 'bus') {
-          const total = Math.max(
-            incomingCount.get(node.id) || 0,
-            outgoingCount.get(node.id) || 0
-          );
-          const busWidth = Math.max(200, total * 60 + 80);
-          // Задаём размер напрямую в style
-          nodeData.style = {
-            size: [busWidth, 40],
-          };
-          nodeData.data.calculatedWidth = busWidth;
-          nodeData.data.calculatedHeight = 40;
-        }
-        
-        // Для CABINET задаём размер (шире обычных узлов)
-        if (nodeType === 'cabinet') {
-          nodeData.style = {
-            size: [180, 50],
-          };
-        }
-        
-        // Фиксируем source узлы (источники питания) вверху схемы
-        if (node.type?.toLowerCase() === 'source') {
-          nodeData.fix = true;  // G6 v5: фиксация позиции
-        }
-        
-        return nodeData;
-      });
-
-      // Создаём Set существующих ID узлов для валидации рёбер
-      const nodeIds = new Set(data.nodes.map(n => n.id));
-      
-      // Фильтруем рёбра - оставляем только те, у которых source и target существуют
-      const edges = data.edges
-        .filter(edge => {
-          const sourceExists = nodeIds.has(edge.source);
-          const targetExists = nodeIds.has(edge.target);
-          if (!sourceExists || !targetExists) {
-            console.warn(`[G6] Filtering edge ${edge.id}: missing node(s)`);
-            return false;
-          }
-          return true;
-        })
-        .map(edge => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          data: edge as any,
-        }));
-
-      // Преобразуем combos если есть
-      const combos = data.combos?.map(combo => ({
-        id: combo.id,
-        data: combo.data,
-      })) || [];
-
-      // Первый рендер
-      if (!(graph as any).rendered) {
-        if ((graph as any).destroyed) return;
-        try {
-          graph.setData({ nodes, edges: edges as any, combos });
-          graph.render();
-          (graph as any).rendered = true;
-        } catch (renderError) {
-          console.warn('Render error:', renderError);
-          return;
-        }
-        prevDataRef.current = {
-          nodeIds: new Set(nodes.map(n => n.id)),
-          edgeIds: new Set(edges.map(e => e.id)),
-        };
-        return;
-      }
-
-      // Инкрементальное обновление
-      const newNodeIds = new Set(nodes.map(n => n.id));
-      const newEdgeIds = new Set(edges.map(e => e.id));
-      const prevIds = prevDataRef.current;
-
-      if (prevIds) {
-        // Находим добавленные/удалённые элементы
-        const addedNodes = nodes.filter(n => !prevIds.nodeIds.has(n.id));
-        const removedNodeIds = [...prevIds.nodeIds].filter(id => !newNodeIds.has(id));
-        const addedEdges = edges.filter(e => !prevIds.edgeIds.has(e.id));
-        const removedEdgeIds = [...prevIds.edgeIds].filter(id => !newEdgeIds.has(id));
-
-        // Если изменений немного - обновляем инкрементально
-        const totalChanges = addedNodes.length + removedNodeIds.length + addedEdges.length + removedEdgeIds.length;
-        const totalElements = nodes.length + edges.length;
-
-        // Проверяем, есть ли у узлов позиции
-        const nodesWithPositions = nodes.filter(n => n.data?.posX != null && n.data?.posY != null).length;
-        const needsLayout = nodes.length > 0 && nodesWithPositions < nodes.length / 2;
-
-        if (totalChanges <= 5 && totalElements > 20 && !needsLayout) {
-          // Инкрементальное обновление без перерисовки layout
-          if (removedNodeIds.length > 0) {
-            graph.removeData({ nodes: removedNodeIds });
-          }
-          if (removedEdgeIds.length > 0) {
-            graph.removeData({ edges: removedEdgeIds });
-          }
-          if (addedNodes.length > 0 || addedEdges.length > 0) {
-            graph.addData({
-              nodes: addedNodes,
-              edges: addedEdges as any,
-            });
-          }
-          graph.setData({ nodes, edges: edges as any, combos });
-        } else {
-          // Много изменений - полный обновление с layout
-          if ((graph as any).destroyed) return;
-          graph.setData({ nodes, edges: edges as any, combos });
-          if (mountedRef.current && !(graph as any).destroyed && typeof graph.layout === 'function') {
-            graph.layout().catch((e: any) => {
-              if (mountedRef.current && !(graph as any).destroyed) {
-                console.warn('Layout error:', e?.message || e);
-              }
-            });
-          }
-        }
-      } else {
-        // Нет предыдущих данных - полный рендер
-        if ((graph as any).destroyed) return;
-        graph.setData({ nodes, edges: edges as any, combos });
-        if (mountedRef.current && !(graph as any).destroyed && typeof graph.layout === 'function') {
-          graph.layout().catch((e: any) => {
-            if (mountedRef.current && !(graph as any).destroyed) {
-              console.warn('Layout error:', e?.message || e);
-            }
-          });
-        }
-      }
-
-      prevDataRef.current = {
-        nodeIds: newNodeIds,
-        edgeIds: newEdgeIds,
-      };
-    } catch (e) {
-      console.error('Graph update error:', e);
-    }
-  }, [data]);
-
   // Ref для useElkLayout (чтобы использовать в async useEffect)
   const useElkLayoutRef = useRef(useElkLayout);
   useEffect(() => {
     useElkLayoutRef.current = useElkLayout;
   }, [useElkLayout]);
 
-  // ELK Layout - профессиональная ортогональная маршрутизация рёбер
+  // Основной useEffect: загрузка данных + ELK layout
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph || !data || !useElkLayoutRef.current) return;
-    if ((graph as any).destroyed || !(graph as any).rendered) return;
+    if (!graph || !data) return;
 
-    // Функция для применения ELK layout
-    const applyElk = async () => {
+    if ((graph as any).destroyed) return;
+
+    const processDataAndRender = async () => {
       try {
+        console.log('[G6] Processing data...');
+
         // Создаём Set существующих ID узлов для валидации
         const nodeIds = new Set(data.nodes.map(n => n.id));
-        
-        // Фильтруем только валидные рёбра
-        const validEdges = data.edges.filter(edge => 
-          nodeIds.has(edge.source) && nodeIds.has(edge.target)
-        );
-        
-        if (validEdges.length === 0) {
-          console.log('[ELK] No valid edges to layout');
-          return;
+
+        // Фильтруем рёбра - оставляем только те, у которых source и target существуют
+        const validEdges = data.edges.filter(edge => {
+          const sourceExists = nodeIds.has(edge.source);
+          const targetExists = nodeIds.has(edge.target);
+          return sourceExists && targetExists;
+        });
+
+        // Подготавливаем данные для ELK или G6
+        let processedNodes: any[];
+        let processedEdges: any[];
+
+        if (useElkLayoutRef.current) {
+          // Используем ELK адаптер для расчёта координат
+          console.log('[G6] Using ELK layout...');
+
+          const elkNodes = data.nodes.map(node => ({
+            id: node.id,
+            type: node.type,
+          }));
+
+          const elkEdges = validEdges.map(edge => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+          }));
+
+          const layoutResult = await applyElkLayout(elkNodes, elkEdges);
+
+          // Преобразуем результат в формат G6
+          processedNodes = layoutResult.nodes.map(node => {
+            const originalNode = data.nodes.find(n => n.id === node.id);
+            return {
+              id: node.id,
+              x: node.x,
+              y: node.y,
+              combo: (originalNode as any)?.combo || undefined,
+              data: {
+                ...originalNode,
+                type: originalNode?.type?.toLowerCase(),
+              },
+            };
+          });
+
+          processedEdges = layoutResult.edges.map(edge => {
+            return {
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              data: validEdges.find(e => e.id === edge.id) as any,
+              style: edge.controlPoints?.length > 0 ? {
+                controlPoints: edge.controlPoints,
+              } : undefined,
+            };
+          });
+
+          console.log('[G6] ELK layout applied:', processedNodes.length, 'nodes,', processedEdges.length, 'edges');
+        } else {
+          // Без ELK - используем данные как есть
+          processedNodes = data.nodes.map(node => ({
+            id: node.id,
+            combo: (node as any).combo || undefined,
+            data: {
+              ...node,
+              type: node.type?.toLowerCase(),
+            },
+          }));
+
+          processedEdges = validEdges.map(edge => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            data: edge as any,
+          }));
         }
-        
-        console.log('[ELK] Starting layout for', data.nodes.length, 'nodes,', validEdges.length, 'valid edges');
-        
-        // Подготавливаем данные для ELK
-        const elkNodes = data.nodes.map(node => ({
+
+        // Преобразуем combos если есть
+        const combos = data.combos?.map(combo => ({
+          id: combo.id,
+          data: combo.data,
+        })) || [];
+
+        // Применяем к графу
+        const isFirstRender = !(graph as any).rendered;
+
+        if (isFirstRender) {
+          graph.setData({
+            nodes: processedNodes as any,
+            edges: processedEdges as any,
+            combos,
+          });
+          graph.render();
+          (graph as any).rendered = true;
+          console.log('[G6] First render complete');
+        } else {
+          graph.setData({
+            nodes: processedNodes as any,
+            edges: processedEdges as any,
+            combos,
+          });
+          console.log('[G6] Data updated');
+        }
+
+        // Фит к экрану
+        graph.fitView();
+
+      } catch (error) {
+        console.error('[G6] Error processing data:', error);
+
+        // Fallback - рендерим без ELK
+        const nodes = data.nodes.map(node => ({
           id: node.id,
-          type: node.type,
-          size: [160, 80] as [number, number],
+          combo: (node as any).combo || undefined,
+          data: {
+            ...node,
+            type: node.type?.toLowerCase(),
+          },
         }));
-        
-        const elkEdges = validEdges.map(edge => ({
+
+        const edges = data.edges.map(edge => ({
           id: edge.id,
           source: edge.source,
           target: edge.target,
+          data: edge as any,
         }));
 
-        // Выполняем ELK layout
-        const layoutResult = await performElkLayout(elkNodes, elkEdges);
-        
-        if (!layoutResult || !mountedRef.current) {
-          console.log('[ELK] Layout result is null or component unmounted');
-          return;
+        const combos = data.combos?.map(combo => ({
+          id: combo.id,
+          data: combo.data,
+        })) || [];
+
+        if (!(graph as any).rendered) {
+          graph.setData({ nodes: nodes as any, edges: edges as any, combos });
+          graph.render();
+          (graph as any).rendered = true;
+        } else {
+          graph.setData({ nodes: nodes as any, edges: edges as any, combos });
         }
-
-        // Проверяем что граф ещё существует
-        if ((graph as any).destroyed) {
-          console.log('[ELK] Graph was destroyed during layout');
-          return;
-        }
-
-        console.log('[ELK] Layout complete, got', layoutResult.edges.size, 'edge routes');
-
-        // Получаем текущие данные графа и обновляем только рёбра с controlPoints
-        // Размер BUS уже вычислен при создании узла
-        try {
-          const currentData = graph.getData();
-          if (!currentData || !currentData.edges) {
-            console.log('[ELK] No current graph data');
-            return;
-          }
-          
-          // Обновляем только те рёбра, для которых есть controlPoints
-          const updatedEdges = (currentData.edges as any[]).map(edge => {
-            const route = layoutResult.edges.get(edge.id);
-            if (route && route.points && Array.isArray(route.points) && route.points.length >= 2) {
-              return {
-                ...edge,
-                style: {
-                  ...(edge.style || {}),
-                  controlPoints: route.points,
-                },
-              };
-            }
-            return edge;
-          });
-
-          // Применяем обновлённые рёбра
-          if (!(graph as any).destroyed && mountedRef.current) {
-            (graph as any).setData({
-              nodes: currentData.nodes,
-              edges: updatedEdges,
-              combos: currentData.combos,
-            });
-            console.log('[ELK] Applied controlPoints to', layoutResult.edges.size, 'edges');
-          }
-        } catch (dataError) {
-          console.warn('[ELK] Error updating graph data:', dataError);
-        }
-      } catch (error) {
-        console.error('[ELK] Error during layout:', error);
       }
     };
 
-    // Выполняем ELK layout с задержкой после основного layout
-    const timeoutId = setTimeout(applyElk, 800);
-    
-    return () => {
-      clearTimeout(timeoutId);
-    };
+    processDataAndRender();
   }, [data]);
 
 

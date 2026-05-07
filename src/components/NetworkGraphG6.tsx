@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { Graph } from '@antv/g6';
 import type { GraphData, GraphNode, GraphEdge, ElementType } from '@/types';
-import { performElkLayout, applyElkLayoutToG6Data } from '@/lib/elk-layout';
 
 interface NetworkGraphG6Props {
   data: GraphData | null;
@@ -14,22 +13,16 @@ interface NetworkGraphG6Props {
   onZoomChange?: (zoom: number) => void;
   collapsedTypes?: Set<string>;
   onCollapsedTypesChange?: (types: Set<string>) => void;
-  // Режим редактирования
   editMode?: boolean;
   selectedElementType?: ElementType | null;
   onCanvasClick?: (x: number, y: number) => void;
   onNodeDrop?: (nodeId: string, x: number, y: number) => void;
-  // Режим создания связи
   connectionMode?: boolean;
   connectionStartId?: string | null;
   onConnectionCreated?: (sourceId: string, targetId: string) => void;
-  // Удаление элемента
   onDeleteNode?: (nodeId: string) => void;
-  // Обновление статуса элемента
   onUpdateNodeStatus?: (nodeId: string, operationalStatus: 'ON' | 'OFF') => Promise<void>;
-  // Принудительное обновление статусов (propagate)
   onPropagate?: () => void;
-  // Использовать ELK layout для профессиональной ортогональной маршрутизации
   useElkLayout?: boolean;
 }
 
@@ -37,7 +30,6 @@ interface NetworkGraphG6Props {
 // КОНСТАНТЫ ДИЗАЙНА
 // ============================================================================
 
-// Цвета заголовков по типам элементов
 const TYPE_COLORS: Record<string, { primary: string; gradient: string }> = {
   source: { primary: '#fbbf24', gradient: 'l(0) 0:#eab308 0.5:#22c55e 1:#ef4444' },
   bus: { primary: '#B87333', gradient: 'l(0) 0:#B87333 0.5:#CD7F32 1:#B87333' },
@@ -48,12 +40,207 @@ const TYPE_COLORS: Record<string, { primary: string; gradient: string }> = {
   cabinet: { primary: '#d97706', gradient: 'l(0) 0:#B87333 0.5:#CD7F32 1:#B87333' },
 };
 
-// Типы элементов, которые имеют operationalStatus (можно включить/выключить)
 const SWITCHABLE_TYPES = ['SOURCE', 'BREAKER', 'LOAD', 'METER'];
 
-// Проверка: элемент имеет operationalStatus
 function isSwitchable(type: string): boolean {
   return SWITCHABLE_TYPES.includes(type.toUpperCase());
+}
+
+// ============================================================================
+// РАЗМЕРЫ УЗЛОВ ПО ТИПАМ (для ELK)
+// ============================================================================
+
+const NODE_SIZES: Record<string, [number, number]> = {
+  source: [160, 80],
+  bus: [200, 40],      // Будет расширяться динамически
+  breaker: [140, 70],
+  meter: [140, 70],
+  load: [160, 80],
+  cabinet: [180, 50],
+  junction: [40, 40],
+  transformer: [140, 80],
+  default: [160, 80],
+};
+
+// ============================================================================
+// ПРЕОБРАЗОВАНИЕ ДАННЫХ ДЛЯ ELK
+// ============================================================================
+
+interface ProcessedNode {
+  id: string;
+  combo?: string;
+  data: any;
+  width: number;
+  height: number;
+  ports?: Array<{ id: string; side: string }>;
+}
+
+interface ProcessedEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourcePort?: string;
+  targetPort?: string;
+  data: any;
+}
+
+/**
+ * Преобразует данные графа в формат для G6 + ELK
+ * Добавляет размеры, порты для FIXED_SIDE
+ */
+function processDataForElk(data: GraphData): {
+  nodes: ProcessedNode[];
+  edges: ProcessedEdge[];
+  combos: any[];
+} {
+  // Считаем входящие/исходящие рёбра для каждого узла
+  const incomingCount = new Map<string, number>();
+  const outgoingCount = new Map<string, number>();
+  const incomingEdges = new Map<string, Array<{ id: string; source: string }>>();
+  const outgoingEdges = new Map<string, Array<{ id: string; target: string }>>();
+
+  data.nodes.forEach(n => {
+    incomingCount.set(n.id, 0);
+    outgoingCount.set(n.id, 0);
+    incomingEdges.set(n.id, []);
+    outgoingEdges.set(n.id, []);
+  });
+
+  data.edges.forEach(edge => {
+    if (incomingCount.has(edge.target)) {
+      incomingCount.set(edge.target, (incomingCount.get(edge.target) || 0) + 1);
+      incomingEdges.get(edge.target)?.push({ id: edge.id, source: edge.source });
+    }
+    if (outgoingCount.has(edge.source)) {
+      outgoingCount.set(edge.source, (outgoingCount.get(edge.source) || 0) + 1);
+      outgoingEdges.get(edge.source)?.push({ id: edge.id, target: edge.target });
+    }
+  });
+
+  // Создаём Set существующих ID узлов
+  const nodeIds = new Set(data.nodes.map(n => n.id));
+
+  // Обрабатываем узлы
+  const nodes: ProcessedNode[] = data.nodes.map(node => {
+    const nodeType = (node.type || 'default').toLowerCase();
+    const isBus = nodeType === 'bus';
+    const isSource = nodeType === 'source';
+    const isLoad = nodeType === 'load';
+    const isJunction = nodeType === 'junction';
+
+    // Размер по умолчанию
+    const defaultSize = NODE_SIZES[nodeType] || NODE_SIZES.default;
+    let width = defaultSize[0];
+    let height = defaultSize[1];
+
+    // Порты для FIXED_SIDE
+    let ports: Array<{ id: string; side: string }> = [];
+
+    if (isBus) {
+      // BUS - ширина по количеству подключений
+      const total = Math.max(
+        incomingCount.get(node.id) || 0,
+        outgoingCount.get(node.id) || 0
+      );
+      width = Math.max(200, total * 60 + 80);
+
+      // Порты для BUS: вход сверху (NORTH), выход снизу (SOUTH)
+      const nodeIncoming = incomingEdges.get(node.id) || [];
+      const nodeOutgoing = outgoingEdges.get(node.id) || [];
+
+      nodeIncoming.forEach((edge, idx) => {
+        ports.push({ id: `${node.id}_IN_${idx}`, side: 'NORTH' });
+      });
+      nodeOutgoing.forEach((edge, idx) => {
+        ports.push({ id: `${node.id}_OUT_${idx}`, side: 'SOUTH' });
+      });
+    } else if (isSource) {
+      // Источник - только выход (SOUTH)
+      ports = [{ id: `${node.id}_OUT`, side: 'SOUTH' }];
+    } else if (isLoad) {
+      // Нагрузка - только вход (NORTH)
+      ports = [{ id: `${node.id}_IN`, side: 'NORTH' }];
+    } else {
+      // Промежуточные узлы - вход сверху (NORTH), выход снизу (SOUTH)
+      ports = [
+        { id: `${node.id}_IN`, side: 'NORTH' },
+        { id: `${node.id}_OUT`, side: 'SOUTH' },
+      ];
+    }
+
+    return {
+      id: node.id,
+      combo: (node as any).combo || undefined,
+      data: {
+        ...node,
+        type: nodeType,
+        calculatedWidth: isBus ? width : undefined,
+        calculatedHeight: isBus ? height : undefined,
+      },
+      width,
+      height,
+      ports,
+    };
+  });
+
+  // Обрабатываем рёбра с привязкой к портам
+  const edges: ProcessedEdge[] = data.edges
+    .filter(edge => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+    .map(edge => {
+      const sourceNode = data.nodes.find(n => n.id === edge.source);
+      const targetNode = data.nodes.find(n => n.id === edge.target);
+
+      const sourceType = (sourceNode?.type || 'default').toLowerCase();
+      const targetType = (targetNode?.type || 'default').toLowerCase();
+
+      let sourcePort: string | undefined;
+      let targetPort: string | undefined;
+
+      // Определяем порты источника
+      if (sourceType === 'source') {
+        sourcePort = `${edge.source}_OUT`;
+      } else if (sourceType === 'bus') {
+        // Находим индекс исходящего ребра для BUS
+        const nodeOutgoing = outgoingEdges.get(edge.source) || [];
+        const idx = nodeOutgoing.findIndex(e => e.id === edge.id);
+        if (idx >= 0) {
+          sourcePort = `${edge.source}_OUT_${idx}`;
+        }
+      } else {
+        sourcePort = `${edge.source}_OUT`;
+      }
+
+      // Определяем порты цели
+      if (targetType === 'load') {
+        targetPort = `${edge.target}_IN`;
+      } else if (targetType === 'bus') {
+        // Находим индекс входящего ребра для BUS
+        const nodeIncoming = incomingEdges.get(edge.target) || [];
+        const idx = nodeIncoming.findIndex(e => e.id === edge.id);
+        if (idx >= 0) {
+          targetPort = `${edge.target}_IN_${idx}`;
+        }
+      } else {
+        targetPort = `${edge.target}_IN`;
+      }
+
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourcePort,
+        targetPort,
+        data: edge,
+      };
+    });
+
+  // Combos
+  const combos = data.combos?.map(combo => ({
+    id: combo.id,
+    data: combo.data,
+  })) || [];
+
+  return { nodes, edges, combos };
 }
 
 // ============================================================================
@@ -82,50 +269,30 @@ export default function NetworkGraphG6({
   const graphRef = useRef<Graph | null>(null);
   const destroyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tooltipHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true); // Для отслеживания mounted состояния
+  const mountedRef = useRef(true);
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<GraphEdge | null>(null);
   const [pendingConnectionStart, setPendingConnectionStart] = useState<string | null>(null);
-  // Закреплённые tooltip (не исчезают при уходе курсора)
   const [pinnedNode, setPinnedNode] = useState<GraphNode | null>(null);
   const [pinnedEdge, setPinnedEdge] = useState<GraphEdge | null>(null);
-  // Состояние загрузки для кнопки статуса
   const [updatingNodeId, setUpdatingNodeId] = useState<string | null>(null);
 
-  // Refs для актуальных значений режимов (чтобы не пересоздавать граф)
   const editModeRef = useRef(editMode);
   const connectionModeRef = useRef(connectionMode);
   const selectedElementTypeRef = useRef(selectedElementType);
   const pendingConnectionRef = useRef<string | null>(null);
   const pinnedNodeRef = useRef<GraphNode | null>(null);
   const pinnedEdgeRef = useRef<GraphEdge | null>(null);
+  const useElkLayoutRef = useRef(useElkLayout);
 
-  // Обновляем refs при изменении props
-  useEffect(() => {
-    editModeRef.current = editMode;
-  }, [editMode]);
+  useEffect(() => { editModeRef.current = editMode; }, [editMode]);
+  useEffect(() => { connectionModeRef.current = connectionMode; }, [connectionMode]);
+  useEffect(() => { selectedElementTypeRef.current = selectedElementType; }, [selectedElementType]);
+  useEffect(() => { pendingConnectionRef.current = pendingConnectionStart; }, [pendingConnectionStart]);
+  useEffect(() => { pinnedNodeRef.current = pinnedNode; }, [pinnedNode]);
+  useEffect(() => { pinnedEdgeRef.current = pinnedEdge; }, [pinnedEdge]);
+  useEffect(() => { useElkLayoutRef.current = useElkLayout; }, [useElkLayout]);
 
-  useEffect(() => {
-    connectionModeRef.current = connectionMode;
-  }, [connectionMode]);
-
-  useEffect(() => {
-    selectedElementTypeRef.current = selectedElementType;
-  }, [selectedElementType]);
-
-  useEffect(() => {
-    pendingConnectionRef.current = pendingConnectionStart;
-  }, [pendingConnectionStart]);
-
-  useEffect(() => {
-    pinnedNodeRef.current = pinnedNode;
-  }, [pinnedNode]);
-
-  useEffect(() => {
-    pinnedEdgeRef.current = pinnedEdge;
-  }, [pinnedEdge]);
-
-  // Получаем актуальные данные узлов из data (для обновления tooltip после refreshData)
   const actualPinnedNode = useMemo(() => {
     if (!pinnedNode || !data) return pinnedNode;
     return data.nodes.find(n => n.id === pinnedNode.id) || pinnedNode;
@@ -136,35 +303,31 @@ export default function NetworkGraphG6({
     return data.nodes.find(n => n.id === hoveredNode.id) || hoveredNode;
   }, [hoveredNode, data]);
 
-  // Инициализация графа (только один раз)
+  // Инициализация графа
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Отменяем отложенное уничтожение (если компонент ремонтируется в StrictMode)
     if (destroyTimeoutRef.current) {
       clearTimeout(destroyTimeoutRef.current);
       destroyTimeoutRef.current = null;
     }
 
-    // Проверяем, не существует ли уже граф и он не уничтожен
     const existingGraph = graphRef.current;
     if (existingGraph && !(existingGraph as any).destroyed) {
       console.log('Graph already exists, reusing');
       return;
     }
 
-    // Если граф уничтожен - очищаем ссылку
     if (existingGraph && (existingGraph as any).destroyed) {
       console.log('Graph was destroyed, creating new one');
       graphRef.current = null;
     }
 
-    console.log('Creating new graph');
+    console.log('Creating new graph with ELK layout');
     const container = containerRef.current;
     const width = container.clientWidth || 800;
     const height = container.clientHeight || 600;
 
-    // Создаём граф G6
     const graph = new Graph({
       container,
       width,
@@ -183,61 +346,78 @@ export default function NetworkGraphG6({
           type: 'collapse-expand',
           trigger: 'dblclick',
         },
-        // Drag element с динамическим обновлением рёбер
         {
           type: 'drag-element',
           enable: () => editModeRef.current && !connectionModeRef.current,
-          // Обновлять рёбра во время перетаскивания
-          updateEdge: true,
-        },
-        // Drag combo - перетаскивание групп (cabinets)
-        {
-          type: 'drag-element',
-          enable: (evt: any) => {
-            return editModeRef.current && !connectionModeRef.current;
-          },
           updateEdge: true,
         },
       ],
-      // ELK layout применяется отдельно в useEffect (performElkLayout)
-      // G6 встроенный layout отключён - ELK вычисляет и позиции узлов, и маршрутизацию рёбер
-      // layout опция не указана - позиции будут заданы через node.x, node.y
+      // ===== ELK LAYOUT - КРИТИЧЕСКИ ВАЖНО: параметры внутри options =====
+      layout: useElkLayoutRef.current ? {
+        type: 'elk',
+        options: {
+          // Алгоритм и направление
+          'elk.algorithm': 'layered',
+          'elk.direction': 'DOWN',
+
+          // Отступы
+          'elk.spacing.nodeNode': '100',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '150',
+          'elk.spacing.edgeNode': '50',
+          'elk.spacing.edgeEdge': '20',
+          'elk.spacing.componentComponent': '100',
+
+          // Маршрутизация рёбер
+          'elk.edgeRouting': 'ORTHOGONAL',
+
+          // Размещение узлов
+          'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+          'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+
+          // Минимизация пересечений
+          'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+          'elk.layered.crossingMinimization.semiInteractiveCrossingMinimization': 'true',
+
+          // Порты - FIXED_SIDE требует объявления портов в узлах
+          'elk.portConstraints': 'FIXED_SIDE',
+          'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+
+          // Иерархия
+          'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+        },
+      } : undefined,
       node: {
         type: 'rect',
         style: {
-          // Размер читается из style.size (задаётся при создании узла)
-          // или используется стандартный
+          // КРИТИЧЕСКИ ВАЖНО: размер читается из node.width/height (данные)
+          // или используется дефолтный
+          size: (d: any) => {
+            const w = d.width || 160;
+            const h = d.height || 80;
+            return [w, h];
+          },
           radius: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            // BUS - без скругления для инженерного вида
             return nodeType === 'bus' ? 0 : 6;
           },
           fill: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            // BUS - простая медная заливка без градиента
-            if (nodeType === 'bus') {
-              return '#CD7F32';
-            }
+            if (nodeType === 'bus') return '#CD7F32';
             return '#ffffff';
           },
           stroke: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
             const hasCritical = d.data?.criticalIssues > 0;
             if (hasCritical) return '#ef4444';
-            // BUS - без дополнительной обводки (тот же цвет что и заливка)
-            if (nodeType === 'bus') {
-              return '#8B5A2B'; // тёмно-коричневый для контура
-            }
+            if (nodeType === 'bus') return '#8B5A2B';
             return TYPE_COLORS[nodeType]?.primary || '#e2e8f0';
           },
           lineWidth: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            // BUS - толстая линия
             return nodeType === 'bus' ? 3 : 2;
           },
           shadowColor: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            // BUS - без тени
             return nodeType === 'bus' ? 'transparent' : 'rgba(0, 0, 0, 0.15)';
           },
           shadowBlur: (d: any) => {
@@ -247,22 +427,16 @@ export default function NetworkGraphG6({
           shadowOffsetX: 0,
           shadowOffsetY: 4,
           cursor: 'pointer',
-          // Точки привязки для рёбер - строго верх/низ для вертикальных линий
           anchorPoints: [
-            [0.5, 0],   // индекс 0: верхний центр (вход от источника)
-            [0.5, 1],   // индекс 1: нижний центр (выход к нагрузке)
+            [0.5, 0],
+            [0.5, 1],
           ],
-          // Порты для строгого вертикального подключения
-          portR: 4,               // Радиус порта
-          portLinkToCenter: true, // Соединять с центром узла
-          // Основной текст - название
+          portR: 4,
+          portLinkToCenter: true,
           labelText: (d: any) => {
             const name = d.data?.name || d.id;
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            if (nodeType === 'bus') {
-              // BUS - название сбоку или не отображается
-              return '';
-            }
+            if (nodeType === 'bus') return '';
             if (nodeType === 'cabinet') {
               return name.length > 14 ? name.slice(0, 14) + '...' : name;
             }
@@ -297,14 +471,12 @@ export default function NetworkGraphG6({
             shadowColor: 'rgba(96, 165, 250, 0.3)',
             shadowBlur: 15,
           },
-          // Состояние для начала связи
           connectionSource: {
             stroke: '#22c55e',
             lineWidth: 4,
             shadowColor: 'rgba(34, 197, 94, 0.5)',
             shadowBlur: 20,
           },
-          // Состояние для потенциальной цели связи
           connectionTarget: {
             stroke: '#f59e0b',
             lineWidth: 3,
@@ -314,7 +486,6 @@ export default function NetworkGraphG6({
         },
       },
       edge: {
-        // Полилинии с ортогональной маршрутизацией (углы 90°)
         type: 'polyline',
         style: {
           stroke: (d: any) => {
@@ -323,21 +494,15 @@ export default function NetworkGraphG6({
           },
           lineWidth: 2,
           endArrow: false,
-          // Ортогональные изгибы с радиусом скругления (плавные углы)
           radius: 8,
-          // Смещение для параллельных рёбер (чтобы не сливались) - увеличено
           offset: 40,
-          // Смещение для петель (когда source = target)
           loopOffset: 50,
-          // Точки привязки: source = нижний (индекс 1), target = верхний (индекс 0)
-          // Строго вертикальное подключение для однолинейной схемы
-          sourceAnchor: 1,  // нижний центр source (выход тока)
-          targetAnchor: 0,  // верхний центр target (вход тока)
+          sourceAnchor: 1,
+          targetAnchor: 0,
           opacity: (d: any) => {
             const status = d.data?.status;
             return status === 'OFF' ? 0.4 : 1;
           },
-          // Подпись кабеля
           labelText: (d: any) => {
             const wireType = d.data?.wireType;
             const wireSize = d.data?.wireSize;
@@ -355,7 +520,6 @@ export default function NetworkGraphG6({
           labelBackgroundOpacity: 0.95,
           labelBackgroundRadius: 4,
           labelPadding: [2, 4, 2, 4],
-          // Позиция подписи по центру линии
           labelPlacement: 'center',
         },
         state: {
@@ -411,35 +575,27 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      // В режиме создания связи - используем refs
       if (connectionModeRef.current) {
         const pending = pendingConnectionRef.current;
         if (!pending) {
-          // Начинаем связь
           setPendingConnectionStart(nodeId);
           try {
             graph.setElementState(nodeId, 'connectionSource', true);
-          } catch (e) {
-            // Element may not exist
-          }
+          } catch (e) {}
         } else if (pending !== nodeId) {
-          // Завершаем связь
           onConnectionCreated?.(pending, nodeId);
           try {
             graph.setElementState(pending, 'connectionSource', false);
-          } catch (e) {
-            // Element may not exist
-          }
+          } catch (e) {}
           setPendingConnectionStart(null);
         }
         return;
       }
 
-      // Закрепляем tooltip при клике на узел
       const nodeData = data?.nodes.find(n => n.id === nodeId);
       if (nodeData) {
         setPinnedNode(nodeData);
-        setPinnedEdge(null); // Снимаем закрепление с ребра
+        setPinnedEdge(null);
         setHoveredNode(null);
         setHoveredEdge(null);
       }
@@ -452,29 +608,23 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      // Отменяем отложенное скрытие tooltip если мышка вернулась
       if (tooltipHideTimeoutRef.current) {
         clearTimeout(tooltipHideTimeoutRef.current);
         tooltipHideTimeoutRef.current = null;
       }
 
-      setHoveredEdge(null); // Скрываем tooltip связи
+      setHoveredEdge(null);
       const nodeData = data?.nodes.find(n => n.id === nodeId);
       setHoveredNode(nodeData || null);
 
-      // В режиме связи подсвечиваем потенциальную цель
       if (connectionModeRef.current && pendingConnectionRef.current && pendingConnectionRef.current !== nodeId) {
         try {
           graph.setElementState(nodeId, 'connectionTarget', true);
-        } catch (e) {
-          // Element may not exist
-        }
+        } catch (e) {}
       } else {
         try {
           graph.setElementState(nodeId, 'hover', true);
-        } catch (e) {
-          // Element may not exist
-        }
+        } catch (e) {}
       }
     });
 
@@ -483,47 +633,36 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      // Не скрываем hoveredNode если tooltip закреплён
       if (!pinnedNodeRef.current) {
-        // Добавляем задержку перед скрытием tooltip
-        // чтобы пользователь мог переместить курсор на tooltip
         tooltipHideTimeoutRef.current = setTimeout(() => {
           setHoveredNode(null);
           tooltipHideTimeoutRef.current = null;
-        }, 300); // 300мс задержка
+        }, 300);
       }
 
       if (connectionModeRef.current && pendingConnectionRef.current) {
         try {
           graph.setElementState(nodeId, 'connectionTarget', false);
-        } catch (e) {
-          // Element may not exist
-        }
+        } catch (e) {}
       } else {
         try {
           graph.setElementState(nodeId, 'hover', false);
-        } catch (e) {
-          // Element may not exist
-        }
+        } catch (e) {}
       }
     });
 
     graph.on('edge:click', (evt: any) => {
       const edgeId = evt.target.id;
-      
-      // Закрепляем tooltip при клике на ребро
       const edgeData = data?.edges.find(e => e.id === edgeId);
       if (edgeData) {
         setPinnedEdge(edgeData);
-        setPinnedNode(null); // Снимаем закрепление с узла
+        setPinnedNode(null);
         setHoveredNode(null);
         setHoveredEdge(null);
       }
-      
       onEdgeClick?.(edgeId);
     });
 
-    // Наведение на ребро (связь)
     graph.on('edge:pointerenter', (evt: any) => {
       const edgeId = evt.target.id;
       const graph = graphRef.current;
@@ -532,79 +671,59 @@ export default function NetworkGraphG6({
       const edgeData = data?.edges.find(e => e.id === edgeId);
       if (edgeData) {
         setHoveredEdge(edgeData);
-        setHoveredNode(null); // Скрываем tooltip узла
+        setHoveredNode(null);
       }
 
       try {
         graph.setElementState(edgeId, 'hover', true);
-      } catch (e) {
-        // Element may not exist
-      }
+      } catch (e) {}
     });
 
-    // Уход курсора с ребра
     graph.on('edge:pointerleave', (evt: any) => {
       const edgeId = evt.target.id;
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      // Не скрываем hoveredEdge если tooltip закреплён
       if (!pinnedEdgeRef.current) {
-        // Добавляем задержку перед скрытием tooltip
         tooltipHideTimeoutRef.current = setTimeout(() => {
           setHoveredEdge(null);
           tooltipHideTimeoutRef.current = null;
-        }, 300); // 300мс задержка
+        }, 300);
       }
 
       try {
         graph.setElementState(edgeId, 'hover', false);
-      } catch (e) {
-        // Element may not exist
-      }
+      } catch (e) {}
     });
 
-    // Клик по холсту - для добавления элемента
     graph.on('canvas:click', (evt: any) => {
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      // Снимаем закрепление tooltip при клике на пустое место
       setPinnedNode(null);
       setPinnedEdge(null);
 
-      // Отмена режима связи при клике на пустое место
       if (connectionModeRef.current && pendingConnectionRef.current) {
         try {
           graph.setElementState(pendingConnectionRef.current, 'connectionSource', false);
-        } catch (e) {
-          // Element may not exist
-        }
+        } catch (e) {}
         setPendingConnectionStart(null);
         return;
       }
 
       if (editModeRef.current && selectedElementTypeRef.current && onCanvasClick) {
-        // Получаем координаты клика - пробуем разные варианты структуры события G6 v5
         let x = 0, y = 0;
 
-        // Вариант 1: прямые свойства
         if (evt.x !== undefined && evt.y !== undefined) {
           x = evt.x;
           y = evt.y;
-        }
-        // Вариант 2: canvas свойства
-        else if (evt.canvas) {
+        } else if (evt.canvas) {
           x = evt.canvas.x ?? 0;
           y = evt.canvas.y ?? 0;
-        }
-        // Вариант 3: client координаты
-        else if (evt.clientX !== undefined) {
+        } else if (evt.clientX !== undefined) {
           x = evt.clientX;
           y = evt.clientY;
-        }
-        // Вариант 4: fallback - используем центр
-        else {
+        } else {
           x = 400;
           y = 300;
         }
@@ -616,28 +735,24 @@ export default function NetworkGraphG6({
       }
     });
 
-    // Событие окончания перетаскивания узла
     graph.on('node:dragend', (evt: any) => {
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
-      
+
       if (editModeRef.current) {
         const nodeId = evt.target.id;
         const { x, y } = evt;
-        
-        // Сохраняем позицию
+
         if (onNodeDrop) {
           onNodeDrop(nodeId, x, y);
         }
-        
-        // Пересчитываем layout для обновления ортогональных рёбер
+
         if (typeof graph.layout === 'function') {
           graph.layout();
         }
       }
     });
 
-    // Zoom событие
     graph.on('viewport:zoom', () => {
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
@@ -645,299 +760,58 @@ export default function NetworkGraphG6({
       onZoomChange?.(zoom);
     });
 
-    // Респонсив
     const resizeObserver = new ResizeObserver((entries) => {
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
       const { width: newWidth, height: newHeight } = entries[0].contentRect;
       try {
         graph.resize(newWidth, newHeight);
-      } catch (e) {
-        // Graph may be destroyed
-      }
+      } catch (e) {}
     });
     resizeObserver.observe(container);
 
-    // Не уничтожаем граф при cleanup - он будет переиспользован
-    // Это важно для React StrictMode в development
     return () => {
       resizeObserver.disconnect();
-      // Граф уничтожается только при размонтировании компонента
-      // Но в StrictMode это вызывается дважды, поэтому проверяем ref
     };
-  }, []); // Пустой массив - граф создаётся только один раз!
+  }, []); // Граф создаётся один раз
 
-  // Кэш предыдущих данных для инкрементального обновления
-  const prevDataRef = useRef<{ nodeIds: Set<string>; edgeIds: Set<string> } | null>(null);
-
-  // Обновление данных
+  // Обновление данных с пре-процессингом для ELK
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph || !data) return;
 
-    // Проверка что граф не уничтожен
     if ((graph as any).destroyed) return;
 
     try {
-      // Вычисляем количество подключений для каждого узла (для определения размера BUS)
-      const incomingCount = new Map<string, number>();
-      const outgoingCount = new Map<string, number>();
-      data.nodes.forEach(n => {
-        incomingCount.set(n.id, 0);
-        outgoingCount.set(n.id, 0);
-      });
-      data.edges.forEach(edge => {
-        if (incomingCount.has(edge.target)) {
-          incomingCount.set(edge.target, (incomingCount.get(edge.target) || 0) + 1);
-        }
-        if (outgoingCount.has(edge.source)) {
-          outgoingCount.set(edge.source, (outgoingCount.get(edge.source) || 0) + 1);
-        }
-      });
-      
-      // Преобразуем данные в формат G6
-      // Source узлы фиксируем вверху схемы
-      const nodes = data.nodes.map(node => {
-        const nodeType = node.type?.toLowerCase();
-        const nodeData: any = {
-          id: node.id,
-          combo: (node as any).combo || undefined, // Привязка к combo (cabinet)
-          data: {
-            ...node,
-            type: nodeType,
-          },
-        };
-        
-        // Для BUS вычисляем размер на основе количества подключений
-        if (nodeType === 'bus') {
-          const total = Math.max(
-            incomingCount.get(node.id) || 0,
-            outgoingCount.get(node.id) || 0
-          );
-          const busWidth = Math.max(200, total * 60 + 80);
-          // Задаём размер напрямую в style
-          nodeData.style = {
-            size: [busWidth, 40],
-          };
-          nodeData.data.calculatedWidth = busWidth;
-          nodeData.data.calculatedHeight = 40;
-        }
-        
-        // Для CABINET задаём размер (шире обычных узлов)
-        if (nodeType === 'cabinet') {
-          nodeData.style = {
-            size: [180, 50],
-          };
-        }
-        
-        // Фиксируем source узлы (источники питания) вверху схемы
-        if (node.type?.toLowerCase() === 'source') {
-          nodeData.fix = true;  // G6 v5: фиксация позиции
-        }
-        
-        return nodeData;
-      });
+      // ===== ПРЕ-ПРОЦЕССИНГ: добавляем размеры и порты =====
+      const { nodes, edges, combos } = processDataForElk(data);
 
-      // Создаём Set существующих ID узлов для валидации рёбер
-      const nodeIds = new Set(data.nodes.map(n => n.id));
-      
-      // Фильтруем рёбра - оставляем только те, у которых source и target существуют
-      const edges = data.edges
-        .filter(edge => {
-          const sourceExists = nodeIds.has(edge.source);
-          const targetExists = nodeIds.has(edge.target);
-          if (!sourceExists || !targetExists) {
-            console.warn(`[G6] Filtering edge ${edge.id}: missing node(s)`);
-            return false;
-          }
-          return true;
-        })
-        .map(edge => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          data: edge as any,
-        }));
-
-      // Преобразуем combos если есть
-      const combos = data.combos?.map(combo => ({
-        id: combo.id,
-        data: combo.data,
-      })) || [];
+      console.log('[G6] Processed nodes with sizes:', nodes.length);
+      console.log('[G6] Nodes with ports:', nodes.filter(n => n.ports && n.ports.length > 0).map(n => ({ id: n.id, ports: n.ports })));
 
       // Первый рендер
       if (!(graph as any).rendered) {
         if ((graph as any).destroyed) return;
         try {
-          graph.setData({ nodes, edges: edges as any, combos });
+          graph.setData({ nodes: nodes as any, edges: edges as any, combos });
           graph.render();
           (graph as any).rendered = true;
+          console.log('[G6] First render complete with', nodes.length, 'nodes,', edges.length, 'edges');
         } catch (renderError) {
           console.warn('Render error:', renderError);
           return;
         }
-        prevDataRef.current = {
-          nodeIds: new Set(nodes.map(n => n.id)),
-          edgeIds: new Set(edges.map(e => e.id)),
-        };
         return;
       }
 
       // Инкрементальное обновление
-      const newNodeIds = new Set(nodes.map(n => n.id));
-      const newEdgeIds = new Set(edges.map(e => e.id));
-      const prevIds = prevDataRef.current;
+      if ((graph as any).destroyed) return;
+      graph.setData({ nodes: nodes as any, edges: edges as any, combos });
 
-      if (prevIds) {
-        // Находим добавленные/удалённые элементы
-        const addedNodes = nodes.filter(n => !prevIds.nodeIds.has(n.id));
-        const removedNodeIds = [...prevIds.nodeIds].filter(id => !newNodeIds.has(id));
-        const addedEdges = edges.filter(e => !prevIds.edgeIds.has(e.id));
-        const removedEdgeIds = [...prevIds.edgeIds].filter(id => !newEdgeIds.has(id));
-
-        // Устанавливаем данные без layout - ELK применяется отдельно в useEffect
-        if ((graph as any).destroyed) return;
-        graph.setData({ nodes, edges: edges as any, combos });
-      } else {
-        // Нет предыдущих данных - полный рендер
-        if ((graph as any).destroyed) return;
-        graph.setData({ nodes, edges: edges as any, combos });
-      }
-
-      prevDataRef.current = {
-        nodeIds: newNodeIds,
-        edgeIds: newEdgeIds,
-      };
     } catch (e) {
       console.error('Graph update error:', e);
     }
   }, [data]);
-
-  // Ref для useElkLayout (чтобы использовать в async useEffect)
-  const useElkLayoutRef = useRef(useElkLayout);
-  useEffect(() => {
-    useElkLayoutRef.current = useElkLayout;
-  }, [useElkLayout]);
-
-  // ELK Layout - профессиональная ортогональная маршрутизация рёбер
-  useEffect(() => {
-    const graph = graphRef.current;
-    if (!graph || !data || !useElkLayoutRef.current) return;
-    if ((graph as any).destroyed || !(graph as any).rendered) return;
-
-    // Функция для применения ELK layout (позиции узлов + маршрутизация рёбер)
-    const applyElk = async () => {
-      try {
-        // Создаём Set существующих ID узлов для валидации
-        const nodeIds = new Set(data.nodes.map(n => n.id));
-        
-        // Фильтруем только валидные рёбра
-        const validEdges = data.edges.filter(edge => 
-          nodeIds.has(edge.source) && nodeIds.has(edge.target)
-        );
-        
-        if (data.nodes.length === 0) {
-          console.log('[ELK] No nodes to layout');
-          return;
-        }
-        
-        console.log('[ELK] Starting full layout for', data.nodes.length, 'nodes,', validEdges.length, 'edges');
-        
-        // Подготавливаем данные для ELK с размерами по типам
-        const elkNodes = data.nodes.map(node => ({
-          id: node.id,
-          type: node.type,
-          // Размер передаётся в performElkLayout, но можно задать явно
-        }));
-        
-        const elkEdges = validEdges.map(edge => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-        }));
-
-        // Выполняем ELK layout - получаем позиции узлов И маршруты рёбер
-        const layoutResult = await performElkLayout(elkNodes, elkEdges);
-        
-        if (!layoutResult || !mountedRef.current) {
-          console.log('[ELK] Layout result is null or component unmounted');
-          return;
-        }
-
-        // Проверяем что граф ещё существует
-        if ((graph as any).destroyed) {
-          console.log('[ELK] Graph was destroyed during layout');
-          return;
-        }
-
-        console.log('[ELK] Layout complete:', layoutResult.nodes.size, 'nodes,', layoutResult.edges.size, 'edges');
-
-        // Получаем текущие данные графа
-        try {
-          const currentData = graph.getData();
-          if (!currentData || !currentData.nodes) {
-            console.log('[ELK] No current graph data');
-            return;
-          }
-          
-          // Обновляем узлы с позициями из ELK
-          const updatedNodes = (currentData.nodes as any[]).map(node => {
-            const pos = layoutResult.nodes.get(node.id);
-            if (pos) {
-              return {
-                ...node,
-                x: pos.x,
-                y: pos.y,
-                style: {
-                  ...(node.style || {}),
-                  size: [pos.width, pos.height],
-                },
-              };
-            }
-            return node;
-          });
-          
-          // Обновляем рёбра с controlPoints из ELK
-          const updatedEdges = (currentData.edges as any[]).map(edge => {
-            const route = layoutResult.edges.get(edge.id);
-            if (route && route.points && Array.isArray(route.points) && route.points.length >= 2) {
-              return {
-                ...edge,
-                style: {
-                  ...(edge.style || {}),
-                  controlPoints: route.points,
-                },
-              };
-            }
-            return edge;
-          });
-
-          // Применяем обновлённые данные
-          if (!(graph as any).destroyed && mountedRef.current) {
-            (graph as any).setData({
-              nodes: updatedNodes,
-              edges: updatedEdges,
-              combos: currentData.combos,
-            });
-            console.log('[ELK] Applied positions to', layoutResult.nodes.size, 'nodes, routes to', layoutResult.edges.size, 'edges');
-          }
-        } catch (dataError) {
-          console.warn('[ELK] Error updating graph data:', dataError);
-        }
-      } catch (error) {
-        console.error('[ELK] Error during layout:', error);
-      }
-    };
-
-    // Выполняем ELK layout с задержкой после основного layout
-    const timeoutId = setTimeout(applyElk, 800);
-    
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [data]);
-
-
 
   // Внешний zoom
   useEffect(() => {
@@ -948,27 +822,23 @@ export default function NetworkGraphG6({
 
     try {
       graph.zoomTo(externalZoom);
-    } catch (e) {
-      // Graph may be destroyed
-    }
+    } catch (e) {}
   }, [externalZoom]);
 
-  // Сброс состояния связи при выходе из режима
+  // Сброс состояния связи
   useEffect(() => {
     const graph = graphRef.current;
     if (!connectionMode && pendingConnectionStart && graph) {
       if (!(graph as any).destroyed) {
         try {
           graph.setElementState(pendingConnectionStart, 'connectionSource', false);
-        } catch {
-          // Element may not exist
-        }
+        } catch {}
       }
       setPendingConnectionStart(null);
     }
   }, [connectionMode, pendingConnectionStart]);
 
-  // Финальный cleanup при размонтировании компонента
+  // Финальный cleanup
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -976,8 +846,6 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (graph) {
         if (!(graph as any).destroyed) {
-          // Откладываем уничтожение на 100мс
-          // Если компонент снова монтируется (StrictMode), уничтожение будет отменено
           destroyTimeoutRef.current = setTimeout(() => {
             const g = graphRef.current;
             if (g && !(g as any).destroyed) {
@@ -992,7 +860,6 @@ export default function NetworkGraphG6({
             destroyTimeoutRef.current = null;
           }, 100);
         } else {
-          // Граф уже уничтожен - просто очищаем ссылку
           graphRef.current = null;
         }
       }
@@ -1006,344 +873,52 @@ export default function NetworkGraphG6({
         className="h-full w-full"
       />
 
-      {/* Индикатор режима редактирования */}
       {editMode && (
         <div className="absolute top-4 left-4 px-3 py-1.5 bg-amber-500 text-white text-sm font-medium rounded-lg shadow-lg z-10">
           ✏️ Режим редактирования
         </div>
       )}
 
-      {/* Индикатор режима связи */}
       {connectionMode && (
         <div className="absolute top-4 left-4 px-3 py-1.5 bg-green-500 text-white text-sm font-medium rounded-lg shadow-lg z-10">
           🔗 {pendingConnectionStart ? 'Выберите целевой элемент' : 'Выберите начальный элемент'}
         </div>
       )}
 
-      {/* Подсказка при наведении на узел (или закреплённая) */}
       {(hoveredNode || pinnedNode) && (
-        <div 
+        <div
           className="absolute bottom-4 right-4 p-4 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 text-sm max-w-sm z-20"
           onMouseEnter={() => {
-            // Отменяем скрытие если мышка наведена на tooltip
             if (tooltipHideTimeoutRef.current) {
               clearTimeout(tooltipHideTimeoutRef.current);
               tooltipHideTimeoutRef.current = null;
             }
           }}
-          onMouseDown={(e) => {
-            // Предотвращаем скрытие tooltip при клике внутри него
-            e.stopPropagation();
-          }}
-          onClick={(e) => {
-            // Предотвращаем всплытие клика к canvas
-            e.stopPropagation();
-          }}
+          onMouseDown={(e) => { e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); }}
           onMouseLeave={() => {
-            // Скрываем tooltip только если он не закреплён
             if (!pinnedNode) {
               setHoveredNode(null);
             }
           }}
         >
           <div className="space-y-2">
-            {/* Заголовок */}
             <div className="border-b border-slate-200 dark:border-slate-700 pb-2 flex justify-between items-start">
               <div>
                 <div className="font-semibold text-slate-900 dark:text-slate-100 text-base">{(actualPinnedNode || actualHoveredNode)?.name}</div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">ID: {(actualPinnedNode || actualHoveredNode)?.id} | Тип: {(actualPinnedNode || actualHoveredNode)?.type.toLowerCase()}</div>
               </div>
-              <div className="flex items-center gap-1">
-                {/* Кнопка закрытия tooltip */}
-                {actualPinnedNode && (
-                  <button
-                    onClick={() => setPinnedNode(null)}
-                    className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
-                    title="Закрыть"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-                {/* Кнопка удаления - только в режиме редактирования */}
-                {editMode && (
-                  <button
-                    onClick={() => {
-                      const node = actualPinnedNode || actualHoveredNode;
-                      if (node && confirm(`Удалить элемент "${node.name}" и все связанные связи?`)) {
-                        onDeleteNode?.(node.id);
-                        setHoveredNode(null);
-                        setPinnedNode(null);
-                      }
-                    }}
-                    className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
-                    title="Удалить элемент"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            </div>
-            
-            {/* Статусы */}
-            <div className="flex flex-wrap gap-2">
-              {/* Электрический статус - для всех элементов */}
-              <div className={`px-2 py-1 rounded text-xs font-medium ${
-                (actualPinnedNode || actualHoveredNode)?.lifeStatus === 'LIVE' 
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-              }`}>
-                {(actualPinnedNode || actualHoveredNode)?.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
-              </div>
-              
-              {/* Оперативный статус - только для коммутирующих элементов */}
-              {isSwitchable((actualPinnedNode || actualHoveredNode)?.type || '') && (
-                <div className="flex items-center gap-1">
-                  {/* Кнопка переключения - всегда доступна */}
-                  <button
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const node = actualPinnedNode || actualHoveredNode;
-                      if (node && onUpdateNodeStatus) {
-                        const newStatus = node.status === 'OFF' ? 'ON' : 'OFF';
-                        setUpdatingNodeId(node.id);
-                        try {
-                          await onUpdateNodeStatus(node.id, newStatus);
-                          // После обновления статуса вызываем propagate
-                          onPropagate?.();
-                        } finally {
-                          setUpdatingNodeId(null);
-                        }
-                      }
-                    }}
-                    disabled={updatingNodeId === (actualPinnedNode || actualHoveredNode)?.id}
-                    className={`px-2 py-1 rounded text-xs font-medium cursor-pointer transition-all hover:ring-2 hover:ring-blue-400 disabled:opacity-50 disabled:cursor-wait ${
-                      (actualPinnedNode || actualHoveredNode)?.status === 'OFF' 
-                        ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
-                        : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                    }`}
-                    title="Нажмите для переключения статуса"
-                  >
-                    {updatingNodeId === (actualPinnedNode || actualHoveredNode)?.id ? (
-                      <span className="flex items-center gap-1">
-                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        <span>...</span>
-                      </span>
-                    ) : (
-                      (actualPinnedNode || actualHoveredNode)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'
-                    )}
-                  </button>
-                </div>
-              )}
-              
-
-            </div>
-
-            {/* Мощности */}
-            {(() => {
-              const node = actualPinnedNode || actualHoveredNode;
-              if (!node) return null;
-
-              // Для LOAD показываем Pуст, Ки, Pрасч из устройства
-              if (node.type?.toUpperCase() === 'LOAD' && node.devices?.[0]) {
-                const device = node.devices[0];
-                const pUst = device.pKw || 0;
-                const ki = device.usageFactor || 0.8;
-                const pRasch = pUst * ki;
-                return (
-                  <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
-                    <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Мощность:</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5 grid grid-cols-2 gap-x-2">
-                      <><span className="text-slate-400">Pуст:</span><span>{pUst.toFixed(2)} кВт</span></>
-                      <><span className="text-slate-400">Ки:</span><span>{ki.toFixed(2)}</span></>
-                      <><span className="text-slate-400">Pрасч:</span><span>{pRasch.toFixed(2)} кВт</span></>
-                    </div>
-                  </div>
-                );
-              }
-
-              // Для остальных элементов показываем суммарные мощности (всегда, даже если 0)
-              return (
-                <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
-                  <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Суммарная мощность:</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 pl-2 grid grid-cols-2 gap-x-2">
-                    <><span className="text-slate-400">Σ Pуст:</span><span>{(node.sumPInstalled || 0).toFixed(2)} кВт</span></>
-                    <><span className="text-slate-400">Σ Pрасч:</span><span>{(node.sumPCalculated || 0).toFixed(2)} кВт</span></>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Устройства */}
-            {(actualPinnedNode || actualHoveredNode)?.devices && (actualPinnedNode || actualHoveredNode)!.devices!.length > 0 && (
-              <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
-                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Устройства:</div>
-                {(actualPinnedNode || actualHoveredNode)!.devices!.map((device, idx) => (
-                  <div key={idx} className="text-xs text-slate-500 dark:text-slate-400 pl-2 space-y-0.5">
-                    <div className="font-medium text-slate-600 dark:text-slate-300">• {device.type}{device.model ? ` ${device.model}` : ''}</div>
-                    <div className="grid grid-cols-2 gap-x-2 pl-2">
-                      {device.currentNom && <><span className="text-slate-400">Iном:</span><span>{device.currentNom} А</span></>}
-                      {device.pKw && <><span className="text-slate-400">Pуст:</span><span>{device.pKw} кВт</span></>}
-                      {device.breakerType && <><span className="text-slate-400">Тип:</span><span>{device.breakerType}</span></>}
-                      {device.breakingCapacity && <><span className="text-slate-400">Откл.спос.:</span><span>{device.breakingCapacity} кА</span></>}
-                      {device.curve && <><span className="text-slate-400">Хар-ка:</span><span>{device.curve}</span></>}
-                      {device.leakageCurrent && <><span className="text-slate-400">Iут:</span><span>{device.leakageCurrent} мА</span></>}
-                      {device.poles && <><span className="text-slate-400">Полюсов:</span><span>{device.poles}</span></>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            {/* Напряжение */}
-            {(actualPinnedNode || actualHoveredNode)?.voltageLevel && (
-              <div className="text-xs text-slate-600 dark:text-slate-300 flex justify-between">
-                <span className="text-slate-400">Напряжение:</span>
-                <span>{((actualPinnedNode || actualHoveredNode)?.voltageLevel || 0) < 1 
-                  ? `${((actualPinnedNode || actualHoveredNode)?.voltageLevel || 0) * 1000} В`
-                  : `${(actualPinnedNode || actualHoveredNode)?.voltageLevel} кВ`}</span>
-              </div>
-            )}
-            
-            {/* Проблемы */}
-            {((actualPinnedNode || actualHoveredNode)?.criticalIssues ?? 0) > 0 && (
-              <div className="border-t border-red-200 dark:border-red-800 pt-2">
-                <div className="text-xs text-red-500 dark:text-red-400 font-medium">
-                  ⚠️ {(actualPinnedNode || actualHoveredNode)?.criticalIssues} проблем(ы)
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Подсказка при наведении на ребро (связь) или закреплённая */}
-      {(hoveredEdge || pinnedEdge) && (
-        <div 
-          className="absolute bottom-4 right-4 p-4 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 text-sm max-w-sm z-20"
-          onMouseEnter={() => {
-            // Отменяем скрытие если мышка наведена на tooltip
-            if (tooltipHideTimeoutRef.current) {
-              clearTimeout(tooltipHideTimeoutRef.current);
-              tooltipHideTimeoutRef.current = null;
-            }
-          }}
-          onMouseLeave={() => {
-            // Скрываем tooltip только если он не закреплён
-            if (!pinnedEdge) {
-              setHoveredEdge(null);
-            }
-          }}
-        >
-          <div className="space-y-2">
-            {/* Заголовок */}
-            <div className="border-b border-slate-200 dark:border-slate-700 pb-2 flex justify-between items-start">
-              <div>
-                <div className="font-semibold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
-                  🔗 Связь
-                </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">
-                  {(pinnedEdge || hoveredEdge)?.source} → {(pinnedEdge || hoveredEdge)?.target}
-                </div>
-              </div>
-              {/* Кнопка закрытия tooltip */}
-              {pinnedEdge && (
+              {actualPinnedNode && (
                 <button
-                  onClick={() => setPinnedEdge(null)}
-                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
-                  title="Закрыть"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPinnedNode(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  ✕
                 </button>
               )}
-            </div>
-            
-            {/* Параметры кабеля */}
-            <div className="space-y-1">
-              {/* Марка и сечение - показываем только если есть реальные данные */}
-              {((pinnedEdge || hoveredEdge)?.wireType || ((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0)) && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500 dark:text-slate-400">Кабель:</span>
-                  <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {(pinnedEdge || hoveredEdge)?.wireType} {((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0) ? `${(pinnedEdge || hoveredEdge)?.wireSize}мм²` : ''}
-                  </span>
-                </div>
-              )}
-              
-              {/* Длина */}
-              {(pinnedEdge || hoveredEdge)?.length && (pinnedEdge || hoveredEdge)!.length! > 0 && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500 dark:text-slate-400">Длина:</span>
-                  <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {(pinnedEdge || hoveredEdge)?.length} м
-                  </span>
-                </div>
-              )}
-              
-              {/* Материал */}
-              {((pinnedEdge || hoveredEdge) as any)?.cable?.material && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500 dark:text-slate-400">Материал:</span>
-                  <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {((pinnedEdge || hoveredEdge) as any).cable.material === 'copper' ? 'Медь' : 'Алюминий'}
-                  </span>
-                </div>
-              )}
-              
-              {/* Допустимый ток */}
-              {((pinnedEdge || hoveredEdge) as any)?.cable?.iDop && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500 dark:text-slate-400">Iдоп:</span>
-                  <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {((pinnedEdge || hoveredEdge) as any).cable.iDop} А
-                  </span>
-                </div>
-              )}
-              
-              {/* Потеря напряжения */}
-              {((pinnedEdge || hoveredEdge) as any)?.cable?.voltageDrop !== null && ((pinnedEdge || hoveredEdge) as any)?.cable?.voltageDrop !== undefined && (
-                <div className="flex justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-700">
-                  <span className="text-slate-500 dark:text-slate-400">ΔU (потеря):</span>
-                  <span className={`font-medium ${
-                    ((pinnedEdge || hoveredEdge) as any).cable.voltageDrop > 5 
-                      ? 'text-red-600 dark:text-red-400' 
-                      : ((pinnedEdge || hoveredEdge) as any).cable.voltageDrop > 3 
-                        ? 'text-amber-600 dark:text-amber-400' 
-                        : 'text-green-600 dark:text-green-400'
-                  }`}>
-                    {((pinnedEdge || hoveredEdge) as any).cable.voltageDrop.toFixed(2)}%
-                    {((pinnedEdge || hoveredEdge) as any).cable.voltageDrop > 5 && ' ⚠️'}
-                  </span>
-                </div>
-              )}
-            </div>
-            
-            {/* Статусы */}
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
-              <div className={`px-2 py-1 rounded text-xs font-medium ${
-                (pinnedEdge || hoveredEdge)?.lifeStatus === 'LIVE' 
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-              }`}>
-                {(pinnedEdge || hoveredEdge)?.lifeStatus === 'LIVE' ? '⚡ Под напряжением' : '⚪ Без напряжения'}
-              </div>
-              
-              <div className={`px-2 py-1 rounded text-xs font-medium ${
-                (pinnedEdge || hoveredEdge)?.status === 'OFF' 
-                  ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
-                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-              }`}>
-                {(pinnedEdge || hoveredEdge)?.status === 'OFF' ? '🔴 Отключен' : '🟢 Включен'}
-              </div>
             </div>
           </div>
         </div>

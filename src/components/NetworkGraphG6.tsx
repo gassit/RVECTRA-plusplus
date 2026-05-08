@@ -776,7 +776,12 @@ export default function NetworkGraphG6({
             data: edge as any,
           };
 
-          // line рёбра — controlPoints не нужны (только для polyline)
+          // polyline рёбра — передаём контрольные точки от ELK
+          if (elkEdge?.controlPoints?.length) {
+            edgeData.style = {
+              controlPoints: elkEdge.controlPoints,
+            };
+          }
 
           return edgeData;
         });

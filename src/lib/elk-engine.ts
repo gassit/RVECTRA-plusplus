@@ -255,10 +255,12 @@ export async function computeElkLayout(
         'elk.algorithm': 'layered',
         'elk.direction': 'DOWN',
         'elk.edgeRouting': 'SPLINES',
-        'elk.spacing.nodeNode': '40',
-        'elk.layered.spacing.nodeNodeBetweenLayers': '60',
+        'elk.spacing.nodeNode': '25',
+        'elk.layered.spacing.nodeNodeBetweenLayers': '40',
         'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
         'elk.layered.cycleBreaking.strategy': 'GREEDY',
+        'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+        'elk.layered.crossingMinimization.semiInteractive': 'true',
         'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
         'elk.portConstraints': 'FIXED_ORDER',
       },
@@ -275,7 +277,7 @@ export async function computeElkLayout(
         maxX = Math.max(maxX, (child.x || 0) + (child.width || 0));
         maxY = Math.max(maxY, (child.y || 0) + (child.height || 0));
       }
-      const padding = 60;
+      const padding = 30;
       cabinetBounds.set(cabinetId, {
         width: Math.max(maxX + padding, 200),
         height: Math.max(maxY + padding, 120),
@@ -390,11 +392,13 @@ export async function computeElkLayout(
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': 'DOWN',
-      'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.spacing.nodeNode': '40',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '60',
+      'elk.edgeRouting': 'SPLINES',
+      'elk.spacing.nodeNode': '25',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '40',
       'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
-      'elk.layered.cycleBreaking.strategy': 'MODEL_ORDER',
+      'elk.layered.cycleBreaking.strategy': 'GREEDY',
+      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+      'elk.layered.crossingMinimization.semiInteractive': 'true',
       'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
       'elk.portConstraints': 'FIXED_SIDE',
     },

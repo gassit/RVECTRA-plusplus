@@ -742,6 +742,14 @@ export default function NetworkGraphG6({
         // Маппинг: nodeId → ELK координаты
         const elkMap = new Map(layoutResult.nodes.map(n => [n.id, n]));
         const elkEdgeMap = new Map(layoutResult.edges.map(e => [e.id, e]));
+        const elkComboMap = new Map((layoutResult.combos || []).map(c => [c.id, c]));
+
+        // ============================================================
+        // 🔍 ДИАГНОСТИКА: Проверяем, что ELK вернул данные
+        // ============================================================
+        console.log('[G6 DIAG] ELK вернул:', layoutResult.nodes.length, 'узлов,', layoutResult.edges.length, 'рёбер,', (layoutResult.combos || []).length, 'combos');
+        console.log('[G6 DIAG] Узлы без ELK координат:', data.nodes.filter(n => !elkMap.has(n.id)).map(n => n.id));
+        console.log('[G6 DIAG] Узлы с combo (parentId):', data.nodes.filter(n => (n as any).combo).map(n => ({ id: n.id, combo: (n as any).combo })));
 
         // ============================================================
         // ШАГ 2: Подготавливаем данные для G6 с готовыми координатами
@@ -750,6 +758,10 @@ export default function NetworkGraphG6({
           const elk = elkMap.get(node.id);
           const type = (node.type || 'load').toLowerCase();
           const size = NODE_SIZES[type] || { width: 120, height: 60 };
+
+          if (!elk) {
+            console.warn(`[G6 DIAG] Узел "${node.id}" не найден в ELK результате!`);
+          }
 
           return {
             id: node.id,
@@ -786,10 +798,35 @@ export default function NetworkGraphG6({
           return edgeData;
         });
 
-        const combos = data.combos?.map(combo => ({
+        // ============================================================
+        // ШАГ 2b: Combos из ELK результатов (НЕ из API!)
+        // API combos не содержат позиций и размеров.
+        // ELK рассчитывает позицию и размер каждого шкафа.
+        // ============================================================
+        const combos = (layoutResult.combos || []).map(cabinet => ({
+          id: cabinet.id,
+          data: {
+            name: cabinet.label,
+            type: 'CABINET',
+            label: cabinet.label,
+          },
+          style: {
+            x: cabinet.x - cabinet.width / 2,  // G6 combo: x,y — верхний левый угол
+            y: cabinet.y - cabinet.height / 2,
+            width: cabinet.width,
+            height: cabinet.height,
+          },
+        }));
+
+        console.log('[G6 DIAG] Combos для G6:', combos.map(c => ({ id: c.id, x: c.style?.x, y: c.style?.y, w: c.style?.width, h: c.style?.height })));
+
+        // Если ELK не вернул combos (откат), используем combos из API
+        const finalCombos = combos.length > 0 ? combos : (data.combos?.map(combo => ({
           id: combo.id,
           data: combo.data,
-        })) || [];
+        })) || []);
+
+        console.log('[G6 DIAG] Итого combos передано в G6:', finalCombos.length);
 
         // ============================================================
         // ШАГ 3: G6 — только рендер (без layout движка)
@@ -797,7 +834,7 @@ export default function NetworkGraphG6({
         graph.setData({
           nodes: nodes as any,
           edges: edges as any,
-          combos,
+          combos: finalCombos,
         });
 
         if (!(graph as any).rendered) {
@@ -837,12 +874,12 @@ export default function NetworkGraphG6({
           data: edge as any,
         }));
 
-        const combos = data.combos?.map(combo => ({
+        const fallbackCombos = data.combos?.map(combo => ({
           id: combo.id,
           data: combo.data,
         })) || [];
 
-        graph.setData({ nodes: nodes as any, edges: edges as any, combos });
+        graph.setData({ nodes: nodes as any, edges: edges as any, combos: fallbackCombos });
 
         if (!(graph as any).rendered) {
           await graph.render();

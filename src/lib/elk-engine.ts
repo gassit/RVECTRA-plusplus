@@ -74,23 +74,15 @@ export interface LayoutResult {
 
 // ============================================================================
 // ПОРТЫ
-// Source/Breaker/Bus/Load/Meter — фиксированные NORTH (вход) + SOUTH (выход)
-// Junction — без портов (ELK решает автоматически)
+// НЕ задаём порты явно — ELK сам создаст столько портов на каждой стороне,
+// сколько нужно для подключения всех рёбер.
+// Junction — свободные порты (ELK решает автоматически)
 // ============================================================================
 const FIXED_PORT_TYPES = new Set(['source', 'breaker', 'bus', 'meter', 'load']);
 
-function buildPortsForNode(nodeId: string, type: string): any[] {
-  if (FIXED_PORT_TYPES.has(type)) {
-    return [
-      { id: `${nodeId}_NORTH`, properties: { 'port.side': 'NORTH' } },
-      { id: `${nodeId}_SOUTH`, properties: { 'port.side': 'SOUTH' } },
-    ];
-  }
-  return [];
-}
-
 function getPortConstraints(type: string): string {
-  return FIXED_PORT_TYPES.has(type) ? 'FIXED_SIDE' : 'FIXED_ORDER';
+  // FIXED_ORDER + без явных портов = ELK auto-создаёт порты
+  return FIXED_PORT_TYPES.has(type) ? 'FIXED_ORDER' : 'FIXED_ORDER';
 }
 
 // ============================================================================
@@ -183,7 +175,6 @@ export async function computeElkLayout(
         width: size.width,
         height: size.height,
         labels: child.data?.name ? [{ text: child.data.name }] : [],
-        ports: buildPortsForNode(child.id, type),
         properties: { 'portConstraints': getPortConstraints(type) },
       };
     });
@@ -212,7 +203,6 @@ export async function computeElkLayout(
       width: size.width,
       height: size.height,
       labels: node.data?.name ? [{ text: node.data.name }] : [],
-      ports: buildPortsForNode(node.id, type),
       properties: { 'portConstraints': getPortConstraints(type) },
     });
   }

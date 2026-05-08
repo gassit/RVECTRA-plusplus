@@ -35,14 +35,13 @@ const ELK_OPTIONS: Record<string, string> = {
   // Оптимальное размещение узлов
   'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
 
-  // Отступы (критично для читаемости)
-  'elk.spacing.nodeNode': '80',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '150',
-  'elk.spacing.edgeEdge': '20',
+  // Отступы
+  'elk.spacing.nodeNode': '20',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '50',
+  'elk.spacing.edgeEdge': '8',
 
   // Ортогональная маршрутизация — прямые углы
   'elk.edgeRouting': 'ORTHOGONAL',
-  'elk.portConstraints': 'FIXED_SIDE',
 
   // Убираем лишние изгибы
   'elk.layered.unnecessaryBendpoints': 'true',
@@ -217,11 +216,6 @@ export async function computeElkLayout(
     const nodeLayoutOptions: Record<string, string> = {
       'elk.position': `(x=${index * 200})`,
     };
-
-    // Источники: минимальный ранг — всегда наверху
-    if (type === 'source') {
-      nodeLayoutOptions['elk.layering.layerConstraint'] = 'FIRST_SEPARATE';
-    }
 
     return {
       id: node.id,

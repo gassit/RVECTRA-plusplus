@@ -106,19 +106,15 @@ function buildPortsForDirection(nodeId: string, type: string, direction: 'DOWN' 
 // ИЗВЛЕЧЕНИЕ КОНТРОЛЬНЫХ ТОЧЕК ИЗ РЁБРА ELK
 // ============================================================================
 function getControlPoints(elkEdge: any, offsetX = 0, offsetY = 0): Array<{ x: number; y: number }> {
+  // G6 polyline: controlPoints — это ТОЛЬКО промежуточные точки (bendPoints),
+  // НЕ startPoint/endPoint (G6 сам соединяет source → bends → target).
   if (!elkEdge?.sections?.length) return [];
   const points: Array<{ x: number; y: number }> = [];
   for (const section of elkEdge.sections) {
-    if (section.startPoint) {
-      points.push({ x: section.startPoint.x + offsetX, y: section.startPoint.y + offsetY });
-    }
     if (section.bendPoints) {
       for (const bp of section.bendPoints) {
         points.push({ x: bp.x + offsetX, y: bp.y + offsetY });
       }
-    }
-    if (section.endPoint) {
-      points.push({ x: section.endPoint.x + offsetX, y: section.endPoint.y + offsetY });
     }
   }
   return points;
@@ -522,6 +518,9 @@ export async function computeElkLayout(
     }
 
     const points = getControlPoints(edge);
+    if (points.length) {
+      console.log(`[ELK DIAG] Ребро "${edge.id}": ${points.length} bendPoints`, points.map(p => `(${Math.round(p.x)},${Math.round(p.y)})`).join(' → '));
+    }
     finalEdges.push({
       id: edge.id,
       source,

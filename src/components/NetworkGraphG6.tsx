@@ -776,7 +776,12 @@ export default function NetworkGraphG6({
             data: edge as any,
           };
 
-          // polyline без controlPoints — G6 рисует ортогонально по координатам
+          // Контрольные точки от ELK → в style для polyline
+          if (elkEdge?.controlPoints?.length) {
+            edgeData.style = {
+              controlPoints: elkEdge.controlPoints,
+            };
+          }
 
           return edgeData;
         });

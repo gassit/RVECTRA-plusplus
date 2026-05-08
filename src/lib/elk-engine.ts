@@ -23,11 +23,8 @@ const ELK_OPTIONS: Record<string, string> = {
   // Учитываем порядок узлов и связей из входных данных
   'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
 
-  // Разрыв циклов: INTERACTIVE — минимальное искажение при кольцевании
-  'elk.cycleBreaking.strategy': 'INTERACTIVE',
-
-  // Обратные связи рисуются огибающим контуром, не ломая иерархию
-  'elk.layered.feedbackEdges': 'true',
+  // Разрыв циклов: по порядку моделей
+  'elk.cycleBreaking.strategy': 'MODEL_ORDER',
 
   // Иерархия: каждый уровень обрабатывается независимо
   'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
@@ -35,13 +32,14 @@ const ELK_OPTIONS: Record<string, string> = {
   // Оптимальное размещение узлов
   'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
 
-  // Отступы
-  'elk.spacing.nodeNode': '20',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '50',
+  // Отступы (критично для читаемости)
+  'elk.spacing.nodeNode': '80',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '150',
   'elk.spacing.edgeEdge': '8',
 
   // Ортогональная маршрутизация — прямые углы
   'elk.edgeRouting': 'ORTHOGONAL',
+  'elk.portConstraints': 'FIXED_SIDE',
 
   // Убираем лишние изгибы
   'elk.layered.unnecessaryBendpoints': 'true',
@@ -216,6 +214,11 @@ export async function computeElkLayout(
     const nodeLayoutOptions: Record<string, string> = {
       'elk.position': `(x=${index * 200})`,
     };
+
+    // Источники: минимальный ранг — всегда наверху
+    if (type === 'source') {
+      nodeLayoutOptions['elk.layering.layerConstraint'] = 'FIRST_SEPARATE';
+    }
 
     return {
       id: node.id,

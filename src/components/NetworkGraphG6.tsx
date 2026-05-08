@@ -347,8 +347,8 @@ export default function NetworkGraphG6({
         },
       },
       edge: {
-        // Прямые линии — без сложной маршрутизации
-        type: 'line',
+        // cubic-vertical — плавные изгибы по вертикали, без расчёта портов
+        type: 'cubic-vertical',
         style: {
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;

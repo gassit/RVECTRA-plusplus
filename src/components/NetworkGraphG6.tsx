@@ -756,42 +756,58 @@ export default function NetworkGraphG6({
         // ============================================================
         // ШАГ 2: Подготавливаем данные для G6 с готовыми координатами
         // ============================================================
-        const nodes = data.nodes.map(node => {
-          const elk = elkMap.get(node.id);
-          const type = (node.type || 'load').toLowerCase();
-          const size = NODE_SIZES[type] || { width: 120, height: 60 };
+        // ============================================================
+        // ШАГ 2: Узлы для G6 — только обычные узлы (НЕ шкафы/комбо)
+        // Шкафы передаются через combos, а не nodes.
+        // ID не должны повторяться между nodes и combos!
+        // ============================================================
+        const comboIds = new Set((layoutResult.combos || []).map(c => c.id));
 
-          if (!elk) {
-            console.warn(`[G6 DIAG] Узел "${node.id}" не найден в ELK результате!`);
-          }
+        const nodes = data.nodes
+          .filter(node => !comboIds.has(node.id)) // Исключаем шкафы (они combos)
+          .map(node => {
+            const elk = elkMap.get(node.id);
+            const type = (node.type || 'load').toLowerCase();
+            const size = NODE_SIZES[type] || { width: 120, height: 60 };
 
-          return {
-            id: node.id,
-            combo: (node as any).combo || undefined,
-            data: {
-              ...node,
-              type: type,
-            },
-            // Координаты от ELK — G6 просто рендерит
-            style: {
-              x: elk?.x ?? 0,
-              y: elk?.y ?? 0,
-              size: [elk?.width || size.width, elk?.height || size.height],
-            },
-          };
-        });
+            if (!elk) {
+              console.warn(`[G6 DIAG] Узел "${node.id}" не найден в ELK результате!`);
+            }
 
-        const edges = validEdges.map(edge => {
-          const elkEdge = elkEdgeMap.get(edge.id);
+            return {
+              id: node.id,
+              combo: (node as any).combo || undefined,
+              data: {
+                ...node,
+                type: type,
+              },
+              // Координаты от ELK — G6 просто рендерит
+              style: {
+                x: elk?.x ?? 0,
+                y: elk?.y ?? 0,
+                size: [elk?.width || size.width, elk?.height || size.height],
+              },
+            };
+          });
+
+        // ============================================================
+        // ШАГ 2a: Рёбра — используем source/target из ELK
+        // ELK возвращает source/target указывающие на обычные узлы
+        // (представители шкафов), НЕ на комбо.
+        // ============================================================
+        const apiEdgeMap = new Map(validEdges.map(e => [e.id, e]));
+
+        const edgesFromElk = (layoutResult.edges || []).map(elkEdge => {
+          const apiEdge = apiEdgeMap.get(elkEdge.id);
           const edgeData: any = {
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            data: edge as any,
+            id: elkEdge.id,
+            source: elkEdge.source,
+            target: elkEdge.target,
+            data: (apiEdge as any)?.data || {},
           };
 
           // Контрольные точки от ELK → в style для polyline
-          if (elkEdge?.controlPoints?.length) {
+          if (elkEdge.controlPoints?.length) {
             edgeData.style = {
               controlPoints: elkEdge.controlPoints,
             };
@@ -799,6 +815,19 @@ export default function NetworkGraphG6({
 
           return edgeData;
         });
+
+        // Финальная валидация: рёбра должны ссылаться только на существующие узлы
+        const finalNodeIds = new Set(nodes.map(n => n.id));
+        const validFinalEdges = edgesFromElk.filter(e => {
+          const ok = finalNodeIds.has(e.source) && finalNodeIds.has(e.target);
+          if (!ok) {
+            console.warn(`[G6 DIAG] Ребро "${e.id}" пропущено: source=${e.source}(${finalNodeIds.has(e.source) ? 'ok' : 'MISSING'}), target=${e.target}(${finalNodeIds.has(e.target) ? 'ok' : 'MISSING'})`);
+          }
+          return ok;
+        });
+
+        console.log(`[G6 DIAG] Рёбра: ${validFinalEdges.length} валидных из ${edgesFromElk.length} от ELK (входило ${validEdges.length} из API)`);
+        console.log('[G6 DIAG] Рёбра для G6:', validFinalEdges.map(e => `${e.source} -> ${e.target} (${e.style?.controlPoints?.length || 0}pts)`).join(', '));
 
         // ============================================================
         // ШАГ 2b: Combos из ELK результатов (НЕ из API!)
@@ -828,14 +857,15 @@ export default function NetworkGraphG6({
           data: combo.data,
         })) || []);
 
-        console.log('[G6 DIAG] Итого combos передано в G6:', finalCombos.length);
+        console.log('[G6 DIAG] Итого: nodes=', nodes.length, 'edges=', validFinalEdges.length, 'combos=', finalCombos.length);
 
         // ============================================================
         // ШАГ 3: G6 — только рендер (без layout движка)
+        // Рёбра НЕ ссылаются на комбо — только на обычные узлы.
         // ============================================================
         graph.setData({
           nodes: nodes as any,
-          edges: edges as any,
+          edges: validFinalEdges as any,
           combos: finalCombos,
         });
 

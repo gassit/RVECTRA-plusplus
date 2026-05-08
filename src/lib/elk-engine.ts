@@ -5,6 +5,10 @@
  * Этап 2: Раскладка шкафов + корневых узлов как единых блоков (RIGHT, слева направо)
  *
  * G6 — пассивный рендерер, только рисует то, что рассчитал ELK.
+ *
+ * Ключевое правило: рёбра в финальном результате ссылаются ТОЛЬКО на обычные узлы,
+ * НЕ на комбо (шкафы). Для каждого шкафа выбирается представитель (JUNCTION > BREAKER > any),
+ * и внешние рёбра перенаправляются на него.
  */
 
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -51,7 +55,12 @@ interface NodePosition {
 
 export interface LayoutResult {
   nodes: Array<{ id: string; x: number; y: number; width: number; height: number }>;
-  edges: Array<{ id: string; controlPoints?: Array<{ x: number; y: number }> }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    controlPoints?: Array<{ x: number; y: number }>;
+  }>;
   combos: Array<{
     id: string;
     x: number;
@@ -67,7 +76,6 @@ export interface LayoutResult {
 // ============================================================================
 function buildPortsForDirection(nodeId: string, type: string, direction: 'DOWN' | 'RIGHT'): any[] {
   if (direction === 'DOWN') {
-    // Вертикальная раскладка: порты сверху и снизу
     switch (type) {
       case 'source':
         return [{ id: `${nodeId}_out`, properties: { 'port.side': 'SOUTH' } }];
@@ -80,7 +88,6 @@ function buildPortsForDirection(nodeId: string, type: string, direction: 'DOWN' 
         ];
     }
   } else {
-    // Горизонтальная раскладка: порты слева и справа
     switch (type) {
       case 'source':
         return [{ id: `${nodeId}_out`, properties: { 'port.side': 'EAST' } }];
@@ -156,6 +163,29 @@ export async function computeElkLayout(
   console.log('[ELK DIAG] Cabinets:', [...cabinetIds], '| Root:', rootNodes.length, '| Nested:', nodes.length - rootNodes.length);
 
   // ================================================================
+  // 1.5 ВЫБОР ПРЕДСТАВИТЕЛЯ ДЛЯ КАЖДОГО ШКАФА
+  //     Приоритет: JUNCTION > BREAKER > первый дочерний
+  //     Используется для перенаправления внешних рёбер на конкретный
+  //     узел внутри шкафа (чтобы G6 не ссылался на комбо).
+  // ================================================================
+  const cabinetRepresentative = new Map<string, string>();
+
+  for (const [cabinetId, children] of childrenByParent.entries()) {
+    if (children.length === 0) continue;
+
+    const typeOf = (c: LayoutNode) => (c.type || c.data?.type || '').toUpperCase();
+    const rep =
+      children.find(c => typeOf(c) === 'JUNCTION')?.id ||
+      children.find(c => typeOf(c) === 'BREAKER')?.id ||
+      children[0].id;
+
+    if (rep) {
+      cabinetRepresentative.set(cabinetId, rep);
+      console.log(`[ELK] Представитель шкафа "${cabinetId}" -> "${rep}" (${typeOf(children.find(c => c.id === rep)!)})`);
+    }
+  }
+
+  // ================================================================
   // 2. ЭТАП 1 — РАСКЛАДКА ВНУТРИ КАЖДОГО ШКАФА (DOWN)
   // ================================================================
   const cabinetBounds = new Map<string, { width: number; height: number }>();
@@ -216,7 +246,7 @@ export async function computeElkLayout(
       const layoutedSub = await elk.layout(subGraph);
       cabinetLayoutResults.set(cabinetId, layoutedSub);
 
-      // 🔍 Логируем рёбра внутри шкафа
+      // Диагностика рёбер внутри шкафа
       console.log(`[ELK DIAG] Шкаф "${cabinetId}": ${layoutedSub.edges?.length || 0} рёбер от ELK (входило ${subEdges.length})`);
       layoutedSub.edges?.forEach((e: any) => {
         console.log(`    edge "${e.id}": sources=${e.sources} targets=${e.targets} sections=${e.sections?.length || 0}`);
@@ -250,8 +280,7 @@ export async function computeElkLayout(
   // ================================================================
   // 3. ЭТАП 2 — РАСКЛАДКА ВЕРХНЕГО УРОВНЯ (шкафы + корневые узлы)
   //    Направление: RIGHT (шкафы слева направо)
-  //    Корневые узлы: FIRST_SEPARATE (фиксация в первом слое)
-  //    Шкафы: с портами EAST/WEST + FIXED_SIDE
+  //    Шкафы: единые блоки с портами EAST/WEST
   // ================================================================
   const topLevelNodes: any[] = [];
 
@@ -262,7 +291,6 @@ export async function computeElkLayout(
       width: bounds.width,
       height: bounds.height,
       labels: cabinetLabels.has(cabinetId) ? [{ text: cabinetLabels.get(cabinetId)! }] : [],
-      // Порты для шкафов: WEST (вход), EAST (выход)
       ports: [
         { id: `${cabinetId}_IN`, properties: { 'port.side': 'WEST' } },
         { id: `${cabinetId}_OUT`, properties: { 'port.side': 'EAST' } },
@@ -280,43 +308,50 @@ export async function computeElkLayout(
     const type = (node.type || node.data?.type || 'load').toLowerCase();
     const size = NODE_SIZES[type] || { width: 80, height: 40 };
 
-    const nodeOpts: any = {
+    topLevelNodes.push({
       id: node.id,
       width: size.width,
       height: size.height,
       labels: node.data?.name ? [{ text: node.data.name }] : [],
       ports: buildPortsForDirection(node.id, type, 'RIGHT'),
       properties: { 'portConstraints': 'FIXED_SIDE' },
-    };
-
-    topLevelNodes.push(nodeOpts);
+    });
   }
 
-  // Рёбра верхнего уровня
-  const topLevelEdges = edges.filter(edge => {
+  // ================================================================
+  // 3.1 ВНЕШНИЕ РЁБРА — фильтрация и маппинг на шкафы для ELK
+  // ================================================================
+  const externalEdges = edges.filter(edge => {
+    // Пропускаем рёбра, где оба конца не найдены в nodeMap
     if (!nodeMap.has(edge.source) || !nodeMap.has(edge.target)) return false;
     const sourceParent = nodeMap.get(edge.source)?.combo;
     const targetParent = nodeMap.get(edge.target)?.combo;
-    // Внутренние рёбра шкафов уже обработаны
+    // Внутренние рёбра шкафов уже обработаны на этапе 1
     if (sourceParent && targetParent && sourceParent === targetParent) return false;
-    // Рёбра где хотя бы один конец вложен в шкаф — внешние
     return true;
   });
 
-  // Подменяем source/target дочерних элементов на ID шкафа
-  const topLevelEdgesMapped = topLevelEdges.map(edge => {
+  // Маппинг: сохраняем оригинальные source/target для каждого ребра
+  // ELK получает рёбра от/к шкафам (блокам), а мы потом вернём оригинальные ID
+  const edgeOriginalIds = new Map<string, { source: string; target: string }>();
+
+  const topLevelEdgesMapped = externalEdges.map(edge => {
     const sourceParent = nodeMap.get(edge.source)?.combo;
     const targetParent = nodeMap.get(edge.target)?.combo;
 
     let source = edge.source;
     let target = edge.target;
 
+    // Если конец внутри шкафа — подменяем на ID шкафа для ELK
     if (sourceParent && cabinetIds.has(sourceParent)) {
       source = sourceParent;
     }
     if (targetParent && cabinetIds.has(targetParent)) {
       target = targetParent;
     }
+
+    // Сохраняем оригинальные ID для восстановления в финальном результате
+    edgeOriginalIds.set(edge.id, { source: edge.source, target: edge.target });
 
     return {
       id: edge.id,
@@ -330,7 +365,7 @@ export async function computeElkLayout(
   });
 
   console.log('[ELK DIAG] Верхний уровень:', topLevelNodes.length, 'узлов,', topLevelEdgesMapped.length, 'рёбер');
-  console.log('  Nodes:', topLevelNodes.map(n => `${n.id}`).join(', '));
+  console.log('  Nodes:', topLevelNodes.map(n => n.id).join(', '));
   console.log('  Edges:', topLevelEdgesMapped.map(e => `${e.id}: ${e.sources}->${e.targets}`).join(', '));
 
   const topGraph: any = {
@@ -400,7 +435,7 @@ export async function computeElkLayout(
   }
   collectTopPositions(layoutedTop);
 
-  // Добавляем дочерние элементы шкафов
+  // Добавляем дочерние элементы шкафов с абсолютными координатами
   for (const [cabinetId] of childrenByParent.entries()) {
     const cabinetPos = absolutePositions.get(cabinetId);
     if (!cabinetPos) continue;
@@ -423,16 +458,57 @@ export async function computeElkLayout(
 
   // ================================================================
   // 5. СБОР РЁБЕР С КОНТРОЛЬНЫМИ ТОЧКАМИ
+  //     Критическое правило: source/target ссылаются ТОЛЬКО на обычные узлы,
+  //     НЕ на комбо (шкафы). Если оригинальный конец ребра — это дочерний
+  //     элемент шкафа, используем его напрямую. Если это ID шкафа —
+  //     подменяем на представителя шкафа.
   // ================================================================
   const finalEdges: LayoutResult['edges'] = [];
 
-  // Внешние рёбра
+  // 5a. Внешние рёбра (межшкафные + корень↔шкаф)
   for (const edge of layoutedTop.edges || []) {
+    const original = edgeOriginalIds.get(edge.id);
+    let source = original?.source || edge.sources?.[0] || '';
+    let target = original?.target || edge.targets?.[0] || '';
+
+    // Если source или target — это ID шкафа (комбо), подменяем на представителя
+    if (cabinetIds.has(source)) {
+      const rep = cabinetRepresentative.get(source);
+      if (rep) {
+        console.log(`[ELK DIAG] Ребро "${edge.id}": source ${source} -> представитель ${rep}`);
+        source = rep;
+      } else {
+        console.warn(`[ELK DIAG] Ребро "${edge.id}": нет представителя для шкафа ${source}, ребро пропущено`);
+        continue;
+      }
+    }
+    if (cabinetIds.has(target)) {
+      const rep = cabinetRepresentative.get(target);
+      if (rep) {
+        console.log(`[ELK DIAG] Ребро "${edge.id}": target ${target} -> представитель ${rep}`);
+        target = rep;
+      } else {
+        console.warn(`[ELK DIAG] Ребро "${edge.id}": нет представителя для шкафа ${target}, ребро пропущено`);
+        continue;
+      }
+    }
+
+    // Избегаем петель
+    if (source === target) {
+      console.warn(`[ELK DIAG] Ребро "${edge.id}": петля (${source}), пропущено`);
+      continue;
+    }
+
     const points = getControlPoints(edge);
-    finalEdges.push({ id: edge.id, ...(points.length ? { controlPoints: points } : {}) });
+    finalEdges.push({
+      id: edge.id,
+      source,
+      target,
+      ...(points.length ? { controlPoints: points } : {}),
+    });
   }
 
-  // Внутренние рёбра шкафов
+  // 5b. Внутренние рёбра шкафов
   for (const [cabinetId] of childrenByParent.entries()) {
     const cabinetPos = absolutePositions.get(cabinetId);
     if (!cabinetPos) continue;
@@ -443,16 +519,28 @@ export async function computeElkLayout(
     if (!layoutedSub) continue;
 
     for (const elkEdge of layoutedSub.edges || []) {
+      const source = elkEdge.sources?.[0] || '';
+      const target = elkEdge.targets?.[0] || '';
+
       const points = getControlPoints(elkEdge, offsetX, offsetY);
-      finalEdges.push({ id: elkEdge.id, ...(points.length ? { controlPoints: points } : {}) });
+      finalEdges.push({
+        id: elkEdge.id,
+        source,
+        target,
+        ...(points.length ? { controlPoints: points } : {}),
+      });
     }
   }
 
   // ================================================================
   // 6. ФОРМИРОВАНИЕ РЕЗУЛЬТАТА
+  //     Критически важно: в nodes НЕ включаем шкафы — они передаются
+  //     через combos. G6 требует, чтобы ID не повторялись между
+  //     nodes и combos, иначе рёбра ломаются (getPosition error).
   // ================================================================
   const resultNodes: LayoutResult['nodes'] = [];
   for (const [id, pos] of absolutePositions.entries()) {
+    if (cabinetIds.has(id)) continue; // Шкафы — только в combos
     resultNodes.push({ id, x: pos.x, y: pos.y, width: pos.width, height: pos.height });
   }
 
@@ -471,7 +559,13 @@ export async function computeElkLayout(
     }
   }
 
-  console.log('[ELK Engine] Result:', resultNodes.length, 'nodes,', finalEdges.length, 'edges,', resultCombos.length, 'combos');
+  console.log(`[ELK Engine] Result: ${resultNodes.length} nodes, ${finalEdges.length} edges, ${resultCombos.length} combos`);
+
+  // Диагностика рёбер
+  console.log('[ELK DIAG] Финальные рёбра:');
+  finalEdges.forEach(e => {
+    console.log(`  "${e.id}": ${e.source} -> ${e.target} (${e.controlPoints?.length || 0} pts)`);
+  });
 
   return { nodes: resultNodes, edges: finalEdges, combos: resultCombos };
 }

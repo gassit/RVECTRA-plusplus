@@ -104,21 +104,17 @@ function buildPortsForDirection(nodeId: string, type: string, direction: 'DOWN' 
 
 // ============================================================================
 // ИЗВЛЕЧЕНИЕ КОНТРОЛЬНЫХ ТОЧЕК ИЗ РЁБРА ELK
+// G6 polyline controlPoints — ТОЛЬКО промежуточные точки изгиба (bendPoints),
+// без startPoint и endPoint (G6 сам соединяет source → bends → target).
 // ============================================================================
 function getControlPoints(elkEdge: any, offsetX = 0, offsetY = 0): Array<{ x: number; y: number }> {
   if (!elkEdge?.sections?.length) return [];
   const points: Array<{ x: number; y: number }> = [];
   for (const section of elkEdge.sections) {
-    if (section.startPoint) {
-      points.push({ x: section.startPoint.x + offsetX, y: section.startPoint.y + offsetY });
-    }
     if (section.bendPoints) {
       for (const bp of section.bendPoints) {
         points.push({ x: bp.x + offsetX, y: bp.y + offsetY });
       }
-    }
-    if (section.endPoint) {
-      points.push({ x: section.endPoint.x + offsetX, y: section.endPoint.y + offsetY });
     }
   }
   return points;
@@ -567,14 +563,15 @@ export async function computeElkLayout(
     resultNodes.push({ id, x: pos.x, y: pos.y, width: pos.width, height: pos.height });
   }
 
+  // Комбо: x, y — левый верхний угол (НЕ центр!), как ожидает G6
   const resultCombos: LayoutResult['combos'] = [];
   for (const cabinetId of cabinetIds) {
     const pos = absolutePositions.get(cabinetId);
     if (pos) {
       resultCombos.push({
         id: cabinetId,
-        x: pos.x,
-        y: pos.y,
+        x: pos.x - pos.width / 2,   // левый верхний угол
+        y: pos.y - pos.height / 2,   // левый верхний угол
         width: pos.width,
         height: pos.height,
         label: cabinetLabels.get(cabinetId) || cabinetId,

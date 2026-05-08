@@ -841,6 +841,7 @@ export default function NetworkGraphG6({
 
         // ============================================================
         // ШАГ 2c: Combos из ELK результатов (НЕ из API!)
+        // x, y уже левый верхний угол (от elk-engine), используем напрямую
         // ============================================================
         const combos = (layoutResult.combos || []).map(cabinet => ({
           id: cabinet.id,
@@ -850,8 +851,8 @@ export default function NetworkGraphG6({
             label: cabinet.label,
           },
           style: {
-            x: cabinet.x - cabinet.width / 2,
-            y: cabinet.y - cabinet.height / 2,
+            x: cabinet.x,
+            y: cabinet.y,
             width: cabinet.width,
             height: cabinet.height,
           },

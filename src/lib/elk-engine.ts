@@ -81,8 +81,8 @@ export interface LayoutResult {
 const FIXED_PORT_TYPES = new Set(['source', 'breaker', 'bus', 'meter', 'load']);
 
 function getPortConstraints(type: string): string {
-  // FIXED_ORDER + без явных портов = ELK auto-создаёт порты
-  return FIXED_PORT_TYPES.has(type) ? 'FIXED_ORDER' : 'FIXED_ORDER';
+  // FREE — ELK сам создаёт столько портов, сколько нужно, где хочет
+  return 'FREE';
 }
 
 // ============================================================================
@@ -226,7 +226,6 @@ export async function computeElkLayout(
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       'elk.layered.crossingMinimization.semiInteractive': 'true',
       'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-      'elk.portConstraints': 'FIXED_ORDER',
       // Отступы между группами
       'elk.spacing.componentComponent': '40',
     },

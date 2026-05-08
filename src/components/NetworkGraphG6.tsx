@@ -280,7 +280,8 @@ export default function NetworkGraphG6({
           shadowOffsetX: 0,
           shadowOffsetY: 4,
           cursor: 'pointer',
-          // Точки привязки для рёбер - строго верх/низ для вертикальных линий
+          zIndex: 1,              // Узлы поверх combos
+          // Точки привязки для рёбер
           anchorPoints: [
             [0.5, 0],   // индекс 0: верхний центр (вход от источника)
             [0.5, 1],   // индекс 1: нижний центр (выход к нагрузке)
@@ -403,6 +404,7 @@ export default function NetworkGraphG6({
           lineWidth: 2,
           lineDash: [5, 5],
           opacity: 0.9,
+          zIndex: 0,              // Combos позади узлов
           labelText: (d: any) => d.data?.name || '',
           labelFill: '#92400e',
           labelFontSize: 12,

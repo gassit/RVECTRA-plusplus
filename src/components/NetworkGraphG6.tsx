@@ -347,8 +347,8 @@ export default function NetworkGraphG6({
         },
       },
       edge: {
-        // Polyline для поддержки controlPoints от ELK
-        type: 'polyline',
+        // Прямые линии — без сложной маршрутизации
+        type: 'line',
         style: {
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
@@ -356,8 +356,6 @@ export default function NetworkGraphG6({
           },
           lineWidth: 2,
           endArrow: false,
-          // Скругление углов
-          radius: 6,
           opacity: (d: any) => {
             const status = d.data?.status;
             return status === 'OFF' ? 0.4 : 1;
@@ -776,12 +774,7 @@ export default function NetworkGraphG6({
             data: edge as any,
           };
 
-          // Контрольные точки от ELK для polyline
-          if (elkEdge?.controlPoints?.length) {
-            edgeData.style = {
-              controlPoints: elkEdge.controlPoints,
-            };
-          }
+          // line рёбра — controlPoints не нужны (только для polyline)
 
           return edgeData;
         });

@@ -258,7 +258,7 @@ export async function computeElkLayout(
         'elk.spacing.nodeNode': '40',
         'elk.layered.spacing.nodeNodeBetweenLayers': '60',
         'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
-        'elk.layered.cycleBreaking.strategy': 'MODEL_ORDER',
+        'elk.layered.cycleBreaking.strategy': 'GREEDY',
         'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
         'elk.portConstraints': 'FIXED_ORDER',
       },

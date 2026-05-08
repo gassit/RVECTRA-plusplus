@@ -169,9 +169,14 @@ export async function computeElkLayout(
   //     узел внутри шкафа (чтобы G6 не ссылался на комбо).
   // ================================================================
   const cabinetRepresentative = new Map<string, string>();
+  const emptyCabinetIds = new Set<string>();
 
   for (const [cabinetId, children] of childrenByParent.entries()) {
-    if (children.length === 0) continue;
+    if (children.length === 0) {
+      console.warn(`[ELK DIAG] Шкаф "${cabinetId}" пуст — рёбра к нему будут пропущены`);
+      emptyCabinetIds.add(cabinetId);
+      continue;
+    }
 
     const typeOf = (c: LayoutNode) => (c.type || c.data?.type || '').toUpperCase();
     const rep =
@@ -184,6 +189,23 @@ export async function computeElkLayout(
       console.log(`[ELK] Представитель шкафа "${cabinetId}" -> "${rep}" (${typeOf(children.find(c => c.id === rep)!)})`);
     }
   }
+
+  // ================================================================
+  // 1.6 Предварительная фильтрация: рёбра к пустым шкафам пропускаем
+  // ================================================================
+  const edgesFilteredEmptyCab = edges.filter(edge => {
+    if (emptyCabinetIds.has(edge.source)) {
+      console.warn(`[ELK DIAG] Ребро "${edge.id}": source=${edge.source} — пустой шкаф, пропущено`);
+      return false;
+    }
+    if (emptyCabinetIds.has(edge.target)) {
+      console.warn(`[ELK DIAG] Ребро "${edge.id}": target=${edge.target} — пустой шкаф, пропущено`);
+      return false;
+    }
+    return true;
+  });
+
+  console.log(`[ELK DIAG] После фильтрации пустых шкафов: ${edgesFilteredEmptyCab.length} рёбер из ${edges.length}`);
 
   // ================================================================
   // 2. ЭТАП 1 — РАСКЛАДКА ВНУТРИ КАЖДОГО ШКАФА (DOWN)
@@ -210,7 +232,7 @@ export async function computeElkLayout(
       };
     });
 
-    const subEdges = edges
+    const subEdges = edgesFilteredEmptyCab
       .filter(edge => {
         const sourceParent = nodeMap.get(edge.source)?.combo;
         const targetParent = nodeMap.get(edge.target)?.combo;
@@ -321,7 +343,7 @@ export async function computeElkLayout(
   // ================================================================
   // 3.1 ВНЕШНИЕ РЁБРА — фильтрация и маппинг на шкафы для ELK
   // ================================================================
-  const externalEdges = edges.filter(edge => {
+  const externalEdges = edgesFilteredEmptyCab.filter(edge => {
     // Пропускаем рёбра, где оба конца не найдены в nodeMap
     if (!nodeMap.has(edge.source) || !nodeMap.has(edge.target)) return false;
     const sourceParent = nodeMap.get(edge.source)?.combo;

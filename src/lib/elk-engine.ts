@@ -2,7 +2,7 @@
  * Standalone ELK Layout Engine — двухэтапная раскладка
  *
  * Этап 1: Раскладка внутренностей каждого шкафа (DOWN, локальные координаты)
- * Этап 2: Раскладка шкафов + корневых узлов как единых блоков (RIGHT, слева направо)
+ * Этап 2: Раскладка шкафов + корневых узлов как единых блоков (DOWN, сверху вниз)
  *
  * G6 — пассивный рендерер, только рисует то, что рассчитал ELK.
  *
@@ -106,15 +106,19 @@ function buildPortsForDirection(nodeId: string, type: string, direction: 'DOWN' 
 // ИЗВЛЕЧЕНИЕ КОНТРОЛЬНЫХ ТОЧЕК ИЗ РЁБРА ELK
 // ============================================================================
 function getControlPoints(elkEdge: any, offsetX = 0, offsetY = 0): Array<{ x: number; y: number }> {
-  // G6 polyline: controlPoints — это ТОЛЬКО промежуточные точки (bendPoints),
-  // НЕ startPoint/endPoint (G6 сам соединяет source → bends → target).
   if (!elkEdge?.sections?.length) return [];
   const points: Array<{ x: number; y: number }> = [];
   for (const section of elkEdge.sections) {
+    if (section.startPoint) {
+      points.push({ x: section.startPoint.x + offsetX, y: section.startPoint.y + offsetY });
+    }
     if (section.bendPoints) {
       for (const bp of section.bendPoints) {
         points.push({ x: bp.x + offsetX, y: bp.y + offsetY });
       }
+    }
+    if (section.endPoint) {
+      points.push({ x: section.endPoint.x + offsetX, y: section.endPoint.y + offsetY });
     }
   }
   return points;
@@ -297,12 +301,13 @@ export async function computeElkLayout(
 
   // ================================================================
   // 3. ЭТАП 2 — РАСКЛАДКА ВЕРХНЕГО УРОВНЯ (шкафы + корневые узлы)
-  //    Направление: RIGHT (шкафы слева направо)
-  //    Шкафы: единые блоки с портами EAST/WEST
+  //    Направление: DOWN (сверху вниз по потоку связей)
+  //    ELK определяет ранги автоматически: SOURCE → верх, LOAD → низ
+  //    Шкафы: единые блоки с портами NORTH/SOUTH
   // ================================================================
   const topLevelNodes: any[] = [];
 
-  // Шкафы как единые блоки С ПОРТАМИ
+  // Шкафы как единые блоки С ПОРТАМИ (NORTH/SOUTH для DOWN)
   for (const [cabinetId, bounds] of cabinetBounds.entries()) {
     topLevelNodes.push({
       id: cabinetId,
@@ -310,17 +315,14 @@ export async function computeElkLayout(
       height: bounds.height,
       labels: cabinetLabels.has(cabinetId) ? [{ text: cabinetLabels.get(cabinetId)! }] : [],
       ports: [
-        { id: `${cabinetId}_IN`, properties: { 'port.side': 'WEST' } },
-        { id: `${cabinetId}_OUT`, properties: { 'port.side': 'EAST' } },
+        { id: `${cabinetId}_IN`, properties: { 'port.side': 'NORTH' } },
+        { id: `${cabinetId}_OUT`, properties: { 'port.side': 'SOUTH' } },
       ],
       properties: { 'portConstraints': 'FIXED_SIDE' },
-      layoutOptions: {
-        'org.eclipse.elk.layered.nodePlacement.bk.fixedAlignment': 'LEFT',
-      },
     });
   }
 
-  // Корневые узлы (не внутри шкафов) С ПОРТАМИ
+  // Корневые узлы (не внутри шкафов) С ПОРТАМИ (NORTH/SOUTH для DOWN)
   for (const node of rootNodes) {
     if (cabinetIds.has(node.id)) continue;
     const type = (node.type || node.data?.type || 'load').toLowerCase();
@@ -331,7 +333,7 @@ export async function computeElkLayout(
       width: size.width,
       height: size.height,
       labels: node.data?.name ? [{ text: node.data.name }] : [],
-      ports: buildPortsForDirection(node.id, type, 'RIGHT'),
+      ports: buildPortsForDirection(node.id, type, 'DOWN'),
       properties: { 'portConstraints': 'FIXED_SIDE' },
     });
   }
@@ -392,14 +394,14 @@ export async function computeElkLayout(
     edges: topLevelEdgesMapped,
     layoutOptions: {
       'elk.algorithm': 'layered',
-      'elk.direction': 'RIGHT',
+      'elk.direction': 'DOWN',
       'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.spacing.nodeNode': '80',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '150',
+      'elk.spacing.nodeNode': '40',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '60',
       'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
-      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+      'elk.layered.cycleBreaking.strategy': 'MODEL_ORDER',
+      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
       'elk.portConstraints': 'FIXED_SIDE',
-      'org.eclipse.elk.layered.nodePlacement.bk.fixedAlignment': 'LEFT',
     },
   };
 

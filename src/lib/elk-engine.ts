@@ -350,20 +350,81 @@ export async function computeElkLayout(
 
   // ================================================================
   // 6. СБОР РЁБЕР С КОНТРОЛЬНЫМИ ТОЧКАМИ
-  //    Все рёбра element→element — точки уже правильные.
+  //    ELK может слить рёбра с одинаковыми source/target в гипердугу.
+  //    Разворачиваем обратно: sources[i] → targets[i].
   // ================================================================
   const finalEdges: LayoutResult['edges'] = [];
-  for (const edge of layoutedGraph.edges || []) {
-    const source = edge.sources?.[0] || '';
-    const target = edge.targets?.[0] || '';
-    if (source === target) continue; // петля
 
-    const points = getControlPoints(edge);
+  // Множество уже добавленных ID чтобы не дублировать
+  const addedEdgeIds = new Set<string>();
+
+  for (const edge of layoutedGraph.edges || []) {
+    const sources = edge.sources || [];
+    const targets = edge.targets || [];
+    if (sources.length === 0 || targets.length === 0) continue;
+
+    // Сколько уникальных пар source→target
+    if (sources.length === 1 && targets.length === 1) {
+      // Обычное ребро
+      const source = sources[0];
+      const target = targets[0];
+      if (source === target) continue;
+
+      const edgeId = edge.id || `${source}->${target}`;
+      const points = getControlPoints(edge);
+
+      // Если ELK вернул с таким ID — берём данные из оригинала
+      const original = edgeOriginalMap.get(edgeId);
+      finalEdges.push({
+        id: edgeId,
+        source,
+        target,
+        ...(points.length ? { controlPoints: points } : {}),
+        ...(original?.data ? { data: original.data } : {}),
+      });
+      addedEdgeIds.add(edgeId);
+    } else {
+      // Гипердуга — разворачиваем в отдельные рёбра
+      for (let si = 0; si < sources.length; si++) {
+        for (let ti = 0; ti < targets.length; ti++) {
+          const source = sources[si];
+          const target = targets[ti];
+          if (source === target) continue;
+
+          // Ищем оригинальное ребро с этим source→target
+          let foundId: string | undefined;
+          for (const [origId, origEdge] of edgeOriginalMap.entries()) {
+            if (origEdge.source === source && origEdge.target === target && !addedEdgeIds.has(origId)) {
+              foundId = origId;
+              break;
+            }
+          }
+
+          const edgeId = foundId || `hyper_${source}_${target}_${si}_${ti}`;
+          const points = getControlPoints(edge);
+          const original = foundId ? edgeOriginalMap.get(foundId) : undefined;
+
+          finalEdges.push({
+            id: edgeId,
+            source,
+            target,
+            ...(points.length ? { controlPoints: points } : {}),
+            ...(original?.data ? { data: original.data } : {}),
+          });
+          addedEdgeIds.add(edgeId);
+        }
+      }
+    }
+  }
+
+  // Добавляем рёбра, которые ELK вообще не вернул (пропущенные)
+  for (const [edgeId, origEdge] of edgeOriginalMap.entries()) {
+    if (addedEdgeIds.has(edgeId)) continue;
+    console.warn(`[ELK] Edge "${edgeId}" (${origEdge.source}->${origEdge.target}) not returned by ELK, adding without controlPoints`);
     finalEdges.push({
-      id: edge.id,
-      source,
-      target,
-      ...(points.length ? { controlPoints: points } : {}),
+      id: edgeId,
+      source: origEdge.source,
+      target: origEdge.target,
     });
   }
 

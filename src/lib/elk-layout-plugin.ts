@@ -23,8 +23,8 @@ const ELK_OPTIONS = {
   'elk.spacing.nodeNode': '20',
   'elk.layered.spacing.nodeNodeBetweenLayers': '50',
   'elk.spacing.edgeEdge': '8',
-  // Ортогональная маршрутизация рёбер
-  'elk.edgeRouting': 'ORTHOGONAL',
+  // Маршрутизация рёбер сплайнами (кривые)
+  'elk.edgeRouting': 'SPLINES',
   // Убираем лишние точки изгиба
   'elk.layered.unnecessaryBendpoints': 'true',
 };

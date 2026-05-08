@@ -254,7 +254,7 @@ export async function computeElkLayout(
       layoutOptions: {
         'elk.algorithm': 'layered',
         'elk.direction': 'DOWN',
-        'elk.edgeRouting': 'ORTHOGONAL',
+        'elk.edgeRouting': 'SPLINES',
         'elk.spacing.nodeNode': '40',
         'elk.layered.spacing.nodeNodeBetweenLayers': '60',
         'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
@@ -374,7 +374,7 @@ export async function computeElkLayout(
       sources: [source],
       targets: [target],
       layoutOptions: {
-        'elk.edgeRouting': 'ORTHOGONAL',
+        'elk.edgeRouting': 'SPLINES',
       },
     };
   });

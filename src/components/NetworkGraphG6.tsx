@@ -347,8 +347,8 @@ export default function NetworkGraphG6({
         },
       },
       edge: {
-        // cubic-vertical — плавные изгибы по вертикали, без расчёта портов
-        type: 'cubic-vertical',
+        // polyline с ортогональными мостиками
+        type: 'polyline',
         style: {
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
@@ -356,6 +356,8 @@ export default function NetworkGraphG6({
           },
           lineWidth: 2,
           endArrow: false,
+          radius: 0,          // Строго 90 градусов
+          jumpOffset: 12,     // Мостик при пересечении линий
           opacity: (d: any) => {
             const status = d.data?.status;
             return status === 'OFF' ? 0.4 : 1;

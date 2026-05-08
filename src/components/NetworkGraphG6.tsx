@@ -806,12 +806,14 @@ export default function NetworkGraphG6({
             data: (apiEdge as any)?.data || {},
           };
 
-          // Контрольные точки от ELK → в style для polyline
-          if (elkEdge.controlPoints?.length) {
-            edgeData.style = {
-              controlPoints: elkEdge.controlPoints,
-            };
-          }
+          // 🔧 ДИАГНОСТИКА: временно отключаем controlPoints
+          // G6 сам нарисует линии напрямую между source/target
+          // Если рёбра появятся — проблема была в controlPoints
+          // if (elkEdge.controlPoints?.length) {
+          //   edgeData.style = {
+          //     controlPoints: elkEdge.controlPoints,
+          //   };
+          // }
 
           return edgeData;
         });

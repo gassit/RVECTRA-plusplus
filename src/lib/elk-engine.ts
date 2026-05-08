@@ -242,7 +242,13 @@ export async function computeElkLayout(
     },
   };
 
-  console.log(`[ELK] Graph: ${elkRootChildren.length} root nodes, ${elkGroups.length} groups, ${validEdges.length} edges`);
+  console.log(`[ELK] Graph: ${elkRootChildren.length} root nodes, ${elkGroups.length} groups, ${validEdges.length} edges IN`);
+
+  // Сохраняем все оригинальные рёбра для восстановления
+  const edgeOriginalMap = new Map<string, LayoutEdge>();
+  for (const edge of validEdges) {
+    edgeOriginalMap.set(edge.id, edge);
+  }
 
   // ================================================================
   // 4. ВЫЗОВ ELK

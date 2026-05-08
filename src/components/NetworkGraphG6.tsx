@@ -434,50 +434,52 @@ export default function NetworkGraphG6({
 
     // Обработчики событий
     graph.on('node:click', (evt: any) => {
-      const nodeId = evt.target.id;
+      const elementId = evt.target.id;
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
+
+      // Защита: setElementState не вызывается для комбо (шкафов)
+      const element = (graph as any).getElementById(elementId);
+      if (!element || element.type !== 'node') return;
 
       // В режиме создания связи - используем refs
       if (connectionModeRef.current) {
         const pending = pendingConnectionRef.current;
         if (!pending) {
-          // Начинаем связь
-          setPendingConnectionStart(nodeId);
+          setPendingConnectionStart(elementId);
           try {
-            graph.setElementState(nodeId, 'connectionSource', true);
-          } catch (e) {
-            // Element may not exist
-          }
-        } else if (pending !== nodeId) {
-          // Завершаем связь
-          onConnectionCreated?.(pending, nodeId);
+            graph.setElementState(elementId, 'connectionSource', true);
+          } catch (e) { /* ignore */ }
+        } else if (pending !== elementId) {
+          onConnectionCreated?.(pending, elementId);
           try {
             graph.setElementState(pending, 'connectionSource', false);
-          } catch (e) {
-            // Element may not exist
-          }
+          } catch (e) { /* ignore */ }
           setPendingConnectionStart(null);
         }
         return;
       }
 
       // Закрепляем tooltip при клике на узел
-      const nodeData = data?.nodes.find(n => n.id === nodeId);
+      const nodeData = data?.nodes.find(n => n.id === elementId);
       if (nodeData) {
         setPinnedNode(nodeData);
-        setPinnedEdge(null); // Снимаем закрепление с ребра
+        setPinnedEdge(null);
         setHoveredNode(null);
         setHoveredEdge(null);
       }
 
-      onNodeClick?.(nodeId);
+      onNodeClick?.(elementId);
     });
 
     graph.on('node:pointerenter', (evt: any) => {
-      const nodeId = evt.target.id;
+      const elementId = evt.target.id;
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
+
+      // Защита: setElementState не вызывается для комбо (шкафов)
+      const element = (graph as any).getElementById(elementId);
+      if (!element || element.type !== 'node') return;
 
       // Отменяем отложенное скрытие tooltip если мышка вернулась
       if (tooltipHideTimeoutRef.current) {
@@ -485,110 +487,107 @@ export default function NetworkGraphG6({
         tooltipHideTimeoutRef.current = null;
       }
 
-      setHoveredEdge(null); // Скрываем tooltip связи
-      const nodeData = data?.nodes.find(n => n.id === nodeId);
+      setHoveredEdge(null);
+      const nodeData = data?.nodes.find(n => n.id === elementId);
       setHoveredNode(nodeData || null);
 
       // В режиме связи подсвечиваем потенциальную цель
-      if (connectionModeRef.current && pendingConnectionRef.current && pendingConnectionRef.current !== nodeId) {
+      if (connectionModeRef.current && pendingConnectionRef.current && pendingConnectionRef.current !== elementId) {
         try {
-          graph.setElementState(nodeId, 'connectionTarget', true);
-        } catch (e) {
-          // Element may not exist
-        }
+          graph.setElementState(elementId, 'connectionTarget', true);
+        } catch (e) { /* ignore */ }
       } else {
         try {
-          graph.setElementState(nodeId, 'hover', true);
-        } catch (e) {
-          // Element may not exist
-        }
+          graph.setElementState(elementId, 'hover', true);
+        } catch (e) { /* ignore */ }
       }
     });
 
     graph.on('node:pointerleave', (evt: any) => {
-      const nodeId = evt.target.id;
+      const elementId = evt.target.id;
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
+      // Защита: setElementState не вызывается для комбо (шкафов)
+      const element = (graph as any).getElementById(elementId);
+      if (!element || element.type !== 'node') return;
+
       // Не скрываем hoveredNode если tooltip закреплён
       if (!pinnedNodeRef.current) {
-        // Добавляем задержку перед скрытием tooltip
-        // чтобы пользователь мог переместить курсор на tooltip
         tooltipHideTimeoutRef.current = setTimeout(() => {
           setHoveredNode(null);
           tooltipHideTimeoutRef.current = null;
-        }, 300); // 300мс задержка
+        }, 300);
       }
 
       if (connectionModeRef.current && pendingConnectionRef.current) {
         try {
-          graph.setElementState(nodeId, 'connectionTarget', false);
-        } catch (e) {
-          // Element may not exist
-        }
+          graph.setElementState(elementId, 'connectionTarget', false);
+        } catch (e) { /* ignore */ }
       } else {
         try {
-          graph.setElementState(nodeId, 'hover', false);
-        } catch (e) {
-          // Element may not exist
-        }
+          graph.setElementState(elementId, 'hover', false);
+        } catch (e) { /* ignore */ }
       }
     });
 
     graph.on('edge:click', (evt: any) => {
       const edgeId = evt.target.id;
-      
+      const graph = graphRef.current;
+      if (!graph || (graph as any).destroyed) return;
+
+      const element = (graph as any).getElementById(edgeId);
+      if (!element || element.type !== 'edge') return;
+
       // Закрепляем tooltip при клике на ребро
       const edgeData = data?.edges.find(e => e.id === edgeId);
       if (edgeData) {
         setPinnedEdge(edgeData);
-        setPinnedNode(null); // Снимаем закрепление с узла
+        setPinnedNode(null);
         setHoveredNode(null);
         setHoveredEdge(null);
       }
-      
+
       onEdgeClick?.(edgeId);
     });
 
-    // Наведение на ребро (связь)
     graph.on('edge:pointerenter', (evt: any) => {
       const edgeId = evt.target.id;
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
+      const element = (graph as any).getElementById(edgeId);
+      if (!element || element.type !== 'edge') return;
+
       const edgeData = data?.edges.find(e => e.id === edgeId);
       if (edgeData) {
         setHoveredEdge(edgeData);
-        setHoveredNode(null); // Скрываем tooltip узла
+        setHoveredNode(null);
       }
 
       try {
         graph.setElementState(edgeId, 'hover', true);
-      } catch (e) {
-        // Element may not exist
-      }
+      } catch (e) { /* ignore */ }
     });
 
-    // Уход курсора с ребра
     graph.on('edge:pointerleave', (evt: any) => {
       const edgeId = evt.target.id;
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      // Не скрываем hoveredEdge если tooltip закреплён
+      const element = (graph as any).getElementById(edgeId);
+      if (!element || element.type !== 'edge') return;
+
       if (!pinnedEdgeRef.current) {
-        // Добавляем задержку перед скрытием tooltip
         tooltipHideTimeoutRef.current = setTimeout(() => {
           setHoveredEdge(null);
           tooltipHideTimeoutRef.current = null;
-        }, 300); // 300мс задержка
+        }, 300);
       }
 
       try {
         graph.setElementState(edgeId, 'hover', false);
-      } catch (e) {
-        // Element may not exist
-      }
+      } catch (e) { /* ignore */ }
     });
 
     // Клик по холсту - для добавления элемента

@@ -764,58 +764,13 @@ export default function NetworkGraphG6({
             data: edge as any,
           }));
 
-        // Невидимые рёбра между "сиблингами" Bus — чтобы dagre ставил их рядом
-        const busNodes = new Set(
-          data.nodes.filter(n => (n.type || '').toLowerCase() === 'bus').map(n => n.id)
-        );
-
-        const invisibleEdges: any[] = [];
-        if (busNodes.size > 0) {
-          // Для каждого Bus находим все подключённые элементы
-          const busTargets = new Map<string, string[]>(); // busId -> [connected nodeIds]
-
-          for (const edge of data.edges) {
-            if (busNodes.has(edge.source) && nodeIds.has(edge.target)) {
-              if (!busTargets.has(edge.source)) busTargets.set(edge.source, []);
-              busTargets.get(edge.source)!.push(edge.target);
-            }
-            if (busNodes.has(edge.target) && nodeIds.has(edge.source)) {
-              if (!busTargets.has(edge.target)) busTargets.set(edge.target, []);
-              busTargets.get(edge.target)!.push(edge.source);
-            }
-          }
-
-          // Создаём цепочку невидимых рёбер между элементами одного Bus
-          for (const [busId, siblings] of busTargets.entries()) {
-            // Убираем дубликаты
-            const unique = [...new Set(siblings)];
-            if (unique.length < 2) continue;
-
-            for (let i = 0; i < unique.length - 1; i++) {
-              invisibleEdges.push({
-                id: `invisible_${busId}_${i}`,
-                source: unique[i],
-                target: unique[i + 1],
-                style: {
-                  stroke: 'transparent',
-                  lineWidth: 0,
-                  opacity: 0,
-                  endArrow: false,
-                },
-              });
-            }
-          }
-        }
-
-        const allEdges = [...edges, ...invisibleEdges];
-
         // Combos (шкафы)
         const combos = (data.combos || []).map(combo => ({
           id: combo.id,
           data: combo.data,
         }));
 
-        console.log(`[G6] nodes=${nodes.length}, edges=${allEdges.length} (${invisibleEdges.length} invisible), combos=${combos.length}`);
+        console.log(`[G6] nodes=${nodes.length}, edges=${edges.length}, combos=${combos.length}`);
 
         try {
           (graph as any).clearData();
@@ -823,7 +778,7 @@ export default function NetworkGraphG6({
 
         graph.setData({
           nodes: nodes as any,
-          edges: allEdges as any,
+          edges: edges as any,
           combos: combos,
         });
 

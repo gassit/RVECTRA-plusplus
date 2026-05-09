@@ -13,34 +13,36 @@ export async function GET(request: NextRequest) {
     const toId = searchParams.get('toId');
 
     const where: any = {};
-    if (fromId) where.from_id = fromId;
-    if (toId) where.to_id = toId;
+    if (fromId) where.sourceId = fromId;
+    if (toId) where.targetId = toId;
 
     const connections = await db.connection.findMany({
       where,
       include: {
-        from: { select: { id: true, name: true, type: true } },
-        to: { select: { id: true, name: true, type: true } },
+        Cable: true,
       },
-      orderBy: { created_at: 'asc' },
+      orderBy: { createdAt: 'asc' },
     });
 
-    const result: NetworkConnection[] = connections.map(c => ({
-      id: c.id,
-      fromId: c.from_id,
-      toId: c.to_id,
-      type: c.type as ConnectionType,
-      length: c.length || undefined,
-      wireType: c.wire_type || undefined,
-      core: c.core || undefined,
-      wireSize: c.wire_size || undefined,
-      material: c.material as MaterialType || undefined,
-      resistanceR: c.resistance_r || undefined,
-      reactanceX: c.reactance_x || undefined,
-      impedanceZ: c.impedance_z || undefined,
-      currentCapacity: c.current_capacity || undefined,
-      installationMethod: c.installation_method as any || undefined,
-    }));
+    const result: NetworkConnection[] = connections.map(c => {
+      const cable = c.Cable;
+      return {
+        id: c.id,
+        fromId: c.sourceId,
+        toId: c.targetId,
+        type: 'CABLE' as ConnectionType,
+        length: cable?.length || undefined,
+        wireType: cable?.material === 'copper' ? 'Cu' : cable?.material === 'aluminum' ? 'Al' : undefined,
+        core: cable?.cores || undefined,
+        wireSize: cable?.section || undefined,
+        material: (cable?.material === 'copper' ? 'Cu' : cable?.material === 'aluminum' ? 'Al' : undefined) as MaterialType || undefined,
+        resistanceR: undefined,
+        reactanceX: undefined,
+        impedanceZ: undefined,
+        currentCapacity: cable?.iDop || undefined,
+        installationMethod: undefined,
+      };
+    });
 
     return NextResponse.json(result);
   } catch (error) {
@@ -110,20 +112,31 @@ export async function POST(request: NextRequest) {
     const connection = await db.connection.create({
       data: {
         id: connectionId,
-        from_id: fromId,
-        to_id: toId,
-        type,
-        length: length || null,
-        wire_type: wireType || null,
-        wire_size: wireSize || null,
-        material: material || (wireType?.startsWith('А') ? 'Al' : 'Cu'),
-        resistance_r: resistanceR,
-        reactance_x: reactanceX,
-        impedance_z: impedanceZ,
-        current_capacity: currentCapacity,
-        installation_method: installationMethod,
+        sourceId: fromId,
+        targetId: toId,
+        electricalStatus: 'DEAD',
+        operationalStatus: 'ON',
       },
     });
+
+    // Создаём Cable если указаны параметры
+    if (wireType && wireSize) {
+      await db.cable.create({
+        data: {
+          id: `cable_${connectionId}`,
+          cableId: `cable_${connectionId}`,
+          length: length || 0,
+          cores: 3,
+          section: wireSize,
+          material: material === 'Al' ? 'aluminum' : 'copper',
+        },
+      });
+      // Привязываем кабель к связи
+      await db.connection.update({
+        where: { id: connectionId },
+        data: { cableId: `cable_${connectionId}` },
+      });
+    }
 
     return NextResponse.json(connection);
   } catch (error) {

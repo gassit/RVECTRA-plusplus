@@ -21,3 +21,23 @@ Stage Summary:
 - Commit 5d02569 fixes three issues: getPosition error (no duplicate IDs between nodes/combos), missing edges (representative-based routing), hover jumping (proper data separation)
 - Key architectural decision: edges now reference only regular nodes (via representatives), never combos
 - All 3 repos synced
+
+---
+Task ID: 1
+Agent: main
+Task: Fix edge rendering — root cause analysis and fix of API field name mismatch + parentId grouping
+
+Work Log:
+- Diagnosed root cause: API route `/api/network` used `conn.from_id`/`conn.to_id` but Prisma schema has `sourceId`/`targetId` → ALL edges had undefined source/target
+- Also discovered API used non-existent Prisma relations (`devices`, `validationResults`) instead of `DeviceSlot`
+- Fixed `/api/network/route.ts`: correct field names (`sourceId`/`targetId`), proper Prisma includes, Cable data from relation
+- Fixed `/api/connections/route.ts`: same field name corrections for GET and POST
+- Added `parentId` field to `GraphNode` type in `types/index.ts`
+- Fixed `elk-engine.ts`: grouping by `parentId` instead of non-existent `combo` field
+- Fixed `NetworkGraphG6.tsx`: use `parentId` for G6 combo assignment, improved edge validation to include combo IDs, added diagnostic logging for dropped edges
+
+Stage Summary:
+- Root cause: ALL edges were invisible because API returned `source: undefined, target: undefined`
+- 4 files modified: api/network/route.ts, api/connections/route.ts, elk-engine.ts, NetworkGraphG6.tsx, types/index.ts
+- TypeScript compilation passes (no new errors in modified files)
+- All 170+ connections now have valid source/target IDs from database

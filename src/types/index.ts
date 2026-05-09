@@ -155,19 +155,20 @@ export interface GraphNode {
   id: string;
   type: ElementType;
   name: string;
-  posX?: number | null;  // Опционально - G6 сам расставит через dagre layout
-  posY?: number | null;  // Опционально - G6 сам расставит через dagre layout
+  parentId?: string;           // ID родительского элемента (шкафа/кабинета)
+  posX?: number | null;        // Опционально - G6 сам расставит через ELK layout
+  posY?: number | null;        // Опционально - G6 сам расставит через ELK layout
   hasIssues: boolean;
   criticalIssues: number;
   devices?: NetworkDevice[];
   validationResults?: ValidationResultData[];
-  // Новые поля статуса
+  // Поля статуса
   status?: ElementStatus;
   lifeStatus?: ElementLifeStatus;
   voltageLevel?: number;
   // Мощности
-  sumPInstalled?: number;    // Σ Pуст (кВт)
-  sumPCalculated?: number;   // Σ Pрасч = Σ(Pуст × Ки) (кВт)
+  sumPInstalled?: number;      // Σ Pуст (кВт)
+  sumPCalculated?: number;     // Σ Pрасч = Σ(Pуст × Ки) (кВт)
 }
 
 // Ребро графа

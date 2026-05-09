@@ -34,7 +34,7 @@ interface LayoutNode {
   id: string;
   type?: string;
   data?: any;
-  combo?: string;
+  parentId?: string;  // ID родительского шкафа (из GraphNode.parentId)
 }
 
 interface LayoutEdge {
@@ -73,24 +73,49 @@ export async function computeElkLayout(
 ): Promise<LayoutResult> {
   if (!nodes?.length) return { nodes: [], edges: [], combos: [] };
 
-  // --- 1. Группировка ---
+  // --- 1. Группировка по parentId ---
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
   const childrenByParent = new Map<string, LayoutNode[]>();
   const rootNodes: LayoutNode[] = [];
 
+  // Определяем какие ID — это шкафы (типы cabinet/в верхнем регистре)
+  const cabinetIds = new Set<string>();
+
   for (const node of nodes) {
-    if (node.combo) {
-      if (!childrenByParent.has(node.combo)) childrenByParent.set(node.combo, []);
-      childrenByParent.get(node.combo)!.push(node);
-    } else {
+    const nodeType = (node.type || node.data?.type || '').toUpperCase();
+    const isCabinet = nodeType === 'CABINET';
+
+    if (isCabinet) {
+      cabinetIds.add(node.id);
+    }
+
+    // Группируем детей по parentId
+    if (node.parentId && nodeMap.has(node.parentId)) {
+      const parentType = (nodeMap.get(node.parentId)?.type || '').toUpperCase();
+      // Родитель должен быть шкафом
+      if (parentType === 'CABINET' || cabinetIds.has(node.parentId)) {
+        if (!childrenByParent.has(node.parentId)) childrenByParent.set(node.parentId, []);
+        childrenByParent.get(node.parentId)!.push(node);
+        continue;
+      }
+    }
+
+    // Корневые узлы: без parentId, или родитель не шкаф, или сам шкаф
+    if (!isCabinet) {
       rootNodes.push(node);
     }
   }
 
-  const cabinetIds = new Set(childrenByParent.keys());
-
   // --- 2. Фильтрация рёбер ---
-  const validEdges = edges.filter(e => nodeMap.has(e.source) && nodeMap.has(e.target));
+  // Рёбра должны ссылаться на существующие узлы
+  // Допускаем рёбра к шкафам (их ELK обработает как группы)
+  const validEdges = edges.filter(e => {
+    const srcOk = nodeMap.has(e.source);
+    const tgtOk = nodeMap.has(e.target);
+    if (!srcOk) console.warn(`[ELK] Edge ${e.id}: source ${e.source} not found`);
+    if (!tgtOk) console.warn(`[ELK] Edge ${e.id}: target ${e.target} not found`);
+    return srcOk && tgtOk;
+  });
 
   // --- 3. Построение ELK графа с иерархией ---
   const elkGroups: any[] = [];

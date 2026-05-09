@@ -709,8 +709,9 @@ export default function NetworkGraphG6({
         console.log('[G6] ELK layout → passive render...');
 
         // --- 1. Вызов ELK для расчёта позиций ---
+        // Передаём parentId из данных для группировки по шкафам
         const layoutResult = await computeElkLayout(
-          data.nodes.map(n => ({ id: n.id, type: n.type, data: n, combo: (n as any).combo })),
+          data.nodes.map(n => ({ id: n.id, type: n.type, data: n, parentId: (n as any).parentId })),
           data.edges.map(e => ({ id: e.id, source: e.source, target: e.target, data: e })),
         );
 
@@ -718,6 +719,7 @@ export default function NetworkGraphG6({
         const comboIds = new Set(layoutResult.combos.map(c => c.id));
 
         // --- 2. Узлы с координатами от ELK (G6 center) ---
+        // Исключаем шкафы — они отрисовываются как combos
         const nodes = data.nodes
           .filter(n => !comboIds.has(n.id))
           .map(node => {
@@ -725,7 +727,7 @@ export default function NetworkGraphG6({
             const type = (node.type || 'load').toLowerCase();
             return {
               id: node.id,
-              combo: (node as any).combo || undefined,
+              combo: (node as any).parentId || undefined,  // G6 combo = parentId
               data: { ...node, type },
               style: {
                 x: pos?.x ?? 0,
@@ -739,11 +741,12 @@ export default function NetworkGraphG6({
         const apiEdgeMap = new Map(data.edges.map(e => [e.id, e]));
         const edges = layoutResult.edges.map(elkEdge => {
           const apiEdge = apiEdgeMap.get(elkEdge.id);
+          const edgeData = (apiEdge as any)?.data || {};
           return {
             id: elkEdge.id,
             source: elkEdge.source,
             target: elkEdge.target,
-            data: (apiEdge as any)?.data || {},
+            data: edgeData,
           };
         });
 
@@ -757,12 +760,17 @@ export default function NetworkGraphG6({
         console.log(`[G6] ${nodes.length} nodes, ${edges.length} edges, ${combos.length} combos`);
 
         // FIX v5: Фильтрация phantom ссылок в рёбрах (prevent opposite.getPosition error)
-        // G6 v5 крашится если edge.source или edge.target не существуют среди nodes
-        const nodeIds = new Set(nodes.map(n => n.id));
+        // G6 v5 крашится если edge.source или edge.target не существуют среди nodes или combos
+        const nodeIds = new Set([...nodes.map(n => n.id), ...combos.map(c => c.id)]);
         const validEdges = edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
 
         if (validEdges.length !== edges.length) {
-          console.warn(`[G6] Filtered ${edges.length - validEdges.length} edges with phantom node refs`);
+          const dropped = edges.filter(e => !nodeIds.has(e.source) || !nodeIds.has(e.target));
+          console.warn(`[G6] Filtered ${dropped.length}/${edges.length} edges with phantom refs:`);
+          dropped.forEach(e => {
+            if (!nodeIds.has(e.source)) console.warn(`  source ${e.source} not found`);
+            if (!nodeIds.has(e.target)) console.warn(`  target ${e.target} not found`);
+          });
         }
 
         // --- 5. Рендер ---

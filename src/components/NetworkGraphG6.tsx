@@ -343,8 +343,8 @@ export default function NetworkGraphG6({
         },
       },
       edge: {
-        // cubic — кривые Безье по контрольным точкам от ELK SPLINES
-        type: 'cubic',
+        // FIX: polyline — ломаная линия через контрольные точки от ELK ORTHOGONAL
+        type: 'polyline',
         style: {
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;

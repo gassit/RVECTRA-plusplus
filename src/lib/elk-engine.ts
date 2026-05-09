@@ -7,6 +7,7 @@
  *
  * Координаты: ELK возвращает top-left → конвертируем в G6 center.
  * Порты: FREE — ELK создаёт столько портов, сколько нужно.
+ * Маршрутизация: ORTHOGONAL (углы 90°) с точками излома (bendPoints).
  */
 
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -151,7 +152,8 @@ export async function computeElkLayout(
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': 'DOWN',
-      'elk.edgeRouting': 'SPLINES',
+      // FIX: ORTHOGONAL вместо SPLINES для углов 90°
+      'elk.edgeRouting': 'ORTHOGONAL',
       'elk.spacing.nodeNode': '25',
       'elk.layered.spacing.nodeNodeBetweenLayers': '50',
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
@@ -260,14 +262,32 @@ export async function computeElkLayout(
 // Вспомогательные функции
 // ============================================================================
 
-/** Извлечь controlPoints из ELK edge (только bendPoints, без start/end) */
+/** FIX: Извлечь controlPoints из ELK edge.
+ *  - Для single-section: берём bendPoints (промежуточные точки).
+ *  - Для multi-section (ребро пересекает границу группы):
+ *    берём bendPoints всех sections + startPoint каждой последующей section
+ *    как junction waypoint (исключая первый startPoint — G6 сам рисует от source,
+ *    исключая последний endPoint — G6 сам рисует до target).
+ */
 function extractControlPoints(elkEdge: any): { controlPoints?: Array<{ x: number; y: number }> } {
   const points: Array<{ x: number; y: number }> = [];
-  for (const section of elkEdge.sections || []) {
+  const sections = elkEdge.sections || [];
+
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
+
+    // FIX: Для sections после первой добавляем startPoint как junction point
+    if (i > 0 && section.startPoint) {
+      points.push({ x: section.startPoint.x, y: section.startPoint.y });
+    }
+
+    // FIX: Добавляем все bendPoints из каждой section
     for (const bp of section.bendPoints || []) {
       points.push({ x: bp.x, y: bp.y });
     }
   }
+
+  // FIX: Если нет контрольных точек — НЕ добавляем пустой массив (мусор)
   return points.length ? { controlPoints: points } : {};
 }
 

@@ -737,17 +737,66 @@ export default function NetworkGraphG6({
             };
           });
 
-        // --- 3. Рёбра (G6 v5 orth router рассчитает маршрутизацию сам) ---
+        // --- 3. Рёбра с port-to-parent remapping ---
         const apiEdgeMap = new Map(data.edges.map(e => [e.id, e]));
+
+        // 3a. Build port-to-parent map for remapping dangling port references
+        // ELK may return edges where source/target is a port ID (e.g. "port_123")
+        // G6 v5 expects source/target to be node IDs with optional sourcePort/targetPort
+        const portToParent = new Map<string, { nodeId: string; portKey: string }>();
+        data.nodes.forEach(node => {
+          const ports = (node as any).ports;
+          if (Array.isArray(ports)) {
+            ports.forEach((port: any) => {
+              const portId = port.id || port.key;
+              if (portId) {
+                portToParent.set(portId, {
+                  nodeId: node.id,
+                  portKey: port.key || port.id,
+                });
+              }
+            });
+          }
+        });
+        if (portToParent.size > 0) {
+          console.log(`[G6] Built port map with ${portToParent.size} port entries`);
+        }
+
+        // 3b. Map ELK edges to G6 edges with port remapping
         const edges = layoutResult.edges.map(elkEdge => {
           const apiEdge = apiEdgeMap.get(elkEdge.id);
           const edgeData = (apiEdge as any)?.data || {};
-          return {
+
+          let source = elkEdge.source;
+          let target = elkEdge.target;
+          let sourcePort: string | undefined;
+          let targetPort: string | undefined;
+
+          // Remap source if it's a port ID
+          const srcPort = portToParent.get(source);
+          if (srcPort) {
+            console.log(`[G6] Remapping edge source port: ${source} → node ${srcPort.nodeId}`);
+            source = srcPort.nodeId;
+            sourcePort = srcPort.portKey;
+          }
+
+          // Remap target if it's a port ID
+          const tgtPort = portToParent.get(target);
+          if (tgtPort) {
+            console.log(`[G6] Remapping edge target port: ${target} → node ${tgtPort.nodeId}`);
+            target = tgtPort.nodeId;
+            targetPort = tgtPort.portKey;
+          }
+
+          const g6Edge: any = {
             id: elkEdge.id,
-            source: elkEdge.source,
-            target: elkEdge.target,
+            source,
+            target,
             data: edgeData,
           };
+          if (sourcePort) g6Edge.sourcePort = sourcePort;
+          if (targetPort) g6Edge.targetPort = targetPort;
+          return g6Edge;
         });
 
         // --- 4. Combos (шкафы) с позициями от ELK (top-left для G6) ---
@@ -766,11 +815,14 @@ export default function NetworkGraphG6({
 
         if (validEdges.length !== edges.length) {
           const dropped = edges.filter(e => !nodeIds.has(e.source) || !nodeIds.has(e.target));
-          console.warn(`[G6] Filtered ${dropped.length}/${edges.length} edges with phantom refs:`);
+          console.warn(`[G6] Filtered ${dropped.length}/${edges.length} edges with unresolvable refs:`);
           dropped.forEach(e => {
-            if (!nodeIds.has(e.source)) console.warn(`  source ${e.source} not found`);
-            if (!nodeIds.has(e.target)) console.warn(`  target ${e.target} not found`);
+            console.warn(`  Edge "${e.id}": source="${e.source}" target="${e.target}"`);
+            console.warn(`    Available nodes: ${nodes.map(n => n.id).join(', ')}`);
+            console.warn(`    Available combos: ${combos.map(c => c.id).join(', ')}`);
           });
+        } else {
+          console.log(`[G6] All ${validEdges.length} edges validated successfully`);
         }
 
         // --- 5. Рендер ---

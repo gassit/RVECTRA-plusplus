@@ -1,15 +1,12 @@
 /**
- * Standalone ELK Layout Engine — один вызов ELK с иерархией групп
+ * ELK Layout Engine — чистая интеграция с G6
  *
- * Cabinet = ELK группа (с children внутри).
- * ELK сам раскладывает элементы внутри групп и группы между собой.
- * Все рёбра element→element напрямую — контрольные точки правильные.
+ * Один вызов ELK с нативной иерархией (INCLUDE_CHILDREN).
+ * Cabinet = ELK группа с children внутри.
+ * Рёбра element→element напрямую.
  *
- * Порты:
- * - Source/Breaker/Bus/Load/Meter: фиксированные NORTH (вход) + SOUTH (выход)
- * - Junction: свободные порты (ELK решает автоматически)
- *
- * G6 — пассивный рендерер, только рисует то, что рассчитал ELK.
+ * Координаты: ELK возвращает top-left → конвертируем в G6 center.
+ * Порты: FREE — ELK создаёт столько портов, сколько нужно.
  */
 
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -17,7 +14,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 const elk = new ELK();
 
 // ============================================================================
-// РАЗМЕРЫ УЗЛОВ ПО ТИПАМ
+// Размеры узлов по типам
 // ============================================================================
 export const NODE_SIZES: Record<string, { width: number; height: number }> = {
   source:      { width: 120, height: 60 },
@@ -25,13 +22,12 @@ export const NODE_SIZES: Record<string, { width: number; height: number }> = {
   breaker:     { width: 100, height: 50 },
   meter:       { width: 100, height: 50 },
   load:        { width: 120, height: 60 },
-  cabinet:     { width: 250, height: 200 },
   junction:    { width: 30,  height: 30 },
   transformer: { width: 100, height: 60 },
 };
 
 // ============================================================================
-// ТИПЫ
+// Типы
 // ============================================================================
 interface LayoutNode {
   id: string;
@@ -45,13 +41,6 @@ interface LayoutEdge {
   source: string;
   target: string;
   data?: any;
-}
-
-interface NodePosition {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
 }
 
 export interface LayoutResult {
@@ -73,63 +62,30 @@ export interface LayoutResult {
 }
 
 // ============================================================================
-// ПОРТЫ
-// НЕ задаём порты явно — ELK сам создаст столько портов на каждой стороне,
-// сколько нужно для подключения всех рёбер.
-// Junction — свободные порты (ELK решает автоматически)
+// Конвертация координат: ELK top-left → G6 center
 // ============================================================================
-const FIXED_PORT_TYPES = new Set(['source', 'breaker', 'bus', 'meter', 'load']);
-
-function getPortConstraints(type: string): string {
-  // FREE — ELK сам создаёт столько портов, сколько нужно, где хочет
-  return 'FREE';
+function elkToG6(elkX: number, elkY: number, w: number, h: number) {
+  return { x: elkX + w / 2, y: elkY + h / 2 };
 }
 
 // ============================================================================
-// КОНТРОЛЬНЫЕ ТОЧКИ — только bendPoints (без startPoint/endPoint)
-// ============================================================================
-function getControlPoints(elkEdge: any): Array<{ x: number; y: number }> {
-  if (!elkEdge?.sections?.length) return [];
-  const points: Array<{ x: number; y: number }> = [];
-  for (const section of elkEdge.sections) {
-    if (section.bendPoints) {
-      for (const bp of section.bendPoints) {
-        points.push({ x: bp.x, y: bp.y });
-      }
-    }
-  }
-  return points;
-}
-
-// ============================================================================
-// ОСНОВНАЯ ФУНКЦИЯ — ОДИН ВЫЗОВ ELK С ИЕРАРХИЕЙ
+// Основная функция — один вызов ELK с иерархией
 // ============================================================================
 export async function computeElkLayout(
   nodes: LayoutNode[],
   edges: LayoutEdge[],
 ): Promise<LayoutResult> {
-  if (!nodes || nodes.length === 0) {
-    return { nodes: [], edges: [], combos: [] };
-  }
+  if (!nodes?.length) return { nodes: [], edges: [], combos: [] };
 
-  console.log('[ELK] Single-call hierarchical layout for', nodes.length, 'nodes,', edges.length, 'edges');
-
-  // ================================================================
-  // 1. ГРУППИРОВКА
-  // ================================================================
-  const nodeMap = new Map<string, LayoutNode>();
-  for (const node of nodes) {
-    nodeMap.set(node.id, node);
-  }
-
+  // --- 1. Группировка ---
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
   const childrenByParent = new Map<string, LayoutNode[]>();
   const rootNodes: LayoutNode[] = [];
 
   for (const node of nodes) {
-    const parentId = node.combo;
-    if (parentId) {
-      if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
-      childrenByParent.get(parentId)!.push(node);
+    if (node.combo) {
+      if (!childrenByParent.has(node.combo)) childrenByParent.set(node.combo, []);
+      childrenByParent.get(node.combo)!.push(node);
     } else {
       rootNodes.push(node);
     }
@@ -137,312 +93,209 @@ export async function computeElkLayout(
 
   const cabinetIds = new Set(childrenByParent.keys());
 
-  console.log('[ELK] Cabinets:', [...cabinetIds].length, '| Root nodes:', rootNodes.length, '| Nested:', nodes.length - rootNodes.length);
+  // --- 2. Фильтрация рёбер ---
+  const validEdges = edges.filter(e => nodeMap.has(e.source) && nodeMap.has(e.target));
 
-  // ================================================================
-  // 2. ФИЛЬТРАЦИЯ РЁБЕР — только валидные element→element
-  // ================================================================
-  const validEdges = edges.filter(edge => {
-    if (!nodeMap.has(edge.source)) {
-      console.warn(`[ELK] Edge "${edge.id}": source=${edge.source} not found, skipped`);
-      return false;
-    }
-    if (!nodeMap.has(edge.target)) {
-      console.warn(`[ELK] Edge "${edge.id}": target=${edge.target} not found, skipped`);
-      return false;
-    }
-    return true;
-  });
-
-  // ================================================================
-  // 3. ПОСТРОЕНИЕ ELK ГРАФА С ИЕРАРХИЕЙ
-  //    Cabinet = группа с children внутри.
-  //    Корневые узлы — прямо в root.
-  //    Рёбра element→element напрямую.
-  // ================================================================
-
-  // Группы шкафов
+  // --- 3. Построение ELK графа с иерархией ---
   const elkGroups: any[] = [];
-  for (const [cabinetId, children] of childrenByParent.entries()) {
+
+  for (const [cabinetId, children] of childrenByParent) {
     const cabinetNode = nodeMap.get(cabinetId);
     const label = cabinetNode?.data?.name || cabinetNode?.data?.label || cabinetId;
-
-    const elkChildren = children.map(child => {
-      const type = (child.type || child.data?.type || 'load').toLowerCase();
-      const size = NODE_SIZES[type] || { width: 80, height: 40 };
-      return {
-        id: child.id,
-        width: size.width,
-        height: size.height,
-        labels: child.data?.name ? [{ text: child.data.name }] : [],
-        properties: { 'portConstraints': getPortConstraints(type) },
-      };
-    });
 
     elkGroups.push({
       id: cabinetId,
       labels: [{ text: label }],
-      children: elkChildren,
+      children: children.map(child => {
+        const type = (child.type || child.data?.type || 'load').toLowerCase();
+        const size = NODE_SIZES[type] || { width: 80, height: 40 };
+        return {
+          id: child.id,
+          width: size.width,
+          height: size.height,
+          labels: child.data?.name ? [{ text: child.data.name }] : [],
+        };
+      }),
       layoutOptions: {
         'elk.spacing.nodeNode': '25',
         'elk.layered.spacing.nodeNodeBetweenLayers': '40',
-        // Отступы внутри группы
         'elk.padding': '[top=20,left=20,bottom=20,right=20]',
       },
     });
   }
 
-  // Корневые узлы (не внутри шкафов)
-  const elkRootChildren: any[] = [];
-  for (const node of rootNodes) {
-    if (cabinetIds.has(node.id)) continue;
-    const type = (node.type || node.data?.type || 'load').toLowerCase();
-    const size = NODE_SIZES[type] || { width: 80, height: 40 };
-    elkRootChildren.push({
-      id: node.id,
-      width: size.width,
-      height: size.height,
-      labels: node.data?.name ? [{ text: node.data.name }] : [],
-      properties: { 'portConstraints': getPortConstraints(type) },
+  const elkRootChildren: any[] = rootNodes
+    .filter(n => !cabinetIds.has(n.id))
+    .map(node => {
+      const type = (node.type || node.data?.type || 'load').toLowerCase();
+      const size = NODE_SIZES[type] || { width: 80, height: 40 };
+      return {
+        id: node.id,
+        width: size.width,
+        height: size.height,
+        labels: node.data?.name ? [{ text: node.data.name }] : [],
+      };
     });
-  }
 
-  const elkGraph: any = {
+  // Каждый edge получает уникальный ID для предотвращения слияния в гипердуги
+  const elkEdges = validEdges.map(edge => ({
+    id: edge.id,
+    sources: [edge.source],
+    targets: [edge.target],
+  }));
+
+  const elkGraph = {
     id: 'root',
     children: [...elkRootChildren, ...elkGroups],
-    edges: validEdges.map(edge => ({
-      id: edge.id,
-      sources: [edge.source],
-      targets: [edge.target],
-    })),
+    edges: elkEdges,
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': 'DOWN',
       'elk.edgeRouting': 'SPLINES',
       'elk.spacing.nodeNode': '25',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '40',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '50',
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-      'elk.layered.cycleBreaking.strategy': 'GREEDY',
-      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-      'elk.layered.crossingMinimization.semiInteractive': 'true',
-      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-      // Отступы между группами
       'elk.spacing.componentComponent': '40',
+      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
     },
   };
 
-  console.log(`[ELK] Graph: ${elkRootChildren.length} root nodes, ${elkGroups.length} groups, ${validEdges.length} edges IN`);
-
-  // Сохраняем все оригинальные рёбра для восстановления
-  const edgeOriginalMap = new Map<string, LayoutEdge>();
-  for (const edge of validEdges) {
-    edgeOriginalMap.set(edge.id, edge);
-  }
-
-  // ================================================================
-  // 4. ВЫЗОВ ELK
-  // ================================================================
+  // --- 4. Вызов ELK ---
   let layoutedGraph: any;
   try {
     layoutedGraph = await elk.layout(elkGraph);
   } catch (error) {
     console.error('[ELK] Layout error:', error);
-    // Fallback — сетка
-    const fallbackNodes = nodes
-      .filter(n => !cabinetIds.has(n.id))
-      .map((node, index) => {
-        const type = (node.type || node.data?.type || 'load').toLowerCase();
-        const size = NODE_SIZES[type] || { width: 120, height: 60 };
-        return {
-          id: node.id,
-          x: size.width / 2 + 100 + (index % 10) * 150,
-          y: size.height / 2 + 100 + Math.floor(index / 10) * 100,
-          width: size.width,
-          height: size.height,
-        };
-      });
-    return { nodes: fallbackNodes, edges: [], combos: [] };
+    return fallbackLayout(nodes);
   }
 
-  // ================================================================
-  // 5. СБОР КООРДИНАТ — рекурсивный обход иерархии ELK
-  //    ELK даёт координаты относительно родителя.
-  //    Накапливаем offsetX/offsetY для абсолютных координат.
-  // ================================================================
-  const nodePositions = new Map<string, NodePosition>();
-  const comboPositions = new Map<string, NodePosition>();
+  // --- 5. Сбор координат из иерархии ELK ---
+  const nodePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
+  const comboPositions = new Map<string, { x: number; y: number; width: number; height: number }>();
 
-  function collectPositions(elkNode: any, offsetX: number, offsetY: number, depth: number) {
-    const nodeX = (elkNode.x || 0) + offsetX;
-    const nodeY = (elkNode.y || 0) + offsetY;
-    const w = elkNode.width || 0;
-    const h = elkNode.height || 0;
+  for (const child of layoutedGraph.children || []) {
+    const cx = child.x || 0;
+    const cy = child.y || 0;
+    const cw = child.width || 0;
+    const ch = child.height || 0;
 
-    if (depth > 0 && cabinetIds.has(elkNode.id)) {
-      // Группа (cabinet) — сохраняем как combo (левый верхний угол)
-      comboPositions.set(elkNode.id, { x: nodeX, y: nodeY, width: w, height: h });
-    }
+    if (cabinetIds.has(child.id)) {
+      // Группа — сохраняем top-left для G6 combo
+      comboPositions.set(child.id, { x: cx, y: cy, width: cw, height: ch });
 
-    // Собираем дочерние узлы
-    if (elkNode.children) {
-      for (const child of elkNode.children) {
-        if (cabinetIds.has(child.id)) {
-          // Это группа — рекурсивно обходим
-          collectPositions(child, nodeX, nodeY, depth + 1);
-        } else {
-          // Обычный узел — сохраняем (центр)
-          nodePositions.set(child.id, {
-            x: nodeX + (child.x || 0) + (child.width || 0) / 2,
-            y: nodeY + (child.y || 0) + (child.height || 0) / 2,
-            width: child.width || 0,
-            height: child.height || 0,
-          });
-        }
+      // Дочерние узлы внутри группы
+      for (const gc of child.children || []) {
+        const gw = gc.width || 0;
+        const gh = gc.height || 0;
+        const pos = elkToG6(cx + (gc.x || 0), cy + (gc.y || 0), gw, gh);
+        nodePositions.set(gc.id, { ...pos, width: gw, height: gh });
       }
-    }
-  }
-
-  // root — это контейнер, его children на верхнем уровне
-  if (layoutedGraph.children) {
-    for (const child of layoutedGraph.children) {
-      if (cabinetIds.has(child.id)) {
-        // Группа — рекурсивно обходим внутри
-        comboPositions.set(child.id, {
-          x: child.x || 0,
-          y: child.y || 0,
-          width: child.width || 0,
-          height: child.height || 0,
-        });
-        if (child.children) {
-          for (const grandchild of child.children) {
-            nodePositions.set(grandchild.id, {
-              x: (child.x || 0) + (grandchild.x || 0) + (grandchild.width || 0) / 2,
-              y: (child.y || 0) + (grandchild.y || 0) + (grandchild.height || 0) / 2,
-              width: grandchild.width || 0,
-              height: grandchild.height || 0,
-            });
-          }
-        }
-      } else {
-        // Корневой узел (не в группе)
-        nodePositions.set(child.id, {
-          x: (child.x || 0) + (child.width || 0) / 2,
-          y: (child.y || 0) + (child.height || 0) / 2,
-          width: child.width || 0,
-          height: child.height || 0,
-        });
-      }
-    }
-  }
-
-  console.log(`[ELK] Positioned: ${nodePositions.size} nodes, ${comboPositions.size} combos`);
-
-  // ================================================================
-  // 6. СБОР РЁБЕР С КОНТРОЛЬНЫМИ ТОЧКАМИ
-  //    ELK может слить рёбра с одинаковыми source/target в гипердугу.
-  //    Разворачиваем обратно: sources[i] → targets[i].
-  // ================================================================
-  const finalEdges: LayoutResult['edges'] = [];
-
-  // Множество уже добавленных ID чтобы не дублировать
-  const addedEdgeIds = new Set<string>();
-
-  for (const edge of layoutedGraph.edges || []) {
-    const sources = edge.sources || [];
-    const targets = edge.targets || [];
-    if (sources.length === 0 || targets.length === 0) continue;
-
-    // Сколько уникальных пар source→target
-    if (sources.length === 1 && targets.length === 1) {
-      // Обычное ребро
-      const source = sources[0];
-      const target = targets[0];
-      if (source === target) continue;
-
-      const edgeId = edge.id || `${source}->${target}`;
-      const points = getControlPoints(edge);
-
-      // Если ELK вернул с таким ID — берём данные из оригинала
-      const original = edgeOriginalMap.get(edgeId);
-      finalEdges.push({
-        id: edgeId,
-        source,
-        target,
-        ...(points.length ? { controlPoints: points } : {}),
-        ...(original?.data ? { data: original.data } : {}),
-      });
-      addedEdgeIds.add(edgeId);
     } else {
-      // Гипердуга — разворачиваем в отдельные рёбра
+      // Корневой узел
+      const pos = elkToG6(cx, cy, cw, ch);
+      nodePositions.set(child.id, { ...pos, width: cw, height: ch });
+    }
+  }
+
+  // --- 6. Сбор рёбер с контрольными точками ---
+  // ELK может вернуть гипердугу (несколько sources/targets) для рёбер
+  // с одинаковыми source и target. Разворачиваем обратно.
+  const originalEdgeMap = new Map(validEdges.map(e => [e.id, e]));
+  const finalEdges: LayoutResult['edges'] = [];
+  const usedOriginalIds = new Set<string>();
+
+  for (const elkEdge of layoutedGraph.edges || []) {
+    const sources: string[] = elkEdge.sources || [];
+    const targets: string[] = elkEdge.targets || [];
+    if (!sources.length || !targets.length) continue;
+
+    const cp = extractControlPoints(elkEdge);
+
+    if (sources.length === 1 && targets.length === 1) {
+      const s = sources[0], t = targets[0];
+      if (s === t) continue;
+      finalEdges.push({ id: elkEdge.id, source: s, target: t, ...cp });
+      usedOriginalIds.add(elkEdge.id);
+    } else {
+      // Гипердуга — разворачиваем
       for (let si = 0; si < sources.length; si++) {
         for (let ti = 0; ti < targets.length; ti++) {
-          const source = sources[si];
-          const target = targets[ti];
-          if (source === target) continue;
-
-          // Ищем оригинальное ребро с этим source→target
-          let foundId: string | undefined;
-          for (const [origId, origEdge] of edgeOriginalMap.entries()) {
-            if (origEdge.source === source && origEdge.target === target && !addedEdgeIds.has(origId)) {
-              foundId = origId;
-              break;
-            }
-          }
-
-          const edgeId = foundId || `hyper_${source}_${target}_${si}_${ti}`;
-          const points = getControlPoints(edge);
-          const original = foundId ? edgeOriginalMap.get(foundId) : undefined;
-
-          finalEdges.push({
-            id: edgeId,
-            source,
-            target,
-            ...(points.length ? { controlPoints: points } : {}),
-            ...(original?.data ? { data: original.data } : {}),
-          });
-          addedEdgeIds.add(edgeId);
+          const s = sources[si], t = targets[ti];
+          if (s === t) continue;
+          // Ищем оригинальное ребро
+          const origId = findOriginalEdgeId(originalEdgeMap, usedOriginalIds, s, t);
+          finalEdges.push({ id: origId || `edge_${s}_${t}`, source: s, target: t, ...cp });
+          if (origId) usedOriginalIds.add(origId);
         }
       }
     }
   }
 
-  // Добавляем рёбра, которые ELK вообще не вернул (пропущенные)
-  for (const [edgeId, origEdge] of edgeOriginalMap.entries()) {
-    if (addedEdgeIds.has(edgeId)) continue;
-    console.warn(`[ELK] Edge "${edgeId}" (${origEdge.source}->${origEdge.target}) not returned by ELK, adding without controlPoints`);
-    finalEdges.push({
-      id: edgeId,
-      source: origEdge.source,
-      target: origEdge.target,
-    });
+  // Добавляем рёбра, которые ELK не вернул
+  for (const [id, orig] of originalEdgeMap) {
+    if (usedOriginalIds.has(id)) continue;
+    finalEdges.push({ id, source: orig.source, target: orig.target });
   }
 
-  // ================================================================
-  // 7. ФОРМИРОВАНИЕ РЕЗУЛЬТАТА
-  // ================================================================
-  const resultNodes: LayoutResult['nodes'] = [];
-  for (const [id, pos] of nodePositions.entries()) {
-    resultNodes.push({ id, x: pos.x, y: pos.y, width: pos.width, height: pos.height });
-  }
+  // --- 7. Формирование результата ---
+  const resultNodes = [...nodePositions.entries()].map(([id, p]) => ({
+    id, x: p.x, y: p.y, width: p.width, height: p.height,
+  }));
 
-  // Комбо: x, y — левый верхний угол (как ожидает G6)
-  const resultCombos: LayoutResult['combos'] = [];
-  for (const [cabinetId] of childrenByParent.entries()) {
-    const pos = comboPositions.get(cabinetId);
-    if (pos) {
-      const cabinetNode = nodeMap.get(cabinetId);
-      resultCombos.push({
-        id: cabinetId,
-        x: pos.x,
-        y: pos.y,
-        width: pos.width,
-        height: pos.height,
-        label: cabinetNode?.data?.name || cabinetNode?.data?.label || cabinetId,
-      });
+  const resultCombos = [...comboPositions.entries()].map(([id, p]) => ({
+    id,
+    x: p.x,
+    y: p.y,
+    width: p.width,
+    height: p.height,
+    label: nodeMap.get(id)?.data?.name || nodeMap.get(id)?.data?.label || id,
+  }));
+
+  console.log(`[ELK] ${resultNodes.length} nodes, ${finalEdges.length} edges, ${resultCombos.length} combos`);
+  return { nodes: resultNodes, edges: finalEdges, combos: resultCombos };
+}
+
+// ============================================================================
+// Вспомогательные функции
+// ============================================================================
+
+/** Извлечь controlPoints из ELK edge (только bendPoints, без start/end) */
+function extractControlPoints(elkEdge: any): { controlPoints?: Array<{ x: number; y: number }> } {
+  const points: Array<{ x: number; y: number }> = [];
+  for (const section of elkEdge.sections || []) {
+    for (const bp of section.bendPoints || []) {
+      points.push({ x: bp.x, y: bp.y });
     }
   }
+  return points.length ? { controlPoints: points } : {};
+}
 
-  console.log(`[ELK] Result: ${resultNodes.length} nodes, ${finalEdges.length} edges, ${resultCombos.length} combos`);
+/** Найти оригинальное ребро по source/target */
+function findOriginalEdgeId(
+  map: Map<string, LayoutEdge>,
+  used: Set<string>,
+  source: string,
+  target: string,
+): string | undefined {
+  for (const [id, edge] of map) {
+    if (!used.has(id) && edge.source === source && edge.target === target) return id;
+  }
+  return undefined;
+}
 
-  return { nodes: resultNodes, edges: finalEdges, combos: resultCombos };
+/** Fallback раскладка — сетка */
+function fallbackLayout(nodes: LayoutNode[]): LayoutResult {
+  const resultNodes = nodes.map((node, i) => {
+    const type = (node.type || node.data?.type || 'load').toLowerCase();
+    const size = NODE_SIZES[type] || { width: 120, height: 60 };
+    return {
+      id: node.id,
+      x: size.width / 2 + 100 + (i % 10) * 150,
+      y: size.height / 2 + 100 + Math.floor(i / 10) * 100,
+      width: size.width,
+      height: size.height,
+    };
+  });
+  return { nodes: resultNodes, edges: [], combos: [] };
 }

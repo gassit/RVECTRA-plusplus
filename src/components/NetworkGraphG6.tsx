@@ -216,7 +216,7 @@ export default function NetworkGraphG6({
         rankdir: 'TB',          // сверху вниз (DOWN)
         nodesep: 25,            // расстояние между узлами на одном слое
         ranksep: 50,            // расстояние между слоями
-        align: undefined,       // авто-выравнивание
+        align: 'UL',            // выравнивание узлов на слое к верхнему левому
         preventOverlap: true,
       },
       node: {

@@ -724,17 +724,32 @@ export default function NetworkGraphG6({
         const nodeIds = new Set(data.nodes.map(n => n.id));
         const comboIds = new Set(data.combos?.map(c => c.id) || []);
 
+        // Размеры по типу (как в ELK)
+        const NODE_SIZES: Record<string, [number, number]> = {
+          source:      [120, 60],
+          bus:         [150, 30],
+          breaker:     [100, 50],
+          meter:       [100, 50],
+          load:        [120, 60],
+          junction:    [30, 30],
+          transformer: [100, 60],
+        };
+
         // Узлы — все, кроме combo-контейнеров (шкафов)
         const nodes = data.nodes
           .filter(node => !comboIds.has(node.id))
           .map(node => {
             const type = (node.type || 'load').toLowerCase();
+            const size = NODE_SIZES[type] || [80, 40];
             return {
               id: node.id,
               combo: (node as any).combo || undefined,
               data: {
                 ...node,
                 type: type,
+              },
+              style: {
+                size: size,
               },
             };
           });

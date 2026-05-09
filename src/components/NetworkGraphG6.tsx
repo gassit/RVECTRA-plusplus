@@ -431,9 +431,8 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      // Защита: setElementState не вызывается для комбо (шкафов)
-      const element = (graph as any).getElementById(elementId);
-      if (!element || element.type !== 'node') return;
+      // FIX v5: getNodeData вместо getElementById (v4 API)
+      if (!graph.getNodeData(elementId)) return; // не нода (комбо)
 
       // В режиме создания связи - используем refs
       if (connectionModeRef.current) {
@@ -470,9 +469,8 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      // Защита: setElementState не вызывается для комбо (шкафов)
-      const element = (graph as any).getElementById(elementId);
-      if (!element || element.type !== 'node') return;
+      // FIX v5: getNodeData вместо getElementById (v4 API)
+      if (!graph.getNodeData(elementId)) return; // не нода (комбо)
 
       // Отменяем отложенное скрытие tooltip если мышка вернулась
       if (tooltipHideTimeoutRef.current) {
@@ -501,9 +499,8 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      // Защита: setElementState не вызывается для комбо (шкафов)
-      const element = (graph as any).getElementById(elementId);
-      if (!element || element.type !== 'node') return;
+      // FIX v5: getNodeData вместо getElementById (v4 API)
+      if (!graph.getNodeData(elementId)) return; // не нода (комбо)
 
       // Не скрываем hoveredNode если tooltip закреплён
       if (!pinnedNodeRef.current) {
@@ -529,8 +526,8 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      const element = (graph as any).getElementById(edgeId);
-      if (!element || element.type !== 'edge') return;
+      // FIX v5: getEdgeData вместо getElementById (v4 API)
+      if (!graph.getEdgeData(edgeId)) return; // не ребро
 
       // Закрепляем tooltip при клике на ребро
       const edgeData = data?.edges.find(e => e.id === edgeId);
@@ -549,8 +546,8 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      const element = (graph as any).getElementById(edgeId);
-      if (!element || element.type !== 'edge') return;
+      // FIX v5: getEdgeData вместо getElementById (v4 API)
+      if (!graph.getEdgeData(edgeId)) return; // не ребро
 
       const edgeData = data?.edges.find(e => e.id === edgeId);
       if (edgeData) {
@@ -568,8 +565,8 @@ export default function NetworkGraphG6({
       const graph = graphRef.current;
       if (!graph || (graph as any).destroyed) return;
 
-      const element = (graph as any).getElementById(edgeId);
-      if (!element || element.type !== 'edge') return;
+      // FIX v5: getEdgeData вместо getElementById (v4 API)
+      if (!graph.getEdgeData(edgeId)) return; // не ребро
 
       if (!pinnedEdgeRef.current) {
         tooltipHideTimeoutRef.current = setTimeout(() => {
@@ -764,9 +761,18 @@ export default function NetworkGraphG6({
 
         console.log(`[G6] ${nodes.length} nodes, ${edges.length} edges, ${combos.length} combos`);
 
+        // FIX v5: Фильтрация phantom ссылок в рёбрах (prevent opposite.getPosition error)
+        // G6 v5 крашится если edge.source или edge.target не существуют среди nodes
+        const nodeIds = new Set(nodes.map(n => n.id));
+        const validEdges = edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+
+        if (validEdges.length !== edges.length) {
+          console.warn(`[G6] Filtered ${edges.length - validEdges.length} edges with phantom node refs`);
+        }
+
         // --- 5. Рендер ---
         try { (graph as any).clearData(); } catch (_) {}
-        graph.setData({ nodes: nodes as any, edges: edges as any, combos });
+        graph.setData({ nodes: nodes as any, edges: validEdges as any, combos });
         await graph.render();
         graph.fitView();
         console.log('[G6] Render complete');

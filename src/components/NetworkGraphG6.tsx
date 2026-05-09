@@ -739,16 +739,20 @@ export default function NetworkGraphG6({
         const apiEdgeMap = new Map(data.edges.map(e => [e.id, e]));
         const edges = layoutResult.edges.map(elkEdge => {
           const apiEdge = apiEdgeMap.get(elkEdge.id);
-          const edgeData: any = {
+          const edgeStyle: any = {};
+          // FIX: startPoint/endPoint — точки на границе узлов от ELK (не центр!)
+          if (elkEdge.startPoint) edgeStyle.startPoint = elkEdge.startPoint;
+          if (elkEdge.endPoint) edgeStyle.endPoint = elkEdge.endPoint;
+          // FIX: controlPoints — промежуточные точки излома
+          if (elkEdge.controlPoints?.length) edgeStyle.controlPoints = elkEdge.controlPoints;
+
+          return {
             id: elkEdge.id,
             source: elkEdge.source,
             target: elkEdge.target,
             data: (apiEdge as any)?.data || {},
+            ...(Object.keys(edgeStyle).length ? { style: edgeStyle } : {}),
           };
-          if (elkEdge.controlPoints?.length) {
-            edgeData.style = { controlPoints: elkEdge.controlPoints };
-          }
-          return edgeData;
         });
 
         // --- 4. Combos (шкафы) с позициями от ELK (top-left для G6) ---

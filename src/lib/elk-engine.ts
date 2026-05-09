@@ -50,6 +50,8 @@ export interface LayoutResult {
     id: string;
     source: string;
     target: string;
+    startPoint?: { x: number; y: number };
+    endPoint?: { x: number; y: number };
     controlPoints?: Array<{ x: number; y: number }>;
   }>;
   combos: Array<{
@@ -212,12 +214,13 @@ export async function computeElkLayout(
     const targets: string[] = elkEdge.targets || [];
     if (!sources.length || !targets.length) continue;
 
-    const cp = extractControlPoints(elkEdge);
+    // FIX: Извлекаем startPoint, endPoint и controlPoints из ELK
+    const edgePoints = extractEdgePoints(elkEdge);
 
     if (sources.length === 1 && targets.length === 1) {
       const s = sources[0], t = targets[0];
       if (s === t) continue;
-      finalEdges.push({ id: elkEdge.id, source: s, target: t, ...cp });
+      finalEdges.push({ id: elkEdge.id, source: s, target: t, ...edgePoints });
       usedOriginalIds.add(elkEdge.id);
     } else {
       // Гипердуга — разворачиваем
@@ -227,7 +230,7 @@ export async function computeElkLayout(
           if (s === t) continue;
           // Ищем оригинальное ребро
           const origId = findOriginalEdgeId(originalEdgeMap, usedOriginalIds, s, t);
-          finalEdges.push({ id: origId || `edge_${s}_${t}`, source: s, target: t, ...cp });
+          finalEdges.push({ id: origId || `edge_${s}_${t}`, source: s, target: t, ...edgePoints });
           if (origId) usedOriginalIds.add(origId);
         }
       }
@@ -262,33 +265,63 @@ export async function computeElkLayout(
 // Вспомогательные функции
 // ============================================================================
 
-/** FIX: Извлечь controlPoints из ELK edge.
- *  - Для single-section: берём bendPoints (промежуточные точки).
- *  - Для multi-section (ребро пересекает границу группы):
- *    берём bendPoints всех sections + startPoint каждой последующей section
- *    как junction waypoint (исключая первый startPoint — G6 сам рисует от source,
- *    исключая последний endPoint — G6 сам рисует до target).
+/** FIX: Извлечь startPoint, endPoint и controlPoints из ELK edge.
+ *
+ * ELK возвращает sections, каждая содержит:
+ *   - startPoint: точка выхода (на границе узла или на границе группы)
+ *   - endPoint:   точка входа (на границе узла или на границе группы)
+ *   - bendPoints: промежуточные точки излома
+ *
+ * Для G6:
+ *   - startPoint/endPoint → управляют началом и концом линии (не от центра узла)
+ *   - controlPoints → промежуточные точки излома для polyline
+ *
+ * Multi-section (ребро пересекает границу группы):
+ *   - startPoint берём из sections[0]
+ *   - endPoint берём из sections[last]
+ *   - intermediate junction points (startPoint sections[1+]) → в controlPoints
  */
-function extractControlPoints(elkEdge: any): { controlPoints?: Array<{ x: number; y: number }> } {
-  const points: Array<{ x: number; y: number }> = [];
+function extractEdgePoints(elkEdge: any): {
+  startPoint?: { x: number; y: number };
+  endPoint?: { x: number; y: number };
+  controlPoints?: Array<{ x: number; y: number }>;
+} {
   const sections = elkEdge.sections || [];
+  if (!sections.length) return {};
 
+  const first = sections[0];
+  const last = sections[sections.length - 1];
+  const result: any = {};
+
+  // FIX: Точка выхода на границе source-узла
+  if (first.startPoint) {
+    result.startPoint = { x: first.startPoint.x, y: first.startPoint.y };
+  }
+
+  // FIX: Точка входа на границе target-узла
+  if (last.endPoint) {
+    result.endPoint = { x: last.endPoint.x, y: last.endPoint.y };
+  }
+
+  // FIX: Промежуточные точки излома
+  const points: Array<{ x: number; y: number }> = [];
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
-
-    // FIX: Для sections после первой добавляем startPoint как junction point
+    // Для sections после первой: startPoint — junction point на границе группы
     if (i > 0 && section.startPoint) {
       points.push({ x: section.startPoint.x, y: section.startPoint.y });
     }
-
-    // FIX: Добавляем все bendPoints из каждой section
+    // bendPoints — изломы внутри каждой section
     for (const bp of section.bendPoints || []) {
       points.push({ x: bp.x, y: bp.y });
     }
   }
 
-  // FIX: Если нет контрольных точек — НЕ добавляем пустой массив (мусор)
-  return points.length ? { controlPoints: points } : {};
+  if (points.length) {
+    result.controlPoints = points;
+  }
+
+  return result;
 }
 
 /** Найти оригинальное ребро по source/target */

@@ -1,0 +1,636 @@
+// Prisma Schema for Digital Twin of Power Grid
+// Version: 1.0 MVP
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./powergrid.db"
+}
+
+// ============================================================================
+// СЛОЙ 1: ТОПОЛОГИЯ
+// ============================================================================
+
+/// Элементы сети (слоты/позиции)
+model Element {
+  id            String   @id
+  type          String   // SOURCE, CABINET, LOAD, BUS, METER, BREAKER
+  name          String
+  description   String?
+  parent_id     String?
+  location      String?
+  voltage_level Float?   // кВ
+  phase         String?  // A, B, C, ABC
+  
+  // Координаты для визуализации
+  pos_x         Float?   @default(0)
+  pos_y         Float?   @default(0)
+  
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  
+  // Отношения
+  parent        Element?         @relation("Hierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
+  children      Element[]        @relation("Hierarchy")
+  devices       Device[]
+  connections_from Connection[]  @relation("ConnectionFrom")
+  connections_to   Connection[]  @relation("ConnectionTo")
+  network_from     Network[]     @relation("NetworkFrom")
+  network_to       Network[]     @relation("NetworkTo")
+  protections   Protection[]
+  atsLogic      AtsLogic[]
+  measurements  Measurement[]
+  validationResults ValidationResult[]
+  powerFlow     PowerFlow?
+  shortCircuit  ShortCircuit?
+  
+  @@index([type])
+  @@index([parent_id])
+}
+
+/// Связи между элементами (рёбра графа)
+model Connection {
+  id              String   @id
+  from_id         String
+  to_id           String
+  type            String   // CABLE, BUSBAR, JUMPER
+  
+  // Параметры кабеля/линии
+  length          Float?   // Длина (м)
+  wire_type       String?  // Марка (АВВГ, ВВГ, ВБбШв...)
+  core            String?  // Количество жил (4, 5...)
+  wire_size       Float?   // Сечение (мм²)
+  material        String?  // Материал (Cu, Al)
+  
+  // Расчётные параметры
+  resistance_r    Float?   // Активное сопротивление (Ом)
+  reactance_x     Float?   // Реактивное сопротивление (Ом)
+  impedance_z     Float?   // Полное сопротивление (Ом)
+  current_capacity Float?  // Допустимый ток (А)
+  
+  // Условия прокладки
+  installation_method String? // in_ground, in_air, in_pipe, in_tray
+  
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  
+  // Отношения
+  from            Element  @relation("ConnectionFrom", fields: [from_id], references: [id], onDelete: Cascade)
+  to              Element  @relation("ConnectionTo", fields: [to_id], references: [id], onDelete: Cascade)
+  network         Network[]
+  validationResults ValidationResult[]
+  
+  @@index([from_id])
+  @@index([to_id])
+  @@index([type])
+}
+
+/// Топология сети (для сценариев)
+model Network {
+  id              String   @id
+  from_id         String
+  to_id           String
+  connection_id   String?
+  scenario_id     String?
+  active          Boolean  @default(true)
+  
+  created_at      DateTime @default(now())
+  
+  element_from    Element  @relation("NetworkFrom", fields: [from_id], references: [id], onDelete: Cascade)
+  element_to      Element  @relation("NetworkTo", fields: [to_id], references: [id], onDelete: Cascade)
+  connection      Connection? @relation(fields: [connection_id], references: [id], onDelete: SetNull)
+  scenario        Scenario? @relation(fields: [scenario_id], references: [id], onDelete: SetNull)
+  
+  @@index([from_id])
+  @@index([to_id])
+}
+
+// ============================================================================
+// СЛОЙ 2: ОБОРУДОВАНИЕ
+// ============================================================================
+
+/// Устройства (физическое оборудование)
+model Device {
+  id                String   @id
+  type              String   // SOURCE, BREAKER, LOAD, METER, ATS, SWITCH
+  slot_id           String
+  model             String?
+  manufacturer      String?
+  serial_number     String?
+  
+  // Электрические параметры
+  voltage_nom       Float?   // Номинальное напряжение (В)
+  current_nom       Float?   // Номинальный ток (А)
+  current_max       Float?   // Максимальный ток (А)
+  breaking_capacity Float?   // Отключающая способность (кА)
+  
+  // Параметры нагрузки
+  p_kw              Float?   // Активная мощность (кВт)
+  q_kvar            Float?   // Реактивная мощность (квар)
+  s_kva             Float?   // Полная мощность (кВА)
+  cos_phi           Float?   // Коэффициент мощности
+  efficiency        Float?   // КПД (%)
+  
+  // Параметры выключателя
+  poles             Int?     // Количество полюсов
+  tripping_char     String?  // Характеристика расцепителя (B, C, D)
+  in_rating         Float?   // Iн расцепителя (А)
+  ir_setting        Float?   // Уставка по току перегрузки
+  ii_setting        Float?   // Уставка мгновенного срабатывания
+  tr_setting        Float?   // Время срабатывания при перегрузке (с)
+  
+  // Дополнительные параметры
+  profile_id        String?
+  notes             String?
+  
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+  
+  // Отношения
+  slot              Element  @relation(fields: [slot_id], references: [id], onDelete: Cascade)
+  states            DeviceState[]
+  protections       Protection[]
+  atsLogic          AtsLogic[]
+  commands          Command[]
+  measurements      Measurement[]
+  validationResults ValidationResult[]
+  
+  @@index([type])
+  @@index([slot_id])
+}
+
+/// Состояния устройств
+model DeviceState {
+  id              String   @id
+  device_id       String
+  slot_id         String
+  state           String   // ON, OFF, TRIPPED, FAULT, UNKNOWN
+  state_raw       String?  // Исходное состояние из SCADA
+  locked          Boolean  @default(false)
+  manual_mode     Boolean  @default(false)
+  remote_control  Boolean  @default(true)
+  last_change     DateTime @default(now())
+  changed_by      String?
+  operation_count Int      @default(0)
+  
+  device          Device   @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  
+  @@index([device_id])
+  @@index([state])
+}
+
+/// Типы устройств (справочник)
+model DeviceType {
+  id              String   @id
+  category        String   // BREAKER, METER, TRANSFORMER...
+  name            String
+  manufacturer    String?
+  model           String?
+  description     String?
+  default_poles   Int?
+  default_voltage Float?
+  default_current Float?
+  created_at      DateTime @default(now())
+  
+  @@unique([category, name])
+}
+
+// ============================================================================
+// СЛОЙ 3: УПРАВЛЕНИЕ
+// ============================================================================
+
+/// Логика АВР
+model AtsLogic {
+  id              String   @id
+  name            String
+  slot_id         String
+  device_id       String?
+  ats_controlled  Boolean  @default(true)
+  states_trigger  String?  // JSON: состояния, при которых срабатывает АВР
+  priority        Int      @default(1)
+  delay_sec       Float?   @default(0.5)
+  voltage_thresh  Float?   // Порог напряжения (В)
+  freq_threshold  Float?   // Порог частоты (Гц)
+  return_delay    Float?   // Задержка возврата (с)
+  test_mode       Boolean  @default(false)
+  active          Boolean  @default(true)
+  
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  
+  slot            Element  @relation(fields: [slot_id], references: [id], onDelete: Cascade)
+  device          Device?  @relation(fields: [device_id], references: [id], onDelete: SetNull)
+  
+  @@index([slot_id])
+  @@index([active])
+}
+
+/// Защиты
+model Protection {
+  id                  String   @id
+  slot_id             String
+  device_id           String?
+  protection_ref      String?  // Ссылка на тип защиты
+  
+  // МТЗ
+  overcurrent_pickup  Float?   // Ток срабатывания МТЗ (А)
+  overcurrent_delay   Float?   // Время срабатывания МТЗ (с)
+  overcurrent_curve   String?  // Характеристика кривой
+  
+  // ОЗЗ
+  earth_fault_pickup  Float?   // Ток срабатывания ОЗЗ (А)
+  earth_fault_delay   Float?   // Время срабатывания ОЗЗ (с)
+  
+  // Токовая отсечка
+  instantaneous_pickup Float?  // Ток отсечки (А)
+  
+  // Напряжение
+  overvoltage_limit   Float?   // Максимальное напряжение (В)
+  undervoltage_limit  Float?   // Минимальное напряжение (В)
+  
+  // Частота
+  overfreq_limit      Float?   // Максимальная частота (Гц)
+  underfreq_limit     Float?   // Минимальная частота (Гц)
+  
+  // Тепловая защита
+  thermal_pickup      Float?   // Порог тепловой защиты
+  thermal_delay       Float?   // Задержка тепловой защиты (с)
+  
+  // Дуговая защита
+  arc_protection      Boolean  @default(false)
+  
+  notes               String?
+  active              Boolean  @default(true)
+  
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+  
+  slot                Element  @relation(fields: [slot_id], references: [id], onDelete: Cascade)
+  device              Device?  @relation(fields: [device_id], references: [id], onDelete: SetNull)
+  
+  @@index([slot_id])
+}
+
+/// Сценарии
+model Scenario {
+  id              String   @id
+  name            String
+  description     String?
+  source_priority String?  // JSON: приоритет источников
+  devices_on      String?  // JSON: список ID устройств для включения
+  devices_off     String?  // JSON: список ID устройств для отключения
+  active          Boolean  @default(false)
+  auto_switch     Boolean  @default(false)
+  
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  
+  network         Network[]
+  commands        Command[]
+  
+  @@index([active])
+}
+
+/// Команды управления
+model Command {
+  id              String   @id
+  device_id       String
+  scenario_id     String?
+  command         String   // ON, OFF, TRIP, RESET
+  target_state    String?
+  priority        Int      @default(0)
+  status          String   @default("PENDING") // PENDING, EXECUTED, FAILED, CANCELLED
+  created_at      DateTime @default(now())
+  executed_at     DateTime?
+  created_by      String?
+  result          String?
+  retry_count     Int      @default(0)
+  
+  device          Device   @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  scenario        Scenario? @relation(fields: [scenario_id], references: [id], onDelete: SetNull)
+  
+  @@index([device_id])
+  @@index([status])
+}
+
+// ============================================================================
+// СЛОЙ 4: РАСЧЁТЫ
+// ============================================================================
+
+/// Результаты расчёта потокораспределения
+model PowerFlow {
+  id              String   @id
+  element_id      String   @unique
+  u_v             Float?   // Напряжение (В)
+  i_a             Float?   // Ток (А)
+  p_kw            Float?   // Активная мощность (кВт)
+  q_kvar          Float?   // Реактивная мощность (квар)
+  s_kva           Float?   // Полная мощность (кВА)
+  pf              Float?   // Коэффициент мощности
+  p_loss_kw       Float?   // Потери активной мощности (кВт)
+  q_loss_kvar     Float?   // Потери реактивной мощности (квар)
+  load_percent    Float?   // Загрузка (%)
+  scenario_id     String?
+  calculated_at   DateTime @default(now())
+  
+  element         Element  @relation(fields: [element_id], references: [id], onDelete: Cascade)
+  
+  @@index([element_id])
+}
+
+/// Результаты расчёта токов КЗ
+model ShortCircuit {
+  id              String   @id
+  element_id      String   @unique
+  ik3_a           Float?   // Ток трёхфазного КЗ (А)
+  ik1_a           Float?   // Ток однофазного КЗ (А)
+  ik2_a           Float?   // Ток двухфазного КЗ (А)
+  ip_a            Float?   // Ударный ток (А)
+  zk_ohm          Float?   // Сопротивление до точки КЗ (Ом)
+  xk_ohm          Float?   // Реактивное сопротивление (Ом)
+  rk_ohm          Float?   // Активное сопротивление (Ом)
+  min_ik_a        Float?   // Минимальный ток КЗ (в конце линии)
+  scenario_id     String?
+  calculated_at   DateTime @default(now())
+  
+  element         Element  @relation(fields: [element_id], references: [id], onDelete: Cascade)
+  
+  @@index([element_id])
+}
+
+/// Профили нагрузки
+model LoadProfile {
+  id              String   @id
+  name            String
+  description     String?
+  profile_type    String   // DAILY, WEEKLY, MONTHLY, YEARLY
+  data            String   // JSON: массив значений по часам/дням
+  unit            String   @default("kW")
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
+// ============================================================================
+// СЛОЙ 5: ИЗМЕРЕНИЯ
+// ============================================================================
+
+/// Измерения
+model Measurement {
+  id              String   @id
+  element_id      String?
+  device_id       String?
+  timestamp       DateTime @default(now())
+  
+  // Электрические величины
+  u_v             Float?   // Напряжение (В)
+  i_a             Float?   // Ток (А)
+  p_kw            Float?   // Активная мощность (кВт)
+  q_kvar          Float?   // Реактивная мощность (квар)
+  s_kva           Float?   // Полная мощность (кВА)
+  f_hz            Float?   // Частота (Гц)
+  pf              Float?   // Коэффициент мощности
+  
+  // Энергия
+  wh_import       Float?   // Потреблённая энергия (кВт⋅ч)
+  wh_export       Float?   // Отданная энергия (кВт⋅ч)
+  varh_import     Float?   // Реактивная энергия (квар⋅ч)
+  
+  // Дополнительные параметры
+  thd_u           Float?   // Коэффициент гармоник напряжения (%)
+  thd_i           Float?   // Коэффициент гармоник тока (%)
+  
+  source          String?  // Источник данных (MANUAL, SCADA, CALCULATED)
+  quality         String?  // Качество измерения (GOOD, BAD, UNCERTAIN)
+  
+  element         Element?  @relation(fields: [element_id], references: [id], onDelete: Cascade)
+  device          Device?   @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  
+  @@index([element_id])
+  @@index([device_id])
+  @@index([timestamp])
+}
+
+/// Аварии
+model Alarm {
+  id              String   @id
+  type            String   // OVERCURRENT, UNDERVOLTAGE, OVERLOAD, SHORT_CIRCUIT...
+  severity        String   // INFO, WARN, ERROR, CRITICAL
+  source          String?  // Код правила или источник
+  
+  message         String
+  recommendation  String?
+  
+  element_id      String?
+  device_id       String?
+  connection_id   String?
+  
+  active          Boolean  @default(true)
+  acknowledged    Boolean  @default(false)
+  acknowledged_by String?
+  acknowledged_at DateTime?
+  
+  created_at      DateTime @default(now())
+  resolved_at     DateTime?
+  
+  @@index([active])
+  @@index([severity])
+  @@index([created_at])
+}
+
+/// Правила аварий
+model AlarmRule {
+  id              String   @id
+  name            String
+  description     String?
+  type            String   // OVERCURRENT, UNDERVOLTAGE...
+  condition       String   // JSON: условие срабатывания
+  severity        String   // INFO, WARN, ERROR, CRITICAL
+  enabled         Boolean  @default(true)
+  notify_email    Boolean  @default(false)
+  notify_sms      Boolean  @default(false)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
+// ============================================================================
+// СЛОЙ 6: ОБСЛУЖИВАНИЕ
+// ============================================================================
+
+/// Тарифы
+model Tariff {
+  id              String   @id
+  name            String
+  type            String   // SINGLE, ZONE, TIME_OF_USE
+  zones           String?  // JSON: зоны по времени
+  rates           String?  // JSON: ставки по зонам
+  currency        String   @default("RUB")
+  valid_from      DateTime?
+  valid_to        DateTime?
+  active          Boolean  @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
+/// Техническое обслуживание
+model Maintenance {
+  id              String   @id
+  element_id      String?
+  device_id       String?
+  type            String   // INSPECTION, REPAIR, REPLACEMENT, TEST
+  description     String?
+  scheduled_date  DateTime?
+  completed_date  DateTime?
+  status          String   @default("PLANNED") // PLANNED, IN_PROGRESS, COMPLETED, CANCELLED
+  performed_by    String?
+  notes           String?
+  next_maintenance DateTime?
+  
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
+/// Журнал событий
+model EventLog {
+  id              String   @id
+  timestamp       DateTime @default(now())
+  event_type      String   // STATE_CHANGE, COMMAND, ALARM, SYSTEM
+  severity        String   // INFO, WARN, ERROR
+  source          String?  // Откуда событие
+  message         String
+  details         String?  // JSON: дополнительные детали
+  element_id      String?
+  device_id       String?
+  user_id         String?
+  
+  @@index([event_type])
+  @@index([timestamp])
+}
+
+// ============================================================================
+// СПРАВОЧНИКИ
+// ============================================================================
+
+/// Справочник кабелей
+model CableReference {
+  id              String   @id
+  wire_type       String   // Марка (АВВГ, ВВГ, ВБбШв...)
+  wire_size       Float    // Сечение (мм²)
+  core            Int      // Количество жил
+  material        String   // Cu, Al
+  voltage_kv      Float    // Номинальное напряжение (кВ)
+  
+  // Сопротивления
+  r_ohm_km        Float    // Активное сопротивление (Ом/км)
+  x_ohm_km        Float    // Реактивное сопротивление (Ом/км)
+  
+  // Допустимые токи
+  i_air           Float?   // В воздухе (А)
+  i_ground        Float?   // В земле (А)
+  i_pipe          Float?   // В трубе (А)
+  i_tray          Float?   // В лотке (А)
+  
+  created_at      DateTime @default(now())
+  
+  @@unique([wire_type, wire_size, core])
+  @@index([wire_type])
+}
+
+/// Справочник выключателей
+model BreakerReference {
+  id              String   @id
+  manufacturer    String   // Производитель
+  model           String   // Модель
+  type            String   // Тип (MCB, MCCB, ACB)
+  
+  in_min          Float    // Минимальный номинальный ток (А)
+  in_max          Float    // Максимальный номинальный ток (А)
+  poles           Int      // Количество полюсов
+  voltage         Float    // Номинальное напряжение (В)
+  breaking_cap    Float    // Отключающая способность (кА)
+  
+  tripping_chars  String?  // Доступные характеристики (B,C,D)
+  
+  created_at      DateTime @default(now())
+  
+  @@unique([manufacturer, model])
+}
+
+/// Справочник трансформаторов
+model TransformerReference {
+  id              String   @id
+  model           String
+  manufacturer    String?
+  power_kva       Float    // Мощность (кВА)
+  hv_kv           Float    // Напряжение ВН (кВ)
+  lv_kv           Float    // Напряжение НН (кВ)
+  uk_percent      Float    // Напряжение КЗ (%)
+  pk_kw           Float?   // Потери КЗ (кВт)
+  p0_kw           Float?   // Потери ХХ (кВт)
+  i0_percent      Float?   // Ток ХХ (%)
+  
+  // Сопротивления (расчётные)
+  r_ohm           Float?   // Активное сопротивление (Ом)
+  x_ohm           Float?   // Реактивное сопротивление (Ом)
+  
+  created_at      DateTime @default(now())
+  
+  @@unique([model])
+}
+
+// ============================================================================
+// ВАЛИДАЦИЯ
+// ============================================================================
+
+/// Правила валидации
+model ValidationRule {
+  id              String   @id
+  code            String   @unique
+  name            String
+  description     String
+  category        String   // PROTECTION, CABLE, SELECTIVITY, VOLTAGE
+  severity        String   // LOW, MEDIUM, HIGH, CRITICAL
+  formula         String?  // JSON: формула проверки
+  threshold_min   Float?
+  threshold_max   Float?
+  unit            String?
+  enabled         Boolean  @default(true)
+  
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  
+  validations     ValidationResult[]
+}
+
+/// Результаты валидации
+model ValidationResult {
+  id              String   @id
+  rule_id         String
+  element_id      String?
+  device_id       String?
+  connection_id   String?
+  
+  status          String   // PASS, WARN, FAIL, CRITICAL
+  actual_value    Float?
+  expected_value  Float?
+  deviation       Float?
+  
+  message         String
+  recommendation  String?
+  
+  acknowledged    Boolean  @default(false)
+  acknowledged_by String?
+  acknowledged_at DateTime?
+  
+  created_at      DateTime @default(now())
+  
+  rule            ValidationRule @relation(fields: [rule_id], references: [id])
+  element         Element?       @relation(fields: [element_id], references: [id], onDelete: Cascade)
+  device          Device?        @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  connection      Connection?    @relation(fields: [connection_id], references: [id], onDelete: Cascade)
+  
+  @@index([status])
+  @@index([rule_id])
+}

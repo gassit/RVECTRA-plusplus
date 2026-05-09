@@ -343,9 +343,12 @@ export default function NetworkGraphG6({
         },
       },
       edge: {
-        // FIX: polyline — ломаная линия через контрольные точки от ELK ORTHOGONAL
+        // FIX v5: polyline с встроенным orthogonal router
+        // G6 v5 сам рассчитывает ортогональную маршрутизацию (углы 90°)
+        // controlPoints из ELK не нужны — G6 v5 не exposes их для per-edge data
         type: 'polyline',
         style: {
+          router: { type: 'orth' },
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
             return lifeStatus === 'LIVE' ? '#22c55e' : '#94a3b8';
@@ -732,23 +735,15 @@ export default function NetworkGraphG6({
             };
           });
 
-        // --- 3. Рёбра с контрольными точками от ELK ---
+        // --- 3. Рёбра (G6 v5 orth router рассчитает маршрутизацию сам) ---
         const apiEdgeMap = new Map(data.edges.map(e => [e.id, e]));
         const edges = layoutResult.edges.map(elkEdge => {
           const apiEdge = apiEdgeMap.get(elkEdge.id);
-          const edgeStyle: any = {};
-          // FIX: startPoint/endPoint — точки на границе узлов от ELK (не центр!)
-          if (elkEdge.startPoint) edgeStyle.startPoint = elkEdge.startPoint;
-          if (elkEdge.endPoint) edgeStyle.endPoint = elkEdge.endPoint;
-          // FIX: controlPoints — промежуточные точки излома
-          if (elkEdge.controlPoints?.length) edgeStyle.controlPoints = elkEdge.controlPoints;
-
           return {
             id: elkEdge.id,
             source: elkEdge.source,
             target: elkEdge.target,
             data: (apiEdge as any)?.data || {},
-            ...(Object.keys(edgeStyle).length ? { style: edgeStyle } : {}),
           };
         });
 

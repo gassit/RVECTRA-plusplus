@@ -1,13 +1,13 @@
 /**
- * ELK Layout Engine — чистая интеграция с G6
+ * ELK Layout Engine — чистая интеграция с G6 v5
  *
  * Один вызов ELK с нативной иерархией (INCLUDE_CHILDREN).
  * Cabinet = ELK группа с children внутри.
  * Рёбра element→element напрямую.
  *
  * Координаты: ELK возвращает top-left → конвертируем в G6 center.
- * Порты: FREE — ELK создаёт столько портов, сколько нужно.
- * Маршрутизация: ORTHOGONAL (углы 90°) с точками излома (bendPoints).
+ * Маршрутизация рёбер: G6 v5 builtin router: { type: 'orth' }.
+ * ELK отвечает только за позиции нод и combos.
  */
 
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -46,14 +46,7 @@ interface LayoutEdge {
 
 export interface LayoutResult {
   nodes: Array<{ id: string; x: number; y: number; width: number; height: number }>;
-  edges: Array<{
-    id: string;
-    source: string;
-    target: string;
-    startPoint?: { x: number; y: number };
-    endPoint?: { x: number; y: number };
-    controlPoints?: Array<{ x: number; y: number }>;
-  }>;
+  edges: Array<{ id: string; source: string; target: string }>;
   combos: Array<{
     id: string;
     x: number;
@@ -154,7 +147,6 @@ export async function computeElkLayout(
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': 'DOWN',
-      // FIX: ORTHOGONAL вместо SPLINES для углов 90°
       'elk.edgeRouting': 'ORTHOGONAL',
       'elk.spacing.nodeNode': '25',
       'elk.layered.spacing.nodeNodeBetweenLayers': '50',
@@ -202,9 +194,9 @@ export async function computeElkLayout(
     }
   }
 
-  // --- 6. Сбор рёбер с контрольными точками ---
-  // ELK может вернуть гипердугу (несколько sources/targets) для рёбер
-  // с одинаковыми source и target. Разворачиваем обратно.
+  // --- 6. Сбор рёбер ---
+  // G6 v5 сам рассчитывает маршрутизацию через router: { type: 'orth' }.
+  // Нам нужны только source/target. ELK может сливать рёбра в гипердуги.
   const originalEdgeMap = new Map(validEdges.map(e => [e.id, e]));
   const finalEdges: LayoutResult['edges'] = [];
   const usedOriginalIds = new Set<string>();
@@ -214,23 +206,19 @@ export async function computeElkLayout(
     const targets: string[] = elkEdge.targets || [];
     if (!sources.length || !targets.length) continue;
 
-    // FIX: Извлекаем startPoint, endPoint и controlPoints из ELK
-    const edgePoints = extractEdgePoints(elkEdge);
-
     if (sources.length === 1 && targets.length === 1) {
       const s = sources[0], t = targets[0];
       if (s === t) continue;
-      finalEdges.push({ id: elkEdge.id, source: s, target: t, ...edgePoints });
+      finalEdges.push({ id: elkEdge.id, source: s, target: t });
       usedOriginalIds.add(elkEdge.id);
     } else {
-      // Гипердуга — разворачиваем
+      // Гипердуга — разворачиваем обратно
       for (let si = 0; si < sources.length; si++) {
         for (let ti = 0; ti < targets.length; ti++) {
           const s = sources[si], t = targets[ti];
           if (s === t) continue;
-          // Ищем оригинальное ребро
           const origId = findOriginalEdgeId(originalEdgeMap, usedOriginalIds, s, t);
-          finalEdges.push({ id: origId || `edge_${s}_${t}`, source: s, target: t, ...edgePoints });
+          finalEdges.push({ id: origId || `edge_${s}_${t}`, source: s, target: t });
           if (origId) usedOriginalIds.add(origId);
         }
       }
@@ -264,65 +252,6 @@ export async function computeElkLayout(
 // ============================================================================
 // Вспомогательные функции
 // ============================================================================
-
-/** FIX: Извлечь startPoint, endPoint и controlPoints из ELK edge.
- *
- * ELK возвращает sections, каждая содержит:
- *   - startPoint: точка выхода (на границе узла или на границе группы)
- *   - endPoint:   точка входа (на границе узла или на границе группы)
- *   - bendPoints: промежуточные точки излома
- *
- * Для G6:
- *   - startPoint/endPoint → управляют началом и концом линии (не от центра узла)
- *   - controlPoints → промежуточные точки излома для polyline
- *
- * Multi-section (ребро пересекает границу группы):
- *   - startPoint берём из sections[0]
- *   - endPoint берём из sections[last]
- *   - intermediate junction points (startPoint sections[1+]) → в controlPoints
- */
-function extractEdgePoints(elkEdge: any): {
-  startPoint?: { x: number; y: number };
-  endPoint?: { x: number; y: number };
-  controlPoints?: Array<{ x: number; y: number }>;
-} {
-  const sections = elkEdge.sections || [];
-  if (!sections.length) return {};
-
-  const first = sections[0];
-  const last = sections[sections.length - 1];
-  const result: any = {};
-
-  // FIX: Точка выхода на границе source-узла
-  if (first.startPoint) {
-    result.startPoint = { x: first.startPoint.x, y: first.startPoint.y };
-  }
-
-  // FIX: Точка входа на границе target-узла
-  if (last.endPoint) {
-    result.endPoint = { x: last.endPoint.x, y: last.endPoint.y };
-  }
-
-  // FIX: Промежуточные точки излома
-  const points: Array<{ x: number; y: number }> = [];
-  for (let i = 0; i < sections.length; i++) {
-    const section = sections[i];
-    // Для sections после первой: startPoint — junction point на границе группы
-    if (i > 0 && section.startPoint) {
-      points.push({ x: section.startPoint.x, y: section.startPoint.y });
-    }
-    // bendPoints — изломы внутри каждой section
-    for (const bp of section.bendPoints || []) {
-      points.push({ x: bp.x, y: bp.y });
-    }
-  }
-
-  if (points.length) {
-    result.controlPoints = points;
-  }
-
-  return result;
-}
 
 /** Найти оригинальное ребро по source/target */
 function findOriginalEdgeId(

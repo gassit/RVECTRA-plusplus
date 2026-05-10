@@ -7,7 +7,10 @@
  *
  * Координаты: ELK возвращает top-left → конвертируем в G6 center.
  * Маршрутизация рёбер: G6 v5 builtin router: { type: 'orth' }.
- * ELK отвечает только за позиции нод и combos.
+ * ELK отвечает только за позиции нод.
+ *
+ * ВАЖНО: NODE_SIZES должны точно совпадать с размерами в G6!
+ * Иначе маршрутизация рёбер пройдёт сквозь ноды.
  */
 
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -15,16 +18,16 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 const elk = new ELK();
 
 // ============================================================================
-// Размеры узлов по типам
+// Размеры узлов по типам — ДОЛЖНЫ СОВПАДАТЬ с G6 node style.size!
 // ============================================================================
 export const NODE_SIZES: Record<string, { width: number; height: number }> = {
-  source:      { width: 120, height: 60 },
-  bus:         { width: 150, height: 30 },
-  breaker:     { width: 100, height: 50 },
-  meter:       { width: 100, height: 50 },
-  load:        { width: 120, height: 60 },
-  junction:    { width: 30,  height: 30 },
-  transformer: { width: 100, height: 60 },
+  source:      { width: 160, height: 80 },
+  bus:         { width: 200, height: 40 },
+  breaker:     { width: 140, height: 70 },
+  meter:       { width: 140, height: 70 },
+  load:        { width: 160, height: 80 },
+  junction:    { width: 40,  height: 40 },
+  transformer: { width: 140, height: 80 },
 };
 
 // ============================================================================
@@ -47,6 +50,7 @@ interface LayoutEdge {
 export interface LayoutResult {
   nodes: Array<{ id: string; x: number; y: number; width: number; height: number }>;
   edges: Array<{ id: string; source: string; target: string }>;
+  // Combos больше не используются G6 — только для расчёта bounding box
   combos: Array<{
     id: string;
     x: number;
@@ -107,8 +111,7 @@ export async function computeElkLayout(
   }
 
   // --- 2. Фильтрация рёбер ---
-  // Рёбра должны ссылаться на существующие узлы
-  // Допускаем рёбра к шкафам (их ELK обработает как группы)
+  // Рёбра должны ссылаться на существующие узлы (не на шкафы)
   const validEdges = edges.filter(e => {
     const srcOk = nodeMap.has(e.source);
     const tgtOk = nodeMap.has(e.target);
@@ -129,7 +132,7 @@ export async function computeElkLayout(
       labels: [{ text: label }],
       children: children.map(child => {
         const type = (child.type || child.data?.type || 'load').toLowerCase();
-        const size = NODE_SIZES[type] || { width: 80, height: 40 };
+        const size = NODE_SIZES[type] || { width: 160, height: 80 };
         return {
           id: child.id,
           width: size.width,
@@ -138,9 +141,11 @@ export async function computeElkLayout(
         };
       }),
       layoutOptions: {
-        'elk.spacing.nodeNode': '25',
-        'elk.layered.spacing.nodeNodeBetweenLayers': '40',
-        'elk.padding': '[top=20,left=20,bottom=20,right=20]',
+        'elk.spacing.nodeNode': '30',
+        'elk.layered.spacing.nodeNodeBetweenLayers': '50',
+        'elk.layered.spacing.edgeNode': '20',
+        'elk.layered.spacing.edgeEdge': '15',
+        'elk.padding': '[top=25,left=25,bottom=25,right=25]',
       },
     });
   }
@@ -149,7 +154,7 @@ export async function computeElkLayout(
     .filter(n => !cabinetIds.has(n.id))
     .map(node => {
       const type = (node.type || node.data?.type || 'load').toLowerCase();
-      const size = NODE_SIZES[type] || { width: 80, height: 40 };
+      const size = NODE_SIZES[type] || { width: 160, height: 80 };
       return {
         id: node.id,
         width: size.width,
@@ -173,10 +178,13 @@ export async function computeElkLayout(
       'elk.algorithm': 'layered',
       'elk.direction': 'DOWN',
       'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.spacing.nodeNode': '25',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '50',
+      // Пространственные отступы — раздвигаем элементы для наглядности
+      'elk.spacing.nodeNode': '30',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '60',
+      'elk.layered.spacing.edgeNode': '20',
+      'elk.layered.spacing.edgeEdge': '15',
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-      'elk.spacing.componentComponent': '40',
+      'elk.spacing.componentComponent': '50',
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
     },
@@ -202,7 +210,7 @@ export async function computeElkLayout(
     const ch = child.height || 0;
 
     if (cabinetIds.has(child.id)) {
-      // Группа — сохраняем top-left для G6 combo
+      // Группа — сохраняем top-left (нужно для bounding box)
       comboPositions.set(child.id, { x: cx, y: cy, width: cw, height: ch });
 
       // Дочерние узлы внутри группы
@@ -261,6 +269,7 @@ export async function computeElkLayout(
     id, x: p.x, y: p.y, width: p.width, height: p.height,
   }));
 
+  // Combos — сохраняем для расчёта bounding box в NetworkGraphG6
   const resultCombos = [...comboPositions.entries()].map(([id, p]) => ({
     id,
     x: p.x,
@@ -270,7 +279,7 @@ export async function computeElkLayout(
     label: nodeMap.get(id)?.data?.name || nodeMap.get(id)?.data?.label || id,
   }));
 
-  console.log(`[ELK] ${resultNodes.length} nodes, ${finalEdges.length} edges, ${resultCombos.length} combos`);
+  console.log(`[ELK] ${resultNodes.length} nodes, ${finalEdges.length} edges, ${resultCombos.length} cabinets`);
   return { nodes: resultNodes, edges: finalEdges, combos: resultCombos };
 }
 
@@ -295,11 +304,11 @@ function findOriginalEdgeId(
 function fallbackLayout(nodes: LayoutNode[]): LayoutResult {
   const resultNodes = nodes.map((node, i) => {
     const type = (node.type || node.data?.type || 'load').toLowerCase();
-    const size = NODE_SIZES[type] || { width: 120, height: 60 };
+    const size = NODE_SIZES[type] || { width: 160, height: 80 };
     return {
       id: node.id,
-      x: size.width / 2 + 100 + (i % 10) * 150,
-      y: size.height / 2 + 100 + Math.floor(i / 10) * 100,
+      x: size.width / 2 + 100 + (i % 10) * 200,
+      y: size.height / 2 + 100 + Math.floor(i / 10) * 120,
       width: size.width,
       height: size.height,
     };

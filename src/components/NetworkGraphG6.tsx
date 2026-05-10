@@ -238,13 +238,20 @@ export default function NetworkGraphG6({
           radius: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
             // BUS - без скругления для инженерного вида
-            return nodeType === 'bus' ? 0 : 6;
+            if (nodeType === 'bus') return 0;
+            // Cabinet bounding box - закруглённый прямоугольник
+            if (nodeType === 'cabinet') return 8;
+            return 6;
           },
           fill: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
             // BUS - простая медная заливка без градиента
             if (nodeType === 'bus') {
               return '#CD7F32';
+            }
+            // Cabinet bounding box - светлая заливка
+            if (nodeType === 'cabinet') {
+              return '#f8fafc';
             }
             return '#ffffff';
           },
@@ -256,6 +263,10 @@ export default function NetworkGraphG6({
             if (nodeType === 'bus') {
               return '#8B5A2B'; // тёмно-коричневый для контура
             }
+            // Cabinet bounding box - amber dashed border
+            if (nodeType === 'cabinet') {
+              return '#d97706';
+            }
             return TYPE_COLORS[nodeType]?.primary || '#e2e8f0';
           },
           lineWidth: (d: any) => {
@@ -265,17 +276,27 @@ export default function NetworkGraphG6({
           },
           shadowColor: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            // BUS - без тени
-            return nodeType === 'bus' ? 'transparent' : 'rgba(0, 0, 0, 0.15)';
+            // BUS и cabinet - без тени
+            if (nodeType === 'bus' || nodeType === 'cabinet') return 'transparent';
+            return 'rgba(0, 0, 0, 0.15)';
           },
           shadowBlur: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            return nodeType === 'bus' ? 0 : 10;
+            if (nodeType === 'bus' || nodeType === 'cabinet') return 0;
+            return 10;
+          },
+          // Cabinet bounding box: штриховой прямоугольник с заливкой
+          lineDash: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            return nodeType === 'cabinet' ? [5, 5] : undefined;
           },
           shadowOffsetX: 0,
-          shadowOffsetY: 4,
+          shadowOffsetY: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            return nodeType === 'cabinet' ? 0 : 4;
+          },
           cursor: 'pointer',
-          zIndex: 1,              // Узлы поверх combos
+          // zIndex: cabinet=0 (фон), обычные=2 (поверх рёбер)
           // Точки привязки для рёбер
           anchorPoints: [
             [0.5, 0],   // индекс 0: верхний центр (вход от источника)
@@ -345,9 +366,9 @@ export default function NetworkGraphG6({
       edge: {
         // FIX v5: polyline с встроенным orthogonal router
         // G6 v5 сам рассчитывает ортогональную маршрутизацию (углы 90°)
-        // controlPoints из ELK не нужны — G6 v5 не exposes их для per-edge data
         type: 'polyline',
         style: {
+          zIndex: 1,   // Рёбра между cabinet (0) и nodes (2)
           router: { type: 'orth' },
           stroke: (d: any) => {
             const lifeStatus = d.data?.lifeStatus;
@@ -706,7 +727,7 @@ export default function NetworkGraphG6({
 
     const processDataAndRender = async () => {
       try {
-        console.log('[G6] ELK layout → passive render...');
+        console.log('[G6] ELK layout → bounding-box cabinets → passive render...');
 
         // --- 1. Вызов ELK для расчёта позиций ---
         // Передаём parentId из данных для группировки по шкафам
@@ -716,33 +737,94 @@ export default function NetworkGraphG6({
         );
 
         const posMap = new Map(layoutResult.nodes.map(n => [n.id, n]));
-        const comboIds = new Set(layoutResult.combos.map(c => c.id));
+        const cabinetIds = new Set(layoutResult.combos.map(c => c.id));
 
-        // --- 2. Узлы с координатами от ELK (G6 center) ---
-        // Исключаем шкафы — они отрисовываются как combos
-        const nodes = data.nodes
-          .filter(n => !comboIds.has(n.id))
+        // --- 2. Обычные узлы (без шкафов) с координатами от ELK ---
+        const regularNodes = data.nodes
+          .filter(n => !cabinetIds.has(n.id))
           .map(node => {
             const pos = posMap.get(node.id);
             const type = (node.type || 'load').toLowerCase();
             return {
               id: node.id,
-              combo: (node as any).parentId || undefined,  // G6 combo = parentId
+              // НЕ используем combo — вместо этого рисуем cabinet как отдельный rect
               data: { ...node, type },
               style: {
                 x: pos?.x ?? 0,
                 y: pos?.y ?? 0,
                 size: pos ? [pos.width, pos.height] : undefined,
+                zIndex: 2,   // Обычные узлы поверх рёбер и шкафов
               },
             };
           });
 
-        // --- 3. Рёбра с port-to-parent remapping ---
+        // --- 3. Cabinet bounding boxes (вместо G6 combos) ---
+        // Рассчитываем габариты по позициям дочерних узлов
+        const CABINET_PADDING = 25;
+        const cabinetNodes: any[] = [];
+
+        for (const combo of layoutResult.combos) {
+          const cabinetData = data.nodes.find(n => n.id === combo.id);
+          const cabinetName = combo.label || cabinetData?.name || combo.id;
+
+          // Собираем детей этого шкафа (по parentId из исходных данных)
+          const childPositions = regularNodes
+            .filter(n => (n.data as any)?.parentId === combo.id);
+
+          if (childPositions.length > 0) {
+            // Bounding box из координат детей (G6 center → вычисляем края)
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const child of childPositions) {
+              const childSize: [number, number] = (child.style?.size as any) || [160, 80];
+              const halfW = childSize[0] / 2;
+              const halfH = childSize[1] / 2;
+              const cx = (child.style?.x as number) || 0;
+              const cy = (child.style?.y as number) || 0;
+              minX = Math.min(minX, cx - halfW);
+              minY = Math.min(minY, cy - halfH);
+              maxX = Math.max(maxX, cx + halfW);
+              maxY = Math.max(maxY, cy + halfH);
+            }
+
+            // Добавляем padding и вычисляем центр (G6 формат)
+            const bboxW = maxX - minX + CABINET_PADDING * 2;
+            const bboxH = maxY - minY + CABINET_PADDING * 2;
+            const bboxX = minX - CABINET_PADDING + bboxW / 2;
+            const bboxY = minY - CABINET_PADDING + bboxH / 2;
+
+            cabinetNodes.push({
+              id: combo.id,
+              data: { ...(cabinetData || {}), type: 'cabinet', name: cabinetName },
+              style: {
+                x: bboxX,
+                y: bboxY,
+                size: [bboxW, bboxH],
+                zIndex: 0,   // Щиты на заднем плане
+              },
+            });
+          } else {
+            // Пустой шкаф — рисуем минимальный прямоугольник
+            const minW = 200, minH = 100;
+            cabinetNodes.push({
+              id: combo.id,
+              data: { ...(cabinetData || {}), type: 'cabinet', name: cabinetName },
+              style: {
+                x: (combo.x || 0) + (combo.width || minW) / 2,
+                y: (combo.y || 0) + (combo.height || minH) / 2,
+                size: [combo.width || minW, combo.height || minH],
+                zIndex: 0,
+              },
+            });
+          }
+        }
+
+        // Все ноды: сначала шкафы (фон), потом обычные (поверх)
+        const nodes = [...cabinetNodes, ...regularNodes];
+
+        // --- 4. Рёбра с port-to-parent remapping ---
         const apiEdgeMap = new Map(data.edges.map(e => [e.id, e]));
 
-        // 3a. Build port-to-parent map for remapping dangling port references
-        // ELK may return edges where source/target is a port ID (e.g. "port_123")
-        // G6 v5 expects source/target to be node IDs with optional sourcePort/targetPort
+        // 4a. Build port-to-parent map for remapping dangling port references
         const portToParent = new Map<string, { nodeId: string; portKey: string }>();
         data.nodes.forEach(node => {
           const ports = (node as any).ports;
@@ -758,11 +840,8 @@ export default function NetworkGraphG6({
             });
           }
         });
-        if (portToParent.size > 0) {
-          console.log(`[G6] Built port map with ${portToParent.size} port entries`);
-        }
 
-        // 3b. Map ELK edges to G6 edges with port remapping
+        // 4b. Map ELK edges to G6 edges with port remapping
         const edges = layoutResult.edges.map(elkEdge => {
           const apiEdge = apiEdgeMap.get(elkEdge.id);
           const edgeData = (apiEdge as any)?.data || {};
@@ -799,35 +878,25 @@ export default function NetworkGraphG6({
           return g6Edge;
         });
 
-        // --- 4. Combos (шкафы) с позициями от ELK (top-left для G6) ---
-        const combos = layoutResult.combos.map(c => ({
-          id: c.id,
-          data: { name: c.label, type: 'CABINET', label: c.label },
-          style: { x: c.x, y: c.y, width: c.width, height: c.height },
-        }));
+        console.log(`[G6] ${regularNodes.length} regular nodes, ${cabinetNodes.length} cabinets, ${edges.length} edges`);
 
-        console.log(`[G6] ${nodes.length} nodes, ${edges.length} edges, ${combos.length} combos`);
-
-        // FIX v5: Фильтрация phantom ссылок в рёбрах (prevent opposite.getPosition error)
-        // G6 v5 крашится если edge.source или edge.target не существуют среди nodes или combos
-        const nodeIds = new Set([...nodes.map(n => n.id), ...combos.map(c => c.id)]);
-        const validEdges = edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+        // Валидация рёбер: source/target должны существовать среди всех нод
+        const allNodeIds = new Set(nodes.map(n => n.id));
+        const validEdges = edges.filter(e => allNodeIds.has(e.source) && allNodeIds.has(e.target));
 
         if (validEdges.length !== edges.length) {
-          const dropped = edges.filter(e => !nodeIds.has(e.source) || !nodeIds.has(e.target));
+          const dropped = edges.filter(e => !allNodeIds.has(e.source) || !allNodeIds.has(e.target));
           console.warn(`[G6] Filtered ${dropped.length}/${edges.length} edges with unresolvable refs:`);
           dropped.forEach(e => {
             console.warn(`  Edge "${e.id}": source="${e.source}" target="${e.target}"`);
-            console.warn(`    Available nodes: ${nodes.map(n => n.id).join(', ')}`);
-            console.warn(`    Available combos: ${combos.map(c => c.id).join(', ')}`);
           });
         } else {
-          console.log(`[G6] All ${validEdges.length} edges validated successfully`);
+          console.log(`[G6] All ${validEdges.length} edges validated`);
         }
 
-        // --- 5. Рендер ---
+        // --- 5. Рендер (без combos!) ---
         try { (graph as any).clearData(); } catch (_) {}
-        graph.setData({ nodes: nodes as any, edges: validEdges as any, combos });
+        graph.setData({ nodes: nodes as any, edges: validEdges as any });
         await graph.render();
         graph.fitView();
         console.log('[G6] Render complete');

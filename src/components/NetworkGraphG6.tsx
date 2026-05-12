@@ -738,10 +738,10 @@ export default function NetworkGraphG6({
         console.log('[G6] ELK layout → bounding-box cabinets → passive render...');
 
         // Диагностика входных данных
-        const cabinetNodes = data.nodes.filter(n => n.type?.toUpperCase() === 'CABINET');
+        const cabinetsInData = data.nodes.filter(n => n.type?.toUpperCase() === 'CABINET');
         const nodesWithParent = data.nodes.filter(n => (n as any).parentId);
         console.log(`[G6] Input data: ${data.nodes.length} nodes, ${data.edges.length} edges`);
-        console.log(`[G6] Cabinets in data: ${cabinetNodes.length}`, cabinetNodes.map(c => ({ id: c.id, name: c.name, type: c.type })));
+        console.log(`[G6] Cabinets in data: ${cabinetsInData.length}`, cabinetsInData.map(c => ({ id: c.id, name: c.name, type: c.type })));
         console.log(`[G6] Nodes with parentId: ${nodesWithParent.length}`, nodesWithParent.map(n => ({ id: n.id, parentId: (n as any).parentId })));
 
         // Показать все типы узлов

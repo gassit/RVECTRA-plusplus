@@ -421,11 +421,11 @@ export default function Home() {
 
   const graphData = useMemo(() => {
     const allElements = filteredData?.elements || networkData?.elements || [];
-    // Фильтруем: cabinet-ы не показываем как nodes (они combos)
-    const nonCabinetElements = allElements.filter(e => e.type.toLowerCase() !== 'cabinet');
+    // НЕ фильтруем cabinet-ы - они должны быть в nodes для ELK группировки!
+    // ELK сам определит их как группы по parentId детей
     
     return {
-      nodes: nonCabinetElements.map(e => ({
+      nodes: allElements.map(e => ({
         id: e.id,
         type: e.type.toUpperCase() as any,
         name: e.name,
@@ -437,7 +437,8 @@ export default function Home() {
         status: e.operationalStatus as any,
         lifeStatus: e.electricalStatus as any,
         voltageLevel: e.voltageLevel || undefined,
-        combo: e.parentId || undefined,
+        // ВАЖНО: parentId нужен для ELK группировки детей внутри шкафов
+        parentId: e.parentId || undefined,
         // Мощности
         sumPInstalled: e.sumPInstalled || undefined,
         sumPCalculated: e.sumPCalculated || undefined,
@@ -471,7 +472,7 @@ export default function Home() {
         length: c.cable?.length ?? undefined,
         cable: c.cable,
       })),
-      combos: networkData?.combos || [],
+      // combos больше не нужны - ELK рисует cabinet как bounding boxes
     };
   }, [filteredData, networkData]);
 

@@ -322,10 +322,14 @@ export default function NetworkGraphG6({
             }
             return name.length > 18 ? name.slice(0, 18) + '...' : name;
           },
-          labelFill: '#000000',
+          labelFill: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            // Cabinet - оранжевый цвет названия
+            return nodeType === 'cabinet' ? '#d97706' : '#000000';
+          },
           labelFontSize: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            return nodeType === 'cabinet' ? 16 : 12;
+            return nodeType === 'cabinet' ? 18 : 12;
           },
           labelFontWeight: 'bold',
           labelPlacement: (d: any) => {

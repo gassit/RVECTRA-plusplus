@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { importFromExcel } from '@/lib/services/import.service';
 
-export async function POST() {
+export async function GET() {
   try {
+    console.log('[import] Starting import via GET...');
     const result = await importFromExcel();
+    console.log('[import] Import completed:', result);
     
     return NextResponse.json(result);
   } catch (error) {
@@ -18,4 +20,9 @@ export async function POST() {
       { status: 500 }
     );
   }
+}
+
+export async function POST() {
+  // Delegate to GET for simplicity
+  return GET();
 }

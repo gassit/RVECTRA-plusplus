@@ -461,6 +461,7 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
   const processedElements = new Set<string>();
   const elementIdMap = new Map<string, string>(); // оригинальное имя -> generated ID
   const elementTypeMap = new Map<string, ElementType>(); // имя -> тип
+  const elementLocationMap = new Map<string, string>(); // имя -> расположение
   const pendingConnections: Array<{
     fromName: string;
     toName: string;
@@ -479,20 +480,23 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
   let cableKey = allKeys.find(k => k.toLowerCase().includes('кабель') || k.toLowerCase() === 'cable');
   let toKey = allKeys.find(k => k.toLowerCase().includes('до') || k.toLowerCase() === 'to');
   let avrKey = allKeys.find(k => k.toLowerCase().includes('авр') || k.toLowerCase() === 'avr');
+  let locationKey = allKeys.find(k => k.toLowerCase().includes('расположение') || k.toLowerCase().includes('помещение') || k.toLowerCase() === 'location');
 
   // Fallback на индексы если не нашли по имени
   if (!fromKey && allKeys.length > 2) fromKey = allKeys[2];
   if (!cableKey && allKeys.length > 3) cableKey = allKeys[3];
   if (!toKey && allKeys.length > 4) toKey = allKeys[4];
   if (!avrKey && allKeys.length > 5) avrKey = allKeys[5];
+  if (!locationKey && allKeys.length > 7) locationKey = allKeys[7];
 
-  console.log(`Column mapping: from="${fromKey}", cable="${cableKey}", to="${toKey}", avr="${avrKey}"`);
+  console.log(`Column mapping: from="${fromKey}", cable="${cableKey}", to="${toKey}", avr="${avrKey}", location="${locationKey}"`);
 
   for (const row of rows) {
     const fromName = fromKey ? String(row[fromKey] || '') : '';
     const connectionType = cableKey ? String(row[cableKey] || '') : '';
     const toName = toKey ? String(row[toKey] || '') : '';
     const avrName = avrKey ? String(row[avrKey] || '') : '';
+    const locationValue = locationKey ? String(row[locationKey] || '') : '';
 
     if (!fromName && !toName) continue;
 
@@ -503,6 +507,10 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
         const type = detectElementType(name);
         elementTypeMap.set(name, type);
         processedElements.add(name);
+      }
+      // Сохраняем расположение (последнее непустое значение)
+      if (locationValue && locationValue !== 'NaN') {
+        elementLocationMap.set(name, locationValue);
       }
     }
 
@@ -546,6 +554,7 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
   // Сначала создаём CABINET (чтобы parent_id детей валидировался)
   for (const cabName of cabinetNames) {
     const id = cabinetNameToId.get(cabName)!;
+    const location = elementLocationMap.get(cabName) || null;
     elementIdMap.set(cabName, id);
 
     await db.element.create({
@@ -554,6 +563,7 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
         elementId: id,
         type: 'CABINET',
         name: cabName.slice(0, 100),
+        location,
         voltageLevel: 0.4,
         posX: 0,
         posY: 0,
@@ -570,6 +580,7 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
 
     const id = generateElementId(type, undefined, name.replace(/\s+/g, '_').toUpperCase().slice(0, 30));
     const parentId = parentMap.get(name);
+    const location = elementLocationMap.get(name) || null;
 
     elementIdMap.set(name, id);
 
@@ -579,6 +590,7 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
         elementId: id,
         type,
         name: name.slice(0, 100),
+        location,
         voltageLevel: 0.4,
         parentId: parentId || null,
         posX: 0,
@@ -744,6 +756,7 @@ async function importCabinets(rows: ExcelRow[]): Promise<{ elements: number; dev
 
   for (const row of rows) {
     const name = String(row['Наименование'] || row['Название'] || row['Name'] || row['name'] || `Шкаф ${elements + 1}`);
+    const location = String(row['Расположение'] || row['Помещение'] || row['Location'] || '');
     const parentIdValue = String(row['Родитель'] || row['Parent'] || '');
 
     const elementId = generateElementId('CABINET', undefined, name.replace(/\s+/g, '_').toUpperCase());
@@ -754,6 +767,7 @@ async function importCabinets(rows: ExcelRow[]): Promise<{ elements: number; dev
         elementId: elementId,
         type: 'CABINET',
         name: name,
+        location: location || null,
         parentId: parentIdValue || null,
         voltageLevel: 0.4,
         posX: 0,

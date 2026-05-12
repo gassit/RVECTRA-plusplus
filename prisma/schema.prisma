@@ -143,6 +143,7 @@ model Element {
   voltageLevel                            Float?
   posX                                    Float?
   posY                                    Float?
+  location                                String?
   electricalStatus                        String       @default("DEAD")
   operationalStatus                       String       @default("ON")
   createdAt                               DateTime     @default(now())

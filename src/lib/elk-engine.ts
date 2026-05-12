@@ -141,13 +141,37 @@ export async function computeElkLayout(
         };
       }),
       layoutOptions: {
-        'elk.spacing.nodeNode': '30',
-        'elk.layered.spacing.nodeNodeBetweenLayers': '50',
-        'elk.layered.spacing.edgeNode': '20',
-        'elk.layered.spacing.edgeEdge': '15',
-        'elk.padding': '[top=25,left=25,bottom=25,right=25]',
+        'elk.spacing.nodeNode': '40',
+        'elk.layered.spacing.nodeNodeBetweenLayers': '70',
+        'elk.layered.spacing.edgeNode': '35',
+        'elk.layered.spacing.edgeEdge': '20',
+        'elk.padding': '[top=30,left=30,bottom=30,right=30]',
       },
     });
+  }
+
+  // --- 3a. Добавляем пустые Cabinet (без детей) как минимальные группы ---
+  const emptyCabinetIds: string[] = [];
+  for (const cabinetId of cabinetIds) {
+    if (!childrenByParent.has(cabinetId)) {
+      const cabinetNode = nodeMap.get(cabinetId);
+      const label = cabinetNode?.data?.name || cabinetNode?.data?.label || cabinetId;
+      emptyCabinetIds.push(cabinetId);
+      
+      elkGroups.push({
+        id: cabinetId,
+        labels: [{ text: label }],
+        children: [],  // Пустой шкаф — будет иметь минимальный размер
+        width: 200,
+        height: 100,
+        layoutOptions: {
+          'elk.spacing.nodeNode': '40',
+          'elk.padding': '[top=30,left=30,bottom=30,right=30]',
+        },
+      });
+      
+      console.log(`[ELK] Empty cabinet added: ${cabinetId} (${label})`);
+    }
   }
 
   const elkRootChildren: any[] = rootNodes
@@ -178,15 +202,24 @@ export async function computeElkLayout(
       'elk.algorithm': 'layered',
       'elk.direction': 'DOWN',
       'elk.edgeRouting': 'ORTHOGONAL',
-      // Пространственные отступы — раздвигаем элементы для наглядности
-      'elk.spacing.nodeNode': '30',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '60',
-      'elk.layered.spacing.edgeNode': '20',
-      'elk.layered.spacing.edgeEdge': '15',
+      // Пространственные отступы — раздвигаем элементы для предотвращения пересечений
+      'elk.spacing.nodeNode': '50',                    // Увеличен отступ между узлами
+      'elk.layered.spacing.nodeNodeBetweenLayers': '80', // Увеличен отступ между слоями
+      'elk.layered.spacing.edgeNode': '40',            // Увеличен отступ рёбер от узлов
+      'elk.layered.spacing.edgeEdge': '20',            // Отступ между рёбрами
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-      'elk.spacing.componentComponent': '50',
+      'elk.spacing.componentComponent': '60',          // Отступ между компонентами
+      // Минимизация пересечений рёбер
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+      'elk.layered.crossingMinimization.semiInteractiveCrossingCounter': 'true',
+      // Размещение узлов для компактности
       'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+      // Дополнительные параметры для ортогональной маршрутизации
+      'elk.orthogonalEdgeRoutingSpacing': '20',
+      'elk.layered.edgeRouting.orthogonalEdges': 'true',
+      // Улучшение читаемости схемы
+      'elk.layered.thoroughness': '10',                // Больше итераций для лучшего результата
+      'elk.layered.feedbackEdges': 'false',            // Запрет обратных рёбер
     },
   };
 

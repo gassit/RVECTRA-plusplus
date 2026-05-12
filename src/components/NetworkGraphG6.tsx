@@ -272,7 +272,10 @@ export default function NetworkGraphG6({
           lineWidth: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
             // BUS - толстая линия
-            return nodeType === 'bus' ? 3 : 2;
+            if (nodeType === 'bus') return 3;
+            // Cabinet - более толстая линия для видимости контейнера
+            if (nodeType === 'cabinet') return 3;
+            return 2;
           },
           shadowColor: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
@@ -288,7 +291,7 @@ export default function NetworkGraphG6({
           // Cabinet bounding box: штриховой прямоугольник с заливкой
           lineDash: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            return nodeType === 'cabinet' ? [5, 5] : undefined;
+            return nodeType === 'cabinet' ? [8, 4] : undefined;  // Более длинные штрихи
           },
           shadowOffsetX: 0,
           shadowOffsetY: (d: any) => {
@@ -314,24 +317,29 @@ export default function NetworkGraphG6({
               return '';
             }
             if (nodeType === 'cabinet') {
-              return name.length > 14 ? name.slice(0, 14) + '...' : name;
+              // Cabinet - название в верхней части контейнера
+              return name.length > 20 ? name.slice(0, 20) + '...' : name;
             }
             return name.length > 18 ? name.slice(0, 18) + '...' : name;
           },
           labelFill: '#000000',
           labelFontSize: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            return nodeType === 'cabinet' ? 17 : 12;
+            return nodeType === 'cabinet' ? 16 : 12;
           },
           labelFontWeight: 'bold',
-          labelPlacement: 'center',
+          labelPlacement: (d: any) => {
+            const nodeType = (d.data?.type || 'load').toLowerCase();
+            // Cabinet - название сверху контейнера
+            return nodeType === 'cabinet' ? 'top' : 'center';
+          },
           labelOffsetY: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            return nodeType === 'cabinet' ? 0 : -15;
+            return nodeType === 'cabinet' ? -8 : -15;
           },
           labelMaxWidth: (d: any) => {
             const nodeType = (d.data?.type || 'load').toLowerCase();
-            return nodeType === 'cabinet' ? 160 : 140;
+            return nodeType === 'cabinet' ? 200 : 140;
           },
         },
         state: {
@@ -760,8 +768,10 @@ export default function NetworkGraphG6({
 
         // --- 3. Cabinet bounding boxes (вместо G6 combos) ---
         // Рассчитываем габариты по позициям дочерних узлов
-        const CABINET_PADDING = 25;
+        const CABINET_PADDING = 30;
         const cabinetNodes: any[] = [];
+
+        console.log(`[G6] Processing ${layoutResult.combos.length} cabinets from ELK`);
 
         for (const combo of layoutResult.combos) {
           const cabinetData = data.nodes.find(n => n.id === combo.id);
@@ -770,6 +780,8 @@ export default function NetworkGraphG6({
           // Собираем детей этого шкафа (по parentId из исходных данных)
           const childPositions = regularNodes
             .filter(n => (n.data as any)?.parentId === combo.id);
+
+          console.log(`[G6] Cabinet "${cabinetName}": ${childPositions.length} children, ELK size: ${combo.width}x${combo.height}`);
 
           if (childPositions.length > 0) {
             // Bounding box из координат детей (G6 center → вычисляем края)
@@ -803,15 +815,23 @@ export default function NetworkGraphG6({
               },
             });
           } else {
-            // Пустой шкаф — рисуем минимальный прямоугольник
-            const minW = 200, minH = 100;
+            // Пустой шкаф — используем координаты и размер от ELK
+            const minW = 220, minH = 120;
+            const cabW = combo.width || minW;
+            const cabH = combo.height || minH;
+            // ELK возвращает top-left, G6 нужен center
+            const cabX = (combo.x || 0) + cabW / 2;
+            const cabY = (combo.y || 0) + cabH / 2;
+
+            console.log(`[G6] Empty cabinet "${cabinetName}": position (${cabX}, ${cabY}), size ${cabW}x${cabH}`);
+
             cabinetNodes.push({
               id: combo.id,
               data: { ...(cabinetData || {}), type: 'cabinet', name: cabinetName },
               style: {
-                x: (combo.x || 0) + (combo.width || minW) / 2,
-                y: (combo.y || 0) + (combo.height || minH) / 2,
-                size: [combo.width || minW, combo.height || minH],
+                x: cabX,
+                y: cabY,
+                size: [cabW, cabH],
                 zIndex: 0,
               },
             });

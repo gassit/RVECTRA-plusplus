@@ -77,6 +77,8 @@ export async function computeElkLayout(
 ): Promise<LayoutResult> {
   if (!nodes?.length) return { nodes: [], edges: [], combos: [] };
 
+  console.log(`[ELK] Input: ${nodes.length} nodes, ${edges.length} edges`);
+
   // --- 1. Группировка по parentId ---
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
   const childrenByParent = new Map<string, LayoutNode[]>();
@@ -91,6 +93,7 @@ export async function computeElkLayout(
 
     if (isCabinet) {
       cabinetIds.add(node.id);
+      console.log(`[ELK] Found CABINET: id=${node.id}, type=${nodeType}, parentId=${node.parentId}`);
     }
 
     // Группируем детей по parentId
@@ -100,6 +103,7 @@ export async function computeElkLayout(
       if (parentType === 'CABINET' || cabinetIds.has(node.parentId)) {
         if (!childrenByParent.has(node.parentId)) childrenByParent.set(node.parentId, []);
         childrenByParent.get(node.parentId)!.push(node);
+        console.log(`[ELK] Child ${node.id} -> parent ${node.parentId}`);
         continue;
       }
     }
@@ -109,6 +113,8 @@ export async function computeElkLayout(
       rootNodes.push(node);
     }
   }
+
+  console.log(`[ELK] After grouping: ${cabinetIds.size} cabinets, ${childrenByParent.size} parents with children, ${rootNodes.length} root nodes`);
 
   // --- 2. Фильтрация рёбер ---
   // Рёбра должны ссылаться на существующие узлы (не на шкафы)

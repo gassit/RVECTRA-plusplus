@@ -737,6 +737,21 @@ export default function NetworkGraphG6({
       try {
         console.log('[G6] ELK layout → bounding-box cabinets → passive render...');
 
+        // Диагностика входных данных
+        const cabinetNodes = data.nodes.filter(n => n.type?.toUpperCase() === 'CABINET');
+        const nodesWithParent = data.nodes.filter(n => (n as any).parentId);
+        console.log(`[G6] Input data: ${data.nodes.length} nodes, ${data.edges.length} edges`);
+        console.log(`[G6] Cabinets in data: ${cabinetNodes.length}`, cabinetNodes.map(c => ({ id: c.id, name: c.name, type: c.type })));
+        console.log(`[G6] Nodes with parentId: ${nodesWithParent.length}`, nodesWithParent.map(n => ({ id: n.id, parentId: (n as any).parentId })));
+
+        // Показать все типы узлов
+        const typeCounts: Record<string, number> = {};
+        data.nodes.forEach(n => {
+          const t = n.type || 'unknown';
+          typeCounts[t] = (typeCounts[t] || 0) + 1;
+        });
+        console.log('[G6] Node types:', typeCounts);
+
         // --- 1. Вызов ELK для расчёта позиций ---
         // Передаём parentId из данных для группировки по шкафам
         const layoutResult = await computeElkLayout(

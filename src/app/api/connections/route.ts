@@ -129,6 +129,7 @@ export async function POST(request: NextRequest) {
           cores: 3,
           section: wireSize,
           material: material === 'Al' ? 'aluminum' : 'copper',
+          updatedAt: new Date(),
         },
       });
       // Привязываем кабель к связи
@@ -185,20 +186,33 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Обновляем связь - Connection model не имеет этих полей напрямую,
+    // они хранятся в связанном Cable
     const connection = await db.connection.update({
       where: { id },
-      data: {
-        length: updateData.length || null,
-        wire_type: updateData.wireType || null,
-        wire_size: updateData.wireSize || null,
-        material: updateData.material || null,
-        installation_method: updateData.installationMethod || null,
-        resistance_r: resistanceR,
-        reactance_x: reactanceX,
-        impedance_z: impedanceZ,
-        current_capacity: currentCapacity,
-      },
+      data: {},
     });
+
+    // Если есть Cable, обновляем его
+    const existingConnection = await db.connection.findUnique({
+      where: { id },
+      include: { Cable: true },
+    });
+    
+    if (existingConnection?.Cable) {
+      await db.cable.update({
+        where: { id: existingConnection.Cable.id },
+        data: {
+          length: updateData.length || existingConnection.Cable.length,
+          section: updateData.wireSize || existingConnection.Cable.section,
+          material: updateData.material === 'Al' ? 'aluminum' : updateData.material === 'Cu' ? 'copper' : existingConnection.Cable.material,
+          iDop: currentCapacity || existingConnection.Cable.iDop,
+          r0: resistanceR || existingConnection.Cable.r0,
+          x0: reactanceX || existingConnection.Cable.x0,
+          updatedAt: new Date(),
+        },
+      });
+    }
 
     return NextResponse.json(connection);
   } catch (error) {

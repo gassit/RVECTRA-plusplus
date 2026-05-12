@@ -262,11 +262,12 @@ export async function propagateStates(): Promise<PropagationResult> {
 
   // Создаём новые Alarm для каждого конфликта
   for (const conflict of conflicts) {
+    const sources = conflict.sources || [];
     await db.alarm.create({
       data: {
         elementId: conflict.elementId,
         type: 'DOUBLE_FEED',
-        message: `Двойное питание: элемент "${conflict.elementName}" получает питание от ${conflict.sources.length} источников: ${conflict.sources.join(', ')}`,
+        message: `Двойное питание: элемент "${conflict.elementName}" получает питание от ${sources.length} источников: ${sources.join(', ')}`,
         severity: 'WARNING',
         acknowledged: false,
       },
@@ -347,11 +348,13 @@ export async function propagateStates(): Promise<PropagationResult> {
   );
 
   return {
+    success: true,
     elementsUpdated: elementUpdates.length,
     connectionsUpdated: allConnections.length,
     liveElements: liveCount,
     deadElements: deadCount,
     offElements: offCount,
     conflicts,
+    errors: [],
   };
 }

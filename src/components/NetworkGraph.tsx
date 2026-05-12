@@ -379,10 +379,12 @@ export default function NetworkGraph({
     let minY = Infinity, maxY = -Infinity;
 
     layoutData.nodes.forEach(node => {
-      if (node.posX < minX) minX = node.posX;
-      if (node.posX > maxX) maxX = node.posX;
-      if (node.posY < minY) minY = node.posY;
-      if (node.posY > maxY) maxY = node.posY;
+      const x = node.posX ?? 0;
+      const y = node.posY ?? 0;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
     });
 
     return {
@@ -534,10 +536,10 @@ export default function NetworkGraph({
                 const targetNode = layoutData.nodes.find(n => n.id === edge.target);
                 if (!sourceNode || !targetNode) return null;
 
-                const x1 = transformX(sourceNode.posX) + 70;
-                const y1 = transformY(sourceNode.posY) + 35;
-                const x2 = transformX(targetNode.posX) + 70;
-                const y2 = transformY(targetNode.posY) + 35;
+                const x1 = transformX(sourceNode.posX ?? 0) + 70;
+                const y1 = transformY(sourceNode.posY ?? 0) + 35;
+                const x2 = transformX(targetNode.posX ?? 0) + 70;
+                const y2 = transformY(targetNode.posY ?? 0) + 35;
 
                 const isHovered = edge.id === hoveredEdge;
                 const isSelected = edge.id === selectedEdgeId;
@@ -623,8 +625,8 @@ export default function NetworkGraph({
             {/* Узлы */}
             <g className="nodes">
               {layoutData.nodes.map(node => {
-                const x = transformX(node.posX);
-                const y = transformY(node.posY);
+                const x = transformX(node.posX ?? 0);
+                const y = transformY(node.posY ?? 0);
                 const isSelected = node.id === selectedNodeId;
                 const isHovered = node.id === hoveredNode;
                 const nodeType = node.type.toLowerCase();

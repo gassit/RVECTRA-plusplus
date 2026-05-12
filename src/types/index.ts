@@ -40,7 +40,7 @@ export interface CableReferenceData {
 }
 
 // Тип выключателя
-export type BreakerType = 'MCB' | 'MCCB' | 'RCD' | 'RCBO';
+export type BreakerType = 'MCB' | 'MCCB' | 'ACB' | 'RCD' | 'RCBO';
 
 // Данные выключателя из справочника
 export interface BreakerReferenceData {
@@ -130,8 +130,8 @@ export interface NetworkConnection {
   length?: number;
   wireType?: string;
   cores?: number;              // Кол-во жил
-  core?: string;
-  wireSize?: number;
+  core?: number;               // Кол-во жил (альтернативное поле)
+  wireSize?: number;           // Сечение (мм²)
   material?: MaterialType;
   resistanceR?: number;
   reactanceX?: number;
@@ -341,4 +341,31 @@ export interface AddElementFormData {
   pKw?: number;
   qKvar?: number;
   cosPhi?: number;
+}
+
+// ============================================================================
+// STATE PROPAGATION
+// ============================================================================
+
+// Конфликт мощностей
+export interface PowerConflict {
+  elementId: string;
+  elementName: string;
+  sourceName?: string;
+  sources?: string[];          // Для DOUBLE_FEED конфликтов
+  installedPower?: number;
+  availablePower?: number;
+  deficit?: number;
+}
+
+// Результат распространения состояний
+export interface PropagationResult {
+  success: boolean;
+  elementsUpdated: number;
+  connectionsUpdated: number;
+  liveElements?: number;
+  deadElements?: number;
+  offElements?: number;
+  conflicts: PowerConflict[];
+  errors: string[];
 }

@@ -517,11 +517,13 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
     await db.element.create({
       data: {
         id,
+        elementId: id,
         type: 'CABINET',
         name: cabName.slice(0, 100),
-        voltage_level: 0.4,
-        pos_x: 0,
-        pos_y: 0,
+        voltageLevel: 0.4,
+        posX: 0,
+        posY: 0,
+        updatedAt: new Date(),
       },
     });
     elements++;
@@ -540,25 +542,41 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
     await db.element.create({
       data: {
         id,
+        elementId: id,
         type,
         name: name.slice(0, 100),
-        voltage_level: 0.4,
-        parent_id: parentId,
-        pos_x: 0,
-        pos_y: 0,
+        voltageLevel: 0.4,
+        parentId: parentId || null,
+        posX: 0,
+        posY: 0,
+        updatedAt: new Date(),
       },
     });
 
     // Создаём устройство (только для типов, имеющих Device)
     const deviceType = mapElementTypeToDeviceType(type);
     if (deviceType) {
+      const slotId = `slot_${id}`;
+      const deviceId = generateDeviceId(deviceType);
+      
+      // Create DeviceSlot first
+      await db.deviceSlot.create({
+        data: {
+          id: slotId,
+          slotId: slotId,
+          elementId: id,
+          slotType: deviceType,
+        },
+      });
+      
+      // Then create Device
       await db.device.create({
         data: {
-          id: generateDeviceId(deviceType),
-          type: deviceType,
-          slot_id: id,
-          voltage_nom: 400,
-          current_nom: getDefaultCurrent(type),
+          id: deviceId,
+          deviceId: deviceId,
+          deviceType: deviceType,
+          slotId: slotId,
+          updatedAt: new Date(),
         },
       });
       devices++;
@@ -579,9 +597,8 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
         await db.connection.create({
           data: {
             id: generateConnectionId(fromId, toId),
-            from_id: fromId,
-            to_id: toId,
-            type: conn.connType,
+            sourceId: fromId,
+            targetId: toId,
           },
         });
         connections++;
@@ -625,16 +642,15 @@ function getDefaultCurrent(type: ElementType): number {
  */
 async function clearDatabase(): Promise<void> {
   await db.validationResult.deleteMany();
-  await db.measurement.deleteMany();
-  await db.deviceState.deleteMany();
-  await db.protection.deleteMany();
-  await db.atsLogic.deleteMany();
-  await db.command.deleteMany();
-  await db.powerFlow.deleteMany();
-  await db.shortCircuit.deleteMany();
-  await db.network.deleteMany();
+  await db.meterReading.deleteMany();
+  await db.aVRSwitchover.deleteMany();
+  await db.aVRInput.deleteMany();
+  await db.aVROutput.deleteMany();
+  await db.aVR.deleteMany();
   await db.connection.deleteMany();
+  await db.cable.deleteMany();
   await db.device.deleteMany();
+  await db.deviceSlot.deleteMany();
   await db.element.deleteMany();
 }
 
@@ -657,12 +673,13 @@ async function importSources(rows: ExcelRow[]): Promise<{ elements: number; devi
     await db.element.create({
       data: {
         id: elementId,
+        elementId: elementId,
         type: 'SOURCE',
         name: name,
-        voltage_level: voltage,
-        description: `Источник питания ${power} кВА`,
-        pos_x: 0,
-        pos_y: 0,
+        voltageLevel: voltage,
+        posX: 0,
+        posY: 0,
+        updatedAt: new Date(),
       },
     });
     elements++;
@@ -673,10 +690,10 @@ async function importSources(rows: ExcelRow[]): Promise<{ elements: number; devi
       data: {
         id: deviceId,
         type: 'SOURCE',
-        slot_id: elementId,
-        voltage_nom: voltage * 1000,
-        current_nom: power / (Math.sqrt(3) * voltage),
-        s_kva: power,
+        slotId: elementId,
+        voltageNom: voltage * 1000,
+        currentNom: power / (Math.sqrt(3) * voltage),
+        sKva: power,
       },
     });
     devices++;
@@ -702,13 +719,15 @@ async function importCabinets(rows: ExcelRow[]): Promise<{ elements: number; dev
     await db.element.create({
       data: {
         id: elementId,
+        elementId: elementId,
         type: 'CABINET',
         name: name,
         location: location || undefined,
-        parent_id: parentId || undefined,
-        voltage_level: 0.4,
-        pos_x: 0,
-        pos_y: 0,
+        parentId: parentId || undefined,
+        voltageLevel: 0.4,
+        posX: 0,
+        posY: 0,
+        updatedAt: new Date(),
       },
     });
     elements++;
@@ -737,12 +756,14 @@ async function importLoads(rows: ExcelRow[]): Promise<{ elements: number; device
     await db.element.create({
       data: {
         id: elementId,
+        elementId: elementId,
         type: 'LOAD',
         name: name,
-        parent_id: parentId || undefined,
-        voltage_level: 0.4,
-        pos_x: 0,
-        pos_y: 0,
+        parentId: parentId || undefined,
+        voltageLevel: 0.4,
+        posX: 0,
+        posY: 0,
+        updatedAt: new Date(),
       },
     });
     elements++;
@@ -754,12 +775,12 @@ async function importLoads(rows: ExcelRow[]): Promise<{ elements: number; device
       data: {
         id: deviceId,
         type: 'LOAD',
-        slot_id: elementId,
-        p_kw: pKw,
-        q_kvar: qKvar,
-        s_kva: sKva,
-        cos_phi: cosPhi,
-        voltage_nom: 400,
+        slotId: elementId,
+        pKw: pKw,
+        qKvar: qKvar,
+        sKva: sKva,
+        cosPhi: cosPhi,
+        voltageNom: 400,
       },
     });
     devices++;
@@ -788,12 +809,14 @@ async function importBreakers(rows: ExcelRow[]): Promise<{ elements: number; dev
     await db.element.create({
       data: {
         id: elementId,
+        elementId: elementId,
         type: 'BREAKER',
         name: name,
-        parent_id: parentId || undefined,
-        voltage_level: 0.4,
-        pos_x: 0,
-        pos_y: 0,
+        parentId: parentId || undefined,
+        voltageLevel: 0.4,
+        posX: 0,
+        posY: 0,
+        updatedAt: new Date(),
       },
     });
     elements++;
@@ -804,12 +827,12 @@ async function importBreakers(rows: ExcelRow[]): Promise<{ elements: number; dev
       data: {
         id: deviceId,
         type: 'BREAKER',
-        slot_id: elementId,
+        slotId: elementId,
         model: model,
-        current_nom: currentNom,
-        in_rating: currentNom,
-        tripping_char: trippingChar,
-        voltage_nom: 400,
+        currentNom: currentNom,
+        inRating: currentNom,
+        trippingChar: trippingChar,
+        voltageNom: 400,
         poles: 3,
       },
     });
@@ -851,17 +874,17 @@ async function importConnections(rows: ExcelRow[]): Promise<{ connections: numbe
     await db.connection.create({
       data: {
         id: connectionId,
-        from_id: fromId,
-        to_id: toId,
+        sourceId: fromId,
+        targetId: toId,
         type: 'CABLE',
         length: length,
-        wire_type: wireType,
-        wire_size: wireSize,
+        wireType: wireType,
+        wireSize: wireSize,
         material: wireType.startsWith('А') ? 'Al' : 'Cu',
-        resistance_r: impedance?.r,
-        reactance_x: impedance?.x,
-        impedance_z: impedance?.z,
-        installation_method: installationMethod,
+        resistanceR: impedance?.r,
+        reactanceX: impedance?.x,
+        impedanceZ: impedance?.z,
+        installationMethod: installationMethod,
       },
     });
     connections++;
@@ -883,10 +906,9 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
       id: source1,
       type: 'SOURCE',
       name: 'ТП-21 Трансформатор 1',
-      voltage_level: 0.4,
-      description: 'ТМ-630/10, 630 кВА',
-      pos_x: 100,
-      pos_y: 100,
+      voltageLevel: 0.4,
+      posX: 100,
+      posY: 100,
     },
   });
 
@@ -895,10 +917,10 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
     data: {
       id: deviceId1,
       type: 'SOURCE',
-      slot_id: source1,
-      voltage_nom: 400,
-      current_nom: 910,
-      s_kva: 630,
+      slotId: source1,
+      voltageNom: 400,
+      currentNom: 910,
+      sKva: 630,
     },
   });
 
@@ -909,10 +931,9 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
       id: grSch,
       type: 'CABINET',
       name: 'ГРЩ-1',
-      voltage_level: 0.4,
-      description: 'Главный распределительный щит',
-      pos_x: 300,
-      pos_y: 100,
+      voltageLevel: 0.4,
+      posX: 300,
+      posY: 100,
     },
   });
 
@@ -923,10 +944,10 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
       id: qf1,
       type: 'BREAKER',
       name: 'QF1 Вводной',
-      parent_id: grSch,
-      voltage_level: 0.4,
-      pos_x: 350,
-      pos_y: 100,
+      parentId: grSch,
+      voltageLevel: 0.4,
+      posX: 350,
+      posY: 100,
     },
   });
 
@@ -935,11 +956,11 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
     data: {
       id: devQf1,
       type: 'BREAKER',
-      slot_id: qf1,
+      slotId: qf1,
       model: 'ВА-55-41',
-      current_nom: 630,
-      in_rating: 630,
-      voltage_nom: 400,
+      currentNom: 630,
+      inRating: 630,
+      voltageNom: 400,
       poles: 3,
     },
   });
@@ -951,10 +972,9 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
       id: sch1,
       type: 'CABINET',
       name: 'ЩР-1',
-      voltage_level: 0.4,
-      description: 'Щит распределительный 1',
-      pos_x: 500,
-      pos_y: 50,
+      voltageLevel: 0.4,
+      posX: 500,
+      posY: 50,
     },
   });
 
@@ -964,10 +984,9 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
       id: sch2,
       type: 'CABINET',
       name: 'ЩР-2',
-      voltage_level: 0.4,
-      description: 'Щит распределительный 2',
-      pos_x: 500,
-      pos_y: 150,
+      voltageLevel: 0.4,
+      posX: 500,
+      posY: 150,
     },
   });
 
@@ -978,10 +997,10 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
       id: load1,
       type: 'LOAD',
       name: 'Освещение цех 1',
-      parent_id: sch1,
-      voltage_level: 0.4,
-      pos_x: 700,
-      pos_y: 50,
+      parentId: sch1,
+      voltageLevel: 0.4,
+      posX: 700,
+      posY: 50,
     },
   });
 
@@ -990,12 +1009,12 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
     data: {
       id: devL1,
       type: 'LOAD',
-      slot_id: load1,
-      p_kw: 15,
-      q_kvar: 5,
-      s_kva: 15.8,
-      cos_phi: 0.95,
-      voltage_nom: 400,
+      slotId: load1,
+      pKw: 15,
+      qKvar: 5,
+      sKva: 15.8,
+      cosPhi: 0.95,
+      voltageNom: 400,
     },
   });
 
@@ -1005,10 +1024,10 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
       id: load2,
       type: 'LOAD',
       name: 'Розеточная группа',
-      parent_id: sch2,
-      voltage_level: 0.4,
-      pos_x: 700,
-      pos_y: 150,
+      parentId: sch2,
+      voltageLevel: 0.4,
+      posX: 700,
+      posY: 150,
     },
   });
 
@@ -1017,12 +1036,12 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
     data: {
       id: devL2,
       type: 'LOAD',
-      slot_id: load2,
-      p_kw: 8,
-      q_kvar: 3,
-      s_kva: 8.5,
-      cos_phi: 0.94,
-      voltage_nom: 400,
+      slotId: load2,
+      pKw: 8,
+      qKvar: 3,
+      sKva: 8.5,
+      cosPhi: 0.94,
+      voltageNom: 400,
     },
   });
 
@@ -1030,51 +1049,51 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
   await db.connection.create({
     data: {
       id: generateConnectionId(source1, grSch),
-      from_id: source1,
-      to_id: grSch,
+      sourceId: source1,
+      targetId: grSch,
       type: 'CABLE',
       length: 25,
-      wire_type: 'ВВГ',
-      wire_size: 120,
+      wireType: 'ВВГ',
+      wireSize: 120,
       material: 'Cu',
-      resistance_r: 0.0038,
-      reactance_x: 0.0018,
-      impedance_z: 0.0042,
-      installation_method: 'in_ground',
+      resistanceR: 0.0038,
+      reactanceX: 0.0018,
+      impedanceZ: 0.0042,
+      installationMethod: 'in_ground',
     },
   });
 
   await db.connection.create({
     data: {
       id: generateConnectionId(grSch, sch1),
-      from_id: grSch,
-      to_id: sch1,
+      sourceId: grSch,
+      targetId: sch1,
       type: 'CABLE',
       length: 45,
-      wire_type: 'ВВГ',
-      wire_size: 16,
+      wireType: 'ВВГ',
+      wireSize: 16,
       material: 'Cu',
-      resistance_r: 0.052,
-      reactance_x: 0.0036,
-      impedance_z: 0.052,
-      installation_method: 'in_air',
+      resistanceR: 0.052,
+      reactanceX: 0.0036,
+      impedanceZ: 0.052,
+      installationMethod: 'in_air',
     },
   });
 
   await db.connection.create({
     data: {
       id: generateConnectionId(grSch, sch2),
-      from_id: grSch,
-      to_id: sch2,
+      sourceId: grSch,
+      targetId: sch2,
       type: 'CABLE',
       length: 30,
-      wire_type: 'ВВГ',
-      wire_size: 6,
+      wireType: 'ВВГ',
+      wireSize: 6,
       material: 'Cu',
-      resistance_r: 0.092,
-      reactance_x: 0.0026,
-      impedance_z: 0.092,
-      installation_method: 'in_air',
+      resistanceR: 0.092,
+      reactanceX: 0.0026,
+      impedanceZ: 0.092,
+      installationMethod: 'in_air',
     },
   });
 
@@ -1086,7 +1105,7 @@ async function createDemoData(): Promise<{ elements: number; devices: number; co
  */
 async function calculateNodePositions(): Promise<void> {
   const elements = await db.element.findMany({
-    orderBy: { created_at: 'asc' },
+    orderBy: { createdAt: 'asc' },
   });
 
   const typeGroups: Record<string, typeof elements> = {
@@ -1150,7 +1169,7 @@ async function calculateNodePositions(): Promise<void> {
   for (const [id, pos] of Object.entries(positions)) {
     await db.element.update({
       where: { id },
-      data: { pos_x: pos.x, pos_y: pos.y },
+      data: { posX: pos.x, posY: pos.y },
     });
   }
 }

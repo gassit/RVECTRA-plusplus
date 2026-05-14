@@ -195,6 +195,8 @@ export interface GraphEdge {
   voltageDrop?: number;
   shortCircuitCurrent?: number;
   loadCurrent?: number;
+  // Результаты валидации кабеля
+  validationResults?: ValidationResultData[];
 }
 
 // Данные графа для визуализации

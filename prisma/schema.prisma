@@ -298,8 +298,8 @@ model ValidationResult {
   message        String
   value          Float?
   limit          Float?
-  details        Json?          // Дополнительные данные для tooltip
   createdAt      DateTime       @default(now())
+  details        Json?
   ValidationRule ValidationRule @relation(fields: [ruleId], references: [id])
 }
 

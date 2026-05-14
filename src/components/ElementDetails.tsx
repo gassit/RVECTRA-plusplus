@@ -193,6 +193,84 @@ export default function ElementDetails({ node, edge, onClose }: ElementDetailsPr
             </div>
           )}
 
+          {/* Результаты валидации кабеля */}
+          {edge.validationResults && edge.validationResults.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-slate-400 mb-2">
+                Результаты проверки
+              </div>
+              <div className="space-y-1.5">
+                {edge.validationResults.map((result, idx) => (
+                  <TooltipProvider key={idx}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          className={`p-2 rounded text-xs cursor-help flex items-start justify-between gap-2 ${
+                            result.status === 'CRITICAL'
+                              ? 'bg-red-900/30 text-red-400'
+                              : result.status === 'FAIL'
+                              ? 'bg-orange-900/30 text-orange-400'
+                              : result.status === 'WARN'
+                              ? 'bg-yellow-900/30 text-yellow-400'
+                              : 'bg-green-900/30 text-green-400'
+                          }`}
+                        >
+                          <span>{result.message}</span>
+                          {result.details && (
+                            <Info className="h-3.5 w-3.5 flex-shrink-0 opacity-60 mt-0.5" />
+                          )}
+                        </div>
+                      </TooltipTrigger>
+                      {result.details && (
+                        <TooltipContent
+                          side="left"
+                          className="max-w-xs bg-slate-800 border-slate-700 text-slate-200"
+                        >
+                          <div className="space-y-2 text-xs">
+                            <div className="flex justify-between gap-4">
+                              <span className="text-slate-400">I_ном (выключателя):</span>
+                              <span className="font-medium text-cyan-400">{result.details.iNom}</span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                              <span className="text-slate-400">I_доп (по ПУЭ):</span>
+                              <span className="font-medium text-blue-400">{result.details.iDopPUE}</span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                              <span className="text-slate-400">Загрузка кабеля:</span>
+                              <span className={`font-medium ${
+                                parseFloat(result.details.loadingPercent) > 90
+                                  ? 'text-red-400'
+                                  : parseFloat(result.details.loadingPercent) > 70
+                                  ? 'text-yellow-400'
+                                  : 'text-green-400'
+                              }`}>
+                                {result.details.loadingPercent}
+                              </span>
+                            </div>
+                            {result.details.iRasch && (
+                              <div className="pt-1 border-t border-slate-700">
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-slate-500">I_расч (справочно):</span>
+                                  <span className="font-medium text-slate-400">{result.details.iRasch}</span>
+                                </div>
+                              </div>
+                            )}
+                            {result.details.warning && (
+                              <div className="pt-1 border-t border-slate-700 text-yellow-400 flex items-start gap-1.5">
+                                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                                <span>{result.details.warning}</span>
+                              </div>
+                            )}
+                          </div>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Связанные узлы */}
           <div className="text-xs text-slate-500">
             <span className="text-slate-600">От:</span> {edge.source}

@@ -49,6 +49,30 @@ export async function GET() {
       });
     }
 
+    // Группируем результаты по connectionId (для кабелей/edges)
+    const resultsByConnection = new Map<string, ValidationResultData[]>();
+    for (const result of validationResults) {
+      const connectionId = result.connectionId;
+      if (!connectionId) continue;
+      
+      if (!resultsByConnection.has(connectionId)) {
+        resultsByConnection.set(connectionId, []);
+      }
+      
+      resultsByConnection.get(connectionId)!.push({
+        id: result.id,
+        ruleCode: result.ValidationRule?.name || 'UNKNOWN',
+        ruleName: result.ValidationRule?.description || 'Неизвестное правило',
+        status: result.status as any,
+        elementId: result.elementId || undefined,
+        connectionId: result.connectionId || undefined,
+        message: result.message,
+        actualValue: result.value || undefined,
+        expectedValue: result.limit || undefined,
+        details: result.details as any,
+      });
+    }
+
     // Формируем узлы графа
     const nodes: GraphNode[] = elements.map(el => {
       const nodeResults = resultsByElement.get(el.id) || [];
@@ -90,6 +114,7 @@ export async function GET() {
     // Данные кабеля берем из связанной Cable таблицы
     const edges: GraphEdge[] = connections.map(conn => {
       const cable = conn.Cable;
+      const edgeResults = resultsByConnection.get(conn.id) || [];
       return {
         id: conn.id,
         source: conn.sourceId,
@@ -102,6 +127,8 @@ export async function GET() {
         currentCapacity: cable?.iDop || undefined,
         status: (conn.operationalStatus === 'ON' ? 'ON' : conn.operationalStatus === 'OFF' ? 'OFF' : 'UNKNOWN') as GraphEdge['status'],
         lifeStatus: (conn.electricalStatus === 'LIVE' ? 'LIVE' : conn.electricalStatus === 'DEAD' ? 'DEAD' : 'UNKNOWN') as GraphEdge['lifeStatus'],
+        // Добавляем результаты валидации для кабеля
+        validationResults: edgeResults,
       };
     });
 

@@ -5,13 +5,11 @@
  * 
  * Объединяет функционал:
  * - import-data.ts: propagation, справочник кабелей
- * - import-echo-data.ts: формат ЭХО, location, AVR колонки
  * - import-network.ts: АВР листы, ток/мощность, batch createMany
  * 
  * Поддерживаемые форматы:
  * 1. Стандартный: колонки from/to + опционально state, connection, current, power, parent
- * 2. ЭХО формат: фиксированные позиции колонок (id, state, from, connection, to, protection, avr, avrState, location)
- * 3. АВР: отдельные листы AVR, AVR_Inputs, AVR_Outputs
+ * 2. АВР: отдельные листы AVR, AVR_Inputs, AVR_Outputs
  * 
  * Примечание: Расчёт позиций (layout) выполняется на frontend через AntV G6 dagre layout
  */
@@ -203,7 +201,7 @@ async function propagateStates(): Promise<{ elementsUpdated: number; liveElement
 // ============================================================================
 
 interface ExcelFormat {
-  type: 'standard' | 'echo' | 'auto';
+  type: 'standard' | 'auto';
   fromCol: string;
   toCol: string;
   connectionCol: string | null;
@@ -473,34 +471,6 @@ function detectExcelFormat(rawData: Record<string, unknown>[]): ExcelFormat {
   }
 
   const cols = Object.keys(rawData[0]);
-  const colCount = cols.length;
-  
-  // Проверяем ЭХО формат: минимум 5 колонок, имена по позиции
-  // ЭХО: [id, state, from, connection, to, avr?, avrState?, location?, assemblyFrom?]
-  // Но НЕ если колонки имеют осмысленные имена (например "От (from)", "До (to)")
-  const hasNamedColumns = cols.some(c => 
-    c && (c.includes('(') || c.includes('from') || c.includes('to') || c.includes('От') || c.includes('До'))
-  );
-  
-  const isEchoFormat = !hasNamedColumns && colCount >= 5 && 
-    (!cols[0] || cols[0].toLowerCase() === 'id' || /^\d+$/.test(String(rawData[0]?.[cols[0]])));
-
-  if (isEchoFormat) {
-    console.log('📋 Определён формат: ЭХО (фиксированные позиции колонок)');
-    return {
-      ...emptyFormat,
-      type: 'echo',
-      idCol: cols[0],
-      stateCol: cols[1] || null,
-      fromCol: cols[2],
-      connectionCol: cols[3] || null,
-      toCol: cols[4],
-      avrCol: cols[5] || null,
-      avrStateCol: cols[6] || null,
-      locationCol: cols[7] || null,
-      parentCol: cols[8] || null,
-    };
-  }
 
   // Стандартный формат: ищем по именам колонок
   console.log('📋 Определён формат: Стандартный (поиск по именам колонок)');
@@ -572,7 +542,7 @@ function findExcelFile(): string | null {
   if (files.length === 0) return null;
 
   // Приоритет файлов
-  const priority = ['input.xlsx', 'ШАБЛОН_ИМПОРТА.xlsx', 'ЭХОв.xlsx', 'ЭХОмини.v1.xlsx'];
+  const priority = ['input.xlsx', 'ШАБЛОН_ИМПОРТА.xlsx'];
   for (const p of priority) {
     if (files.includes(p)) return path.join(dir, p);
   }

@@ -13,7 +13,7 @@ import type {
 // КОНСТАНТЫ
 // ============================================================================
 
-// Допустимые токи по ПУЭ (А) - медь, в воздухе
+// Допустимые токи по ПУЭ (А) - медь, в воздухе, 3 жилы
 // Ключ: сечение (мм²)
 const IDOP_COPPER: Record<number, number> = {
   1.5: 19,
@@ -33,7 +33,7 @@ const IDOP_COPPER: Record<number, number> = {
   240: 465,
 };
 
-// Допустимые токи по ПУЭ (А) - алюминий, в воздухе
+// Допустимые токи по ПУЭ (А) - алюминий, в воздухе, 3 жилы
 // Ключ: сечение (мм²)
 const IDOP_ALUMINUM: Record<number, number> = {
   2.5: 20,
@@ -52,64 +52,108 @@ const IDOP_ALUMINUM: Record<number, number> = {
   240: 335,
 };
 
+// Поправочные коэффициенты по количеству жил (ПУЭ)
+// Базовый: 3 жилы = 1.0
+const CORES_COEFFICIENT: Record<number, number> = {
+  1: 1.0,   // Одножильный
+  2: 1.0,   // Двухжильный
+  3: 1.0,   // Трёхжильный (базовый)
+  4: 0.92,  // Четырёхжильный
+  5: 0.87,  // Пятижильный
+  6: 0.82,  // Шестижильный
+};
+
 // ============================================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================================================
 
 /**
- * Получить допустимый ток для сечения и материала
+ * Получить поправочный коэффициент по количеству жил
  */
-function getIDopFromReference(section: number, material: string): number | null {
+function getCoresCoefficient(cores: number): number {
+  if (CORES_COEFFICIENT[cores]) {
+    return CORES_COEFFICIENT[cores];
+  }
+  // Если жил > 6, используем экстраполяцию
+  if (cores > 6) {
+    return 0.82 - (cores - 6) * 0.02;
+  }
+  return 1.0; // По умолчанию
+}
+
+/**
+ * Получить допустимый ток для сечения, материала и количества жил
+ */
+function getIDopFromReference(section: number, material: string, cores: number = 3): number | null {
   const table = material.toLowerCase() === 'aluminum' || material.toLowerCase() === 'al'
     ? IDOP_ALUMINUM
     : IDOP_COPPER;
 
+  // Базовый ток (для 3 жил)
+  let baseCurrent: number | null = null;
+
   // Точное совпадение
   if (table[section]) {
-    return table[section];
-  }
+    baseCurrent = table[section];
+  } else {
+    // Найти ближайшее большее сечение
+    const sections = Object.keys(table).map(Number).sort((a, b) => a - b);
+    for (const s of sections) {
+      if (s >= section) {
+        baseCurrent = table[s];
+        break;
+      }
+    }
 
-  // Найти ближайшее большее сечение
-  const sections = Object.keys(table).map(Number).sort((a, b) => a - b);
-  for (const s of sections) {
-    if (s >= section) {
-      return table[s];
+    // Если сечение больше максимального в таблице
+    if (baseCurrent === null) {
+      baseCurrent = table[sections[sections.length - 1]] || null;
     }
   }
 
-  // Если сечение больше максимального в таблице
-  return table[sections[sections.length - 1]] || null;
+  if (baseCurrent === null) return null;
+
+  // Применяем поправочный коэффициент по количеству жил
+  const coefficient = getCoresCoefficient(cores);
+  return Math.round(baseCurrent * coefficient);
 }
 
 /**
  * Интерполяция допустимого тока для нестандартного сечения
  */
-function interpolateIDop(section: number, material: string): number | null {
+function interpolateIDop(section: number, material: string, cores: number = 3): number | null {
   const table = material.toLowerCase() === 'aluminum' || material.toLowerCase() === 'al'
     ? IDOP_ALUMINUM
     : IDOP_COPPER;
 
   const sections = Object.keys(table).map(Number).sort((a, b) => a - b);
 
+  let baseCurrent: number | null = null;
+
   // Если сечение меньше минимального
   if (section < sections[0]) {
-    return Math.round(table[sections[0]] * (section / sections[0]));
+    baseCurrent = Math.round(table[sections[0]] * (section / sections[0]));
   }
-
   // Если сечение больше максимального
-  if (section > sections[sections.length - 1]) {
-    return table[sections[sections.length - 1]];
+  else if (section > sections[sections.length - 1]) {
+    baseCurrent = table[sections[sections.length - 1]];
   }
-
-  // Найти соседние сечения для интерполяции
-  for (let i = 0; i < sections.length - 1; i++) {
-    if (section >= sections[i] && section <= sections[i + 1]) {
-      const ratio = (section - sections[i]) / (sections[i + 1] - sections[i]);
-      return Math.round(table[sections[i]] + ratio * (table[sections[i + 1]] - table[sections[i]]));
+  // Интерполяция между соседними сечениями
+  else {
+    for (let i = 0; i < sections.length - 1; i++) {
+      if (section >= sections[i] && section <= sections[i + 1]) {
+        const ratio = (section - sections[i]) / (sections[i + 1] - sections[i]);
+        baseCurrent = Math.round(table[sections[i]] + ratio * (table[sections[i + 1]] - table[sections[i]]));
+        break;
+      }
     }
   }
 
-  return null;
+  if (baseCurrent === null) return null;
+
+  // Применяем поправочный коэффициент по количеству жил
+  const coefficient = getCoresCoefficient(cores);
+  return Math.round(baseCurrent * coefficient);
 }
 
 // ============================================================================
@@ -205,8 +249,8 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
 
       // Если нет в CableReference - берём из таблицы ПУЭ
       if (!iDop || iDop <= 0) {
-        iDop = getIDopFromReference(cable.section, cable.material) ||
-               interpolateIDop(cable.section, cable.material);
+        iDop = getIDopFromReference(cable.section, cable.material, cable.cores) ||
+               interpolateIDop(cable.section, cable.material, cable.cores);
       }
     }
 

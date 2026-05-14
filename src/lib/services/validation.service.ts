@@ -355,50 +355,60 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
     // Выключатель защищающий кабель находится в source-элементе (в начале линии)
     let iNom: number | null = null;
     
-    // Ищем DeviceSlot в source-элементе
-    const sourceDeviceSlot = await db.deviceSlot.findFirst({
-      where: { elementId: conn.sourceId },
+    // Сначала проверяем - является ли source элемент BREAKER
+    const sourceElement = await db.element.findUnique({
+      where: { id: conn.sourceId },
     });
     
-    if (sourceDeviceSlot) {
-      // Ищем Device (выключатель) в slot
-      const device = await db.device.findUnique({
-        where: { deviceId: sourceDeviceSlot.id },
+    if (sourceElement?.type === 'BREAKER') {
+      // Ищем DeviceSlot для этого элемента
+      const slot = await db.deviceSlot.findFirst({
+        where: { elementId: conn.sourceId },
       });
       
-      if (device && device.deviceType === 'BREAKER') {
-        // Для BREAKER нужно получить ratedCurrent из таблицы Breaker
-        const breaker = await db.breaker.findUnique({
-          where: { deviceId: device.deviceId },
+      if (slot) {
+        // Device связан через slotId
+        const device = await db.device.findFirst({
+          where: { slotId: slot.id },
         });
-        if (breaker && breaker.ratedCurrent) {
-          iNom = breaker.ratedCurrent;
+        
+        if (device) {
+          // Ищем Breaker по deviceId
+          const breaker = await db.breaker.findUnique({
+            where: { deviceId: device.deviceId },
+          });
+          
+          if (breaker?.ratedCurrent) {
+            iNom = breaker.ratedCurrent;
+          }
         }
       }
     }
     
-    // Если не нашли через Device/Breaker, пробуем найти Breaker через DeviceSlot
+    // Альтернативный путь - ищем любой Breaker связанный с source элементом
     if (!iNom) {
-      // Ищем все DeviceSlots для элемента
-      const allSlots = await db.deviceSlot.findMany({
+      const slots = await db.deviceSlot.findMany({
         where: { elementId: conn.sourceId },
       });
       
-      for (const slot of allSlots) {
-        const dev = await db.device.findUnique({
-          where: { deviceId: slot.id },
+      for (const slot of slots) {
+        const devices = await db.device.findMany({
+          where: { slotId: slot.id },
         });
         
-        if (dev && dev.deviceType === 'BREAKER') {
-          const breaker = await db.breaker.findUnique({
-            where: { deviceId: dev.deviceId },
-          });
-          
-          if (breaker && breaker.ratedCurrent) {
-            iNom = breaker.ratedCurrent;
-            break;
+        for (const dev of devices) {
+          if (dev.deviceType === 'BREAKER') {
+            const breaker = await db.breaker.findUnique({
+              where: { deviceId: dev.deviceId },
+            });
+            
+            if (breaker?.ratedCurrent) {
+              iNom = breaker.ratedCurrent;
+              break;
+            }
           }
         }
+        if (iNom) break;
       }
     }
 

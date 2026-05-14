@@ -366,23 +366,39 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
         where: { deviceId: sourceDeviceSlot.id },
       });
       
-      if (device && device.type === 'BREAKER' && device.currentNom) {
-        iNom = device.currentNom;
+      if (device && device.deviceType === 'BREAKER') {
+        // Для BREAKER нужно получить ratedCurrent из таблицы Breaker
+        const breaker = await db.breaker.findUnique({
+          where: { deviceId: device.deviceId },
+        });
+        if (breaker && breaker.ratedCurrent) {
+          iNom = breaker.ratedCurrent;
+        }
       }
     }
     
-    // Если не нашли через Device, пробуем прямой поиск Breaker
+    // Если не нашли через Device/Breaker, пробуем найти Breaker через DeviceSlot
     if (!iNom) {
-      const breaker = await db.breaker.findFirst({
-        where: {
-          OR: [
-            { elementId: conn.sourceId },
-          ],
-        },
+      // Ищем все DeviceSlots для элемента
+      const allSlots = await db.deviceSlot.findMany({
+        where: { elementId: conn.sourceId },
       });
       
-      if (breaker && breaker.inRating) {
-        iNom = breaker.inRating;
+      for (const slot of allSlots) {
+        const dev = await db.device.findUnique({
+          where: { deviceId: slot.id },
+        });
+        
+        if (dev && dev.deviceType === 'BREAKER') {
+          const breaker = await db.breaker.findUnique({
+            where: { deviceId: dev.deviceId },
+          });
+          
+          if (breaker && breaker.ratedCurrent) {
+            iNom = breaker.ratedCurrent;
+            break;
+          }
+        }
       }
     }
 
@@ -634,7 +650,7 @@ export async function getValidationIssues(): Promise<ValidationIssue[]> {
     actualValue: r.value || undefined,
     expectedValue: r.limit || undefined,
     // Добавляем детали для tooltip
-    details: r.details as ValidationTooltipDetails | null,
+    details: r.details ? (r.details as unknown as ValidationTooltipDetails) : undefined,
   }));
 }
 

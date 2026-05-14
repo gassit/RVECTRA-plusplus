@@ -356,9 +356,9 @@ function detectElementType(name: string): string {
 
 function parseOperationalStatus(stateValue: string | undefined | null): OperationalStatus {
   if (!stateValue) return 'ON';
-  
+
   const state = String(stateValue).toLowerCase().trim();
-  
+
   // OFF: off, выкл, 0, false, отключен, разомкнут
   if (/off/i.test(state) ||
       /выкл/i.test(state) ||
@@ -368,12 +368,21 @@ function parseOperationalStatus(stateValue: string | undefined | null): Operatio
       /разомкнут/i.test(state)) {
     return 'OFF';
   }
-  
+
+  // ON: on, включен, под напряжением, в работе, live
+  if (/^on$/i.test(state) ||
+      /включен/i.test(state) ||
+      /под напряжением/i.test(state) ||
+      /в работе/i.test(state) ||
+      /^live$/i.test(state)) {
+    return 'ON';
+  }
+
   // Резерв
   if (/резерв/i.test(state) || /reserve/i.test(state)) {
     return 'ON'; // Резерв = ON, но может иметь отдельный статус
   }
-  
+
   return 'ON';
 }
 

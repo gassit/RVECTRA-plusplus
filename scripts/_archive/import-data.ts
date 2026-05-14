@@ -100,24 +100,35 @@ function detectElementType(name: string): string {
 
 /**
  * Парсит оперативный статус из значения state
- * OFF: "off", "выкл", "0", "false", "Отключен"
- * ON: все остальные значения (включая "on", "вкл", "1", "true", "Включен", "Под напряжением", пустое)
+ * OFF: "off", "выкл", "0", "false", "отключен", "разомкнут"
+ * ON: "on", "включен", "под напряжением", "в работе", "live"
+ * По умолчанию: ON
  */
 function parseOperationalStatus(stateValue: string | undefined | null): OperationalStatus {
   if (!stateValue) return 'ON';
 
   const state = String(stateValue).toLowerCase().trim();
 
-  // Проверяем на OFF (case-insensitive, частичное совпадение)
+  // OFF (case-insensitive, частичное совпадение)
   if (/off/.test(state) ||
       /выкл/.test(state) ||
       state === '0' ||
       /false/.test(state) ||
-      /отключен/.test(state)) {
+      /отключен/.test(state) ||
+      /разомкнут/.test(state)) {
     return 'OFF';
   }
 
-  // Все остальные случаи -> ON
+  // ON (явные значения)
+  if (/^on$/.test(state) ||
+      /включен/.test(state) ||
+      /под напряжением/.test(state) ||
+      /в работе/.test(state) ||
+      /^live$/.test(state)) {
+    return 'ON';
+  }
+
+  // По умолчанию ON
   return 'ON';
 }
 

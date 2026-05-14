@@ -67,7 +67,11 @@ function detectElementType(name: string): string {
 function parseOperationalStatus(stateValue: string | undefined | null): 'ON' | 'OFF' {
   if (!stateValue) return 'ON';
   const state = String(stateValue).toLowerCase().trim();
-  return /off|выкл|^0$|false|отключен/.test(state) ? 'OFF' : 'ON';
+  // OFF: off, выкл, 0, false, отключен, разомкнут
+  if (/off|выкл|^0$|false|отключен|разомкнут/.test(state)) return 'OFF';
+  // ON: on, включен, под напряжением, в работе, live
+  if (/^on$|включен|под напряжением|в работе|^live$/.test(state)) return 'ON';
+  return 'ON';
 }
 
 function normalizeName(s: string): string {

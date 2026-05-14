@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import type { GraphData, GraphNode, GraphEdge } from '@/types';
+import type { GraphData, GraphNode, GraphEdge, ValidationResultData } from '@/types';
 
 export async function GET() {
   try {
@@ -18,36 +18,73 @@ export async function GET() {
       orderBy: { createdAt: 'asc' },
     });
 
+    // Получаем результаты валидации
+    const validationResults = await db.validationResult.findMany({
+      include: {
+        ValidationRule: true,
+      },
+    });
+
+    // Группируем результаты по elementId
+    const resultsByElement = new Map<string, ValidationResultData[]>();
+    for (const result of validationResults) {
+      const elementId = result.elementId;
+      if (!elementId) continue;
+      
+      if (!resultsByElement.has(elementId)) {
+        resultsByElement.set(elementId, []);
+      }
+      
+      resultsByElement.get(elementId)!.push({
+        id: result.id,
+        ruleCode: result.ValidationRule?.name || 'UNKNOWN',
+        ruleName: result.ValidationRule?.description || 'Неизвестное правило',
+        status: result.status as any,
+        elementId: result.elementId || undefined,
+        connectionId: result.connectionId || undefined,
+        message: result.message,
+        actualValue: result.value || undefined,
+        expectedValue: result.limit || undefined,
+        details: result.details as any,
+      });
+    }
+
     // Формируем узлы графа
-    const nodes: GraphNode[] = elements.map(el => ({
-      id: el.id,
-      type: el.type as GraphNode['type'],
-      name: el.name,
-      parentId: el.parentId || undefined,
-      posX: el.posX || 0,
-      posY: el.posY || 0,
-      voltageLevel: el.voltageLevel || undefined,
-      status: (el.operationalStatus === 'ON' ? 'ON' : el.operationalStatus === 'OFF' ? 'OFF' : 'UNKNOWN') as GraphNode['status'],
-      lifeStatus: (el.electricalStatus === 'LIVE' ? 'LIVE' : el.electricalStatus === 'DEAD' ? 'DEAD' : 'UNKNOWN') as GraphNode['lifeStatus'],
-      hasIssues: false,
-      criticalIssues: 0,
-      sumPInstalled: el.sumPInstalled || undefined,
-      sumPCalculated: el.sumPCalculated || undefined,
-      devices: (el.DeviceSlot || []).map((ds: any) => {
-        const dev = ds.Device?.[0];
-        return dev ? {
-          id: dev.id,
-          type: dev.deviceType as any,
-          slotId: ds.slotId,
-          model: undefined,
-          currentNom: undefined,
-          pKw: undefined,
-          qKvar: undefined,
-          sKva: undefined,
-          cosPhi: undefined,
-        } : undefined;
-      }).filter(Boolean) as any,
-    }));
+    const nodes: GraphNode[] = elements.map(el => {
+      const nodeResults = resultsByElement.get(el.id) || [];
+      const criticalCount = nodeResults.filter(r => r.status === 'FAIL' || r.status === 'CRITICAL').length;
+      
+      return {
+        id: el.id,
+        type: el.type as GraphNode['type'],
+        name: el.name,
+        parentId: el.parentId || undefined,
+        posX: el.posX || 0,
+        posY: el.posY || 0,
+        voltageLevel: el.voltageLevel || undefined,
+        status: (el.operationalStatus === 'ON' ? 'ON' : el.operationalStatus === 'OFF' ? 'OFF' : 'UNKNOWN') as GraphNode['status'],
+        lifeStatus: (el.electricalStatus === 'LIVE' ? 'LIVE' : el.electricalStatus === 'DEAD' ? 'DEAD' : 'UNKNOWN') as GraphNode['lifeStatus'],
+        hasIssues: criticalCount > 0,
+        criticalIssues: criticalCount,
+        sumPInstalled: el.sumPInstalled || undefined,
+        sumPCalculated: el.sumPCalculated || undefined,
+        devices: (el.DeviceSlot || []).map((ds: any) => {
+          const dev = ds.Device?.[0];
+          return dev ? {
+            id: dev.id,
+            type: dev.deviceType as any,
+            slotId: ds.slotId,
+            model: undefined,
+            currentNom: undefined,
+            pKw: undefined,
+            qKvar: undefined,
+            sKva: undefined,
+            cosPhi: undefined,
+          } : undefined;
+        }).filter(Boolean) as any,
+        validationResults: nodeResults,
+      };
+    });
 
     // Формируем рёбра графа — используем sourceId/targetId из Connection модели
     // Данные кабеля берем из связанной Cable таблицы

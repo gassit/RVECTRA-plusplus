@@ -7,6 +7,7 @@ import type {
   ValidationResultData,
   ValidationIssue,
   ValidationStatus,
+  ValidationTooltipDetails,
 } from '@/types';
 
 // ============================================================================
@@ -484,16 +485,8 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
         value: iNom,
         limit: iDop,
         // Сохраняем дополнительные данные в JSON формате
-        details: {
-          iNom,
-          iDopSource,
-          iDopFromPUE,
-          loadingPercent: details.loadingPercent,
-          iRasch,
-          discrepancyWarning: details.discrepancyWarning,
-          tooltip: details.tooltip,
-        },
-      } as any,
+        details: details.tooltip,
+      },
     });
 
     results.push({
@@ -641,7 +634,7 @@ export async function getValidationIssues(): Promise<ValidationIssue[]> {
     actualValue: r.value || undefined,
     expectedValue: r.limit || undefined,
     // Добавляем детали для tooltip
-    details: (r as any).details,
+    details: r.details as ValidationTooltipDetails | null,
   }));
 }
 

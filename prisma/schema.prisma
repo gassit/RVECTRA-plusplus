@@ -228,7 +228,7 @@ model Load {
   name        String
   powerP      Float
   powerQ      Float?
-  cosPhi      Float    @default(0.9)
+  cosPhi      Float    @default(0.92)
   usageFactor Float    @default(0.7)
   category    Int      @default(3)
   createdAt   DateTime @default(now())

@@ -224,6 +224,10 @@ interface ExcelFormat {
   sectionCol: string | null;
   materialCol: string | null;
   iDopCol: string | null;
+  // Electrical parameters
+  voltageLevelCol: string | null;  // U (кВ) - напряжение
+  cosPhiCol: string | null;        // cos φ - коэффициент мощности
+  categoryCol: string | null;      // Категория надежности
 }
 
 interface ElementInfo {
@@ -239,6 +243,10 @@ interface ElementInfo {
   breakingCapacity?: number | null;
   curve?: string | null;
   leakageCurrent?: number | null;
+  // Electrical parameters
+  voltageLevel?: number | null;  // U (кВ)
+  cosPhi?: number | null;        // cos φ
+  category?: number | null;      // Категория надежности (1, 2, 3)
 }
 
 interface ConnectionInfo {
@@ -254,6 +262,9 @@ interface ConnectionInfo {
   iDop?: number | null;
   // Power for voltage drop calculation
   powerKw?: number | null;
+  // Electrical parameters for calculation
+  cosPhi?: number | null;
+  voltageLevel?: number | null;
 }
 
 // ============================================================================
@@ -403,6 +414,68 @@ function parseFloatValue(value: unknown): number | null {
   return isNaN(num) ? null : num;
 }
 
+/**
+ * Парсинг уровня напряжения U (кВ)
+ * Активные значения: 0.22, 0.4 кВ
+ * Неактивные (в базе но не используются): 6, 10, 35 кВ
+ * По умолчанию: 0.4 кВ
+ */
+function parseVoltageLevel(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+
+  const str = String(value).toLowerCase().trim();
+
+  // Поддерживаемые форматы: "0.4", "0,4", "0.4 кВ", "400 В", "220 В", "0.22 кВ"
+  // Извлекаем числовое значение
+  const numMatch = str.match(/[\d.,]+/);
+  if (!numMatch) return null;
+
+  let num = parseFloat(numMatch[0].replace(',', '.'));
+
+  // Если указано в Вольтах, конвертируем в кВ
+  if (/в\s*$/.test(str) && num > 1) {
+    num = num / 1000;
+  }
+
+  // Валидация: разрешённые значения
+  const allowedValues = [0.22, 0.4, 6, 10, 35];
+  const tolerance = 0.05;
+
+  for (const allowed of allowedValues) {
+    if (Math.abs(num - allowed) < tolerance) {
+      return allowed;
+    }
+  }
+
+  // Если значение не из списка, но похоже на кВ - возвращаем как есть
+  // (для будущих значений)
+  if (num > 0 && num <= 100) {
+    return Math.round(num * 100) / 100;
+  }
+
+  return null;
+}
+
+/**
+ * Парсинг категории надежности (1, 2, 3)
+ */
+function parseCategory(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+
+  const str = String(value).trim();
+
+  // Прямое число
+  const num = parseInt(str);
+  if (num >= 1 && num <= 3) return num;
+
+  // Текстовые варианты
+  if (/первая|1-я|I/i.test(str)) return 1;
+  if (/вторая|2-я|II/i.test(str)) return 2;
+  if (/третья|3-я|III/i.test(str)) return 3;
+
+  return null;
+}
+
 // ============================================================================
 // ИЗВЛЕЧЕНИЕ CABINET ИЗ ИМЕНИ
 // ============================================================================
@@ -463,7 +536,8 @@ function detectExcelFormat(rawData: Record<string, unknown>[]): ExcelFormat {
     currentCol: null, powerCol: null, usageFactorCol: null, locationCol: null, parentCol: null,
     avrCol: null, avrStateCol: null, idCol: null,
     breakingCapacityCol: null, curveCol: null, leakageCurrentCol: null,
-    coresCol: null, lengthCol: null, sectionCol: null, materialCol: null, iDopCol: null
+    coresCol: null, lengthCol: null, sectionCol: null, materialCol: null, iDopCol: null,
+    voltageLevelCol: null, cosPhiCol: null, categoryCol: null
   };
   
   if (rawData.length === 0) {
@@ -521,6 +595,10 @@ function detectExcelFormat(rawData: Record<string, unknown>[]): ExcelFormat {
     sectionCol: findCol([/^сечение/i, /^section$/i]),
     materialCol: findCol([/^материал$/i, /^material$/i]),
     iDopCol: findCol([/^допустимый\s*ток/i, /^i_?доп$/i, /^i_?dop$/i]),
+    // Electrical parameters
+    voltageLevelCol: findCol([/^u\s*\(кв\)$/i, /^u\s*кв$/i, /^напряжение$/i, /^voltage$/i, /^u_?ном$/i]),
+    cosPhiCol: findCol([/^cos\s*φ$/i, /^cos\s*f$/i, /^cosfi$/i, /^cos\s*phi$/i, /^коэф.*мощности/i]),
+    categoryCol: findCol([/^категория$/i, /^катег\.?$/i, /^category$/i, /^кат\.?$/i]),
   };
 }
 
@@ -784,6 +862,9 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
   if (format.sectionCol) console.log(`📌 сечение="${format.sectionCol}"`);
   if (format.materialCol) console.log(`📌 материал="${format.materialCol}"`);
   if (format.iDopCol) console.log(`📌 допустимый ток="${format.iDopCol}"`);
+  if (format.voltageLevelCol) console.log(`📌 U (кВ)="${format.voltageLevelCol}"`);
+  if (format.cosPhiCol) console.log(`📌 cos φ="${format.cosPhiCol}"`);
+  if (format.categoryCol) console.log(`📌 категория="${format.categoryCol}"`);
 
   // =========================================================================
   // ОЧИСТКА БАЗЫ
@@ -848,6 +929,11 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
     const location = format.locationCol ? String(row[format.locationCol] || '').trim() || null : null;
     const explicitParent = format.parentCol ? normalizeName(String(row[format.parentCol] || '')) : null;
 
+    // Electrical parameters
+    const voltageLevel = format.voltageLevelCol ? parseVoltageLevel(row[format.voltageLevelCol]) : null;
+    const cosPhi = format.cosPhiCol ? parseFloatValue(row[format.cosPhiCol]) : null;
+    const category = format.categoryCol ? parseCategory(row[format.categoryCol]) : null;
+
     const fromType = detectElementType(from);
     const toType = detectElementType(to);
 
@@ -866,6 +952,10 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
         breakingCapacity,
         curve,
         leakageCurrent,
+        // Electrical parameters
+        voltageLevel,
+        cosPhi,
+        category,
       });
     } else {
       const el = elementsMap.get(from)!;
@@ -875,6 +965,9 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
       if (leakageCurrent !== null && el.leakageCurrent === null) el.leakageCurrent = leakageCurrent;
       if (location && !el.location) el.location = location;
       if (explicitParent && !el.explicitParent) el.explicitParent = explicitParent;
+      if (voltageLevel !== null && el.voltageLevel === null) el.voltageLevel = voltageLevel;
+      if (cosPhi !== null && el.cosPhi === null) el.cosPhi = cosPhi;
+      if (category !== null && el.category === null) el.category = category;
     }
 
     // Добавляем to-элемент
@@ -888,20 +981,30 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
         usageFactor: toType === 'load' ? usageFactor : null,
         location,
         explicitParent: null,
+        // Electrical parameters
+        voltageLevel,
+        cosPhi,
+        category,
       });
     } else {
       const el = elementsMap.get(to)!;
       if (toType === 'load' && power !== null && el.power === null) el.power = power;
       if (toType === 'load' && usageFactor !== null && el.usageFactor === null) el.usageFactor = usageFactor;
       if (location && !el.location) el.location = location;
+      if (voltageLevel !== null && el.voltageLevel === null) el.voltageLevel = voltageLevel;
+      if (cosPhi !== null && el.cosPhi === null) el.cosPhi = cosPhi;
+      if (category !== null && el.category === null) el.category = category;
     }
 
-    connectionsData.push({ 
+    connectionsData.push({
       from, to, connection, order: i + 1,
       // Cable parameters
       cores, length, section, material, iDop,
       // Power for voltage drop calculation (power of the target element)
       powerKw: power,
+      // Electrical parameters for calculation
+      cosPhi,
+      voltageLevel,
     });
   }
 
@@ -972,7 +1075,7 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
       elementId,
       name: info.name,
       type: info.type,
-      voltageLevel: 0.4,
+      voltageLevel: info.voltageLevel ?? 0.4,  // Из Input или по умолчанию 0.4 кВ
       operationalStatus: parseOperationalStatus(info.state),
       electricalStatus: 'DEAD',
       parentId: null,
@@ -998,7 +1101,7 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
       elementId,
       name: info.name,
       type: info.type,
-      voltageLevel: 0.4,
+      voltageLevel: info.voltageLevel ?? 0.4,  // Из Input или по умолчанию 0.4 кВ
       operationalStatus: parseOperationalStatus(info.state),
       electricalStatus: 'DEAD',
       parentId: parentDb || null,
@@ -1097,8 +1200,10 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
       
       if (powerKw && c.length && c.section) {
         // Расчёт тока: I = P / (√3 × U × cosφ)
-        const voltageV = 380; // Номинальное напряжение
-        const cosPhi = 0.92; // Коэффициент мощности по умолчанию
+        // Напряжение: из данных или по умолчанию 380 В (0.4 кВ)
+        const voltageV = (c.voltageLevel ?? 0.4) * 1000; // кВ → В
+        // cos φ: из данных или по умолчанию 0.92
+        const cosPhi = c.cosPhi ?? 0.92;
         currentA = (powerKw * 1000) / (Math.sqrt(3) * voltageV * cosPhi);
         
         // Расчёт потерь напряжения с автовыбором метода
@@ -1253,8 +1358,8 @@ export async function importUniversal(options: { filePath?: string; sheetName?: 
             name: info.name,
             powerP: info.power ?? 0,  // Если мощность не указана, 0
             usageFactor: info.usageFactor ?? 0.8,  // По умолчанию 0.8 если не указан
-            cosPhi: 0.9,  // По умолчанию
-            category: 3,  // По умолчанию 3-я категория
+            cosPhi: info.cosPhi ?? 0.92,  // Из Input или по умолчанию 0.92
+            category: info.category ?? 3,  // Из Input или по умолчанию 3-я категория
             updatedAt: new Date(),
           }
         });

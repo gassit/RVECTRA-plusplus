@@ -15,7 +15,7 @@ import type {
 
 /**
  * Структура справочника:
- * - cores: количество жил (3, 4, 5)
+ * - cores: количество жил (2, 3, 4, 5)
  * - section: сечение (мм²)
  * - material: 'copper' или 'aluminum'
  * - iDop: допустимый ток (А)
@@ -26,96 +26,142 @@ import type {
  */
 
 // Ключ: "cores_section_material" → iDop (А)
-// Источник: ПУЭ таблица 1.3.4-1.3.5
+// Источник: ПУЭ таблица 1.3.4-1.3.10 (бронированные кабели, прокладка в воздухе)
 const PUE_CURRENT_TABLE: Record<string, number> = {
-  // === 3 ЖИЛЫ (базовые, для 0.22 кВ) ===
-  // Медь
-  '3_1.5_copper': 19,
+  // ==================== МЕДЬ (Cu) ====================
+  // 3-жильные кабели (медь)
+  '3_1.5_copper': 21,
   '3_2.5_copper': 27,
-  '3_4_copper': 38,
+  '3_4_copper': 36,
   '3_6_copper': 46,
-  '3_10_copper': 70,
+  '3_10_copper': 60,
   '3_16_copper': 85,
-  '3_25_copper': 115,
+  '3_25_copper': 110,
   '3_35_copper': 135,
-  '3_50_copper': 175,
-  '3_70_copper': 215,
-  '3_95_copper': 260,
-  '3_120_copper': 300,
-  // Алюминий
-  '3_2.5_aluminum': 20,
-  '3_4_aluminum': 28,
-  '3_6_aluminum': 36,
-  '3_10_aluminum': 50,
-  '3_16_aluminum': 60,
-  '3_25_aluminum': 85,
-  '3_35_aluminum': 100,
-  '3_50_aluminum': 135,
-  '3_70_aluminum': 165,
-  '3_95_aluminum': 200,
-  '3_120_aluminum': 230,
+  '3_50_copper': 165,
+  '3_70_copper': 210,
+  '3_95_copper': 250,
+  '3_120_copper': 290,
+  '3_150_copper': 330,
+  '3_185_copper': 375,
+  '3_240_copper': 430,
 
-  // === 4 ЖИЛЫ (для 0.4 кВ) ===
-  // Медь
-  '4_4_copper': 30,
-  '4_6_copper': 40,
-  '4_10_copper': 50,
-  '4_16_copper': 75,
-  '4_25_copper': 90,
-  '4_35_copper': 115,
-  '4_50_copper': 150,
-  '4_70_copper': 185,
-  '4_95_copper': 225,
-  '4_120_copper': 260,
-  // Алюминий
-  '4_4_aluminum': 23,
-  '4_6_aluminum': 30,
-  '4_10_aluminum': 39,
-  '4_16_aluminum': 55,
-  '4_25_aluminum': 70,
-  '4_35_aluminum': 85,
-  '4_50_aluminum': 120,
-  '4_70_aluminum': 140,
-  '4_95_aluminum': 175,
-  '4_120_aluminum': 200,
+  // 4-жильные кабели (медь)
+  '4_1.5_copper': 19,
+  '4_2.5_copper': 25,
+  '4_4_copper': 34,
+  '4_6_copper': 43,
+  '4_10_copper': 58,
+  '4_16_copper': 80,
+  '4_25_copper': 105,
+  '4_35_copper': 125,
+  '4_50_copper': 155,
+  '4_70_copper': 195,
+  '4_95_copper': 230,
+  '4_120_copper': 270,
+  '4_150_copper': 305,
+  '4_185_copper': 350,
+  '4_240_copper': 400,
 
-  // === 5 ЖИЛ (для 0.4 кВ) ===
-  // Медь
-  '5_1.5_copper': 16,
-  '5_2.5_copper': 25,
+  // 5-жильные кабели (медь)
+  '5_1.5_copper': 18,
+  '5_2.5_copper': 21,
   '5_4_copper': 30,
-  '5_6_copper': 40,
-  '5_10_copper': 50,
-  '5_16_copper': 75,
+  '5_6_copper': 38,
+  '5_10_copper': 52,
+  '5_16_copper': 68,
   '5_25_copper': 90,
-  '5_35_copper': 115,
-  '5_50_copper': 145,
-  '5_70_copper': 180,
-  '5_95_copper': 220,
-  '5_120_copper': 260,
-  '5_150_copper': 330,
-  '5_185_copper': 500,
-  '5_240_copper': 600,
-  '5_300_copper': 680,
-  '5_400_copper': 800,
-  // Алюминий
-  '5_2.5_aluminum': 23,
-  '5_4_aluminum': 30,
-  '5_6_aluminum': 39,
-  '5_10_aluminum': 55,
-  '5_16_aluminum': 70,
-  '5_25_aluminum': 85,
-  '5_35_aluminum': 110,
-  '5_50_aluminum': 140,
-  '5_70_aluminum': 170,
-  '5_95_aluminum': 200,
-  '5_120_aluminum': 230,
-  '5_150_aluminum': 255,
-  '5_185_aluminum': 350,
-  '5_240_aluminum': 450,
-  '5_300_aluminum': 500,
-  '5_400_aluminum': 600,
+  '5_35_copper': 110,
+  '5_50_copper': 135,
+  '5_70_copper': 170,
+  '5_95_copper': 205,
+  '5_120_copper': 235,
+  '5_150_copper': 270,
+  '5_185_copper': 305,
+  '5_240_copper': 350,
+
+  // ==================== АЛЮМИНИЙ (Al) ====================
+  // 3-жильные кабели (алюминий)
+  '3_2.5_aluminum': 21,
+  '3_4_aluminum': 29,
+  '3_6_aluminum': 38,
+  '3_10_aluminum': 55,
+  '3_16_aluminum': 70,
+  '3_25_aluminum': 90,
+  '3_35_aluminum': 110,
+  '3_50_aluminum': 135,
+  '3_70_aluminum': 175,
+  '3_95_aluminum': 210,
+  '3_120_aluminum': 245,
+  '3_150_aluminum': 280,
+  '3_185_aluminum': 320,
+  '3_240_aluminum': 370,
+
+  // 4-жильные кабели (алюминий)
+  '4_2.5_aluminum': 19,
+  '4_4_aluminum': 27,
+  '4_6_aluminum': 35,
+  '4_10_aluminum': 47,
+  '4_16_aluminum': 62,
+  '4_25_aluminum': 80,
+  '4_35_aluminum': 99,
+  '4_50_aluminum': 119,
+  '4_70_aluminum': 150,
+  '4_95_aluminum': 184,
+  '4_120_aluminum': 212,
+  '4_150_aluminum': 245,
+  '4_185_aluminum': 280,
+  '4_240_aluminum': 335,
+
+  // 5-жильные кабели (алюминий)
+  '5_2.5_aluminum': 17,
+  '5_4_aluminum': 24,
+  '5_6_aluminum': 31,
+  '5_10_aluminum': 42,
+  '5_16_aluminum': 55,
+  '5_25_aluminum': 70,
+  '5_35_aluminum': 86,
+  '5_50_aluminum': 104,
+  '5_70_aluminum': 131,
+  '5_95_aluminum': 160,
+  '5_120_aluminum': 185,
+  '5_150_aluminum': 213,
+  '5_185_aluminum': 244,
+  '5_240_aluminum': 292,
 };
+
+// ============================================================================
+// ТИПЫ
+// ============================================================================
+
+/**
+ * Источник допустимого тока
+ */
+type IDopSource = 'input' | 'cableReference' | 'PUE';
+
+/**
+ * Расширенный результат валидации с деталями для tooltip
+ */
+interface CableValidationDetails {
+  /** Расчётный ток (А) */
+  currentA: number;
+  /** Допустимый ток, использованный при проверке (А) */
+  iDopUsed: number;
+  /** Источник допустимого тока */
+  iDopSource: IDopSource;
+  /** Допустимый ток по ПУЭ (А) - для сравнения */
+  iDopFromPUE: number | null;
+  /** Загрузка кабеля (%) */
+  loadingPercent: number;
+  /** Предупреждение о расхождении данных */
+  discrepancyWarning?: string;
+  /** Данные для tooltip */
+  tooltip: {
+    iDopPUE: string;
+    loadingPercent: string;
+    warning?: string;
+  };
+}
 
 // ============================================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -148,7 +194,7 @@ function getIDopFromPUE(section: number, material: string, cores: number): numbe
   }
 
   // Если нет точного совпадения - ищем ближайшее большее сечение
-  const sections = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400];
+  const sections = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240];
   
   for (const s of sections) {
     const searchKey = `${cores}_${s}_${mat}`;
@@ -158,7 +204,7 @@ function getIDopFromPUE(section: number, material: string, cores: number): numbe
   }
 
   // Если сечение больше максимального в таблице
-  const maxKey = `${cores}_400_${mat}`;
+  const maxKey = `${cores}_240_${mat}`;
   if (PUE_CURRENT_TABLE[maxKey]) {
     return PUE_CURRENT_TABLE[maxKey];
   }
@@ -174,7 +220,7 @@ function interpolateIDop(section: number, material: string, cores: number): numb
     ? 'aluminum'
     : 'copper';
 
-  const sections = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400];
+  const sections = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240];
 
   // Найти соседние сечения для интерполяции
   for (let i = 0; i < sections.length - 1; i++) {
@@ -193,6 +239,62 @@ function interpolateIDop(section: number, material: string, cores: number): numb
   }
 
   return null;
+}
+
+/**
+ * Формирование деталей валидации для tooltip
+ */
+function buildValidationDetails(
+  currentA: number,
+  iDopUsed: number,
+  iDopSource: IDopSource,
+  iDopFromPUE: number | null
+): CableValidationDetails {
+  const loadingPercent = (currentA / iDopUsed) * 100;
+  
+  let discrepancyWarning: string | undefined;
+  
+  // Проверяем расхождение между input и ПУЭ
+  if (iDopSource === 'input' && iDopFromPUE !== null) {
+    const diff = Math.abs(iDopUsed - iDopFromPUE);
+    const diffPercent = (diff / iDopFromPUE) * 100;
+    
+    if (diffPercent > 5) {
+      discrepancyWarning = `⚠️ Внимание: Допустимый ток из файла (${iDopUsed}А) отличается от ПУЭ (${iDopFromPUE}А) на ${diffPercent.toFixed(1)}%`;
+    }
+  }
+  
+  // Проверяем расхождение между CableReference и ПУЭ
+  if (iDopSource === 'cableReference' && iDopFromPUE !== null) {
+    const diff = Math.abs(iDopUsed - iDopFromPUE);
+    const diffPercent = (diff / iDopFromPUE) * 100;
+    
+    if (diffPercent > 5) {
+      discrepancyWarning = `⚠️ Внимание: Допустимый ток из справочника БД (${iDopUsed}А) отличается от ПУЭ (${iDopFromPUE}А) на ${diffPercent.toFixed(1)}%`;
+    }
+  }
+  
+  // Формируем tooltip
+  const tooltip: CableValidationDetails['tooltip'] = {
+    iDopPUE: iDopFromPUE !== null 
+      ? `${iDopFromPUE} А` 
+      : 'Нет данных',
+    loadingPercent: `${loadingPercent.toFixed(1)}%`,
+  };
+  
+  if (discrepancyWarning) {
+    tooltip.warning = discrepancyWarning;
+  }
+  
+  return {
+    currentA,
+    iDopUsed,
+    iDopSource,
+    iDopFromPUE,
+    loadingPercent,
+    discrepancyWarning,
+    tooltip,
+  };
 }
 
 // ============================================================================
@@ -273,30 +375,44 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
     // Если нет тока - пропускаем
     if (!currentA || currentA <= 0) continue;
 
-    // Получаем допустимый ток
-    // Приоритет: iDop из кабеля (если указан), иначе из справочника
-    let iDop = cable.iDop;
+    // === Получаем допустимый ток с приоритетом источников ===
+    let iDop: number | null = null;
+    let iDopSource: IDopSource = 'PUE';
+    
+    // 1. Сначала получаем значение из ПУЭ для сравнения
+    const iDopFromPUE = getIDopFromPUE(cable.section, cable.material, cable.cores) ||
+                        interpolateIDop(cable.section, cable.material, cable.cores);
 
-    if (!iDop || iDop <= 0) {
-      // Пробуем CableReference
-      if (cable.refId) {
-        const cableRef = await db.cableReference.findUnique({ where: { id: cable.refId } });
-        if (cableRef) {
-          iDop = cableRef.iDop;
-        }
+    // 2. Проверяем приоритет источников для iDop
+    
+    // Приоритет 1: Допустимый ток из input-файла (cable.iDop)
+    if (cable.iDop && cable.iDop > 0) {
+      iDop = cable.iDop;
+      iDopSource = 'input';
+    }
+    
+    // Приоритет 2: CableReference (справочник в БД)
+    if (!iDop && cable.refId) {
+      const cableRef = await db.cableReference.findUnique({ where: { id: cable.refId } });
+      if (cableRef && cableRef.iDop && cableRef.iDop > 0) {
+        iDop = cableRef.iDop;
+        iDopSource = 'cableReference';
       }
-
-      // Если нет в CableReference - берём из таблицы ПУЭ
-      if (!iDop || iDop <= 0) {
-        iDop = getIDopFromPUE(cable.section, cable.material, cable.cores) ||
-               interpolateIDop(cable.section, cable.material, cable.cores);
-      }
+    }
+    
+    // Приоритет 3: Таблица ПУЭ
+    if (!iDop) {
+      iDop = iDopFromPUE;
+      iDopSource = 'PUE';
     }
 
     // Если не нашли допустимый ток - пропускаем
     if (!iDop || iDop <= 0) continue;
 
-    // Проверка
+    // === Формируем детали для tooltip ===
+    const details = buildValidationDetails(currentA, iDop, iDopSource, iDopFromPUE);
+
+    // === Проверка ===
     const ratio = currentA / iDop;
     let status: 'PASS' | 'WARN' | 'FAIL';
     let message: string;
@@ -304,14 +420,19 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
     if (ratio <= 1.0) {
       status = ratio > 0.9 ? 'WARN' : 'PASS';
       message = ratio > 0.9
-        ? `Ток ${currentA.toFixed(1)} А близок к допустимому ${iDop} А (${(ratio * 100).toFixed(1)}%)`
-        : `Ток ${currentA.toFixed(1)} А в пределах допустимого ${iDop} А (${(ratio * 100).toFixed(1)}%)`;
+        ? `Ток ${currentA.toFixed(1)}А близок к допустимому ${iDop}А (${details.tooltip.loadingPercent})`
+        : `Ток ${currentA.toFixed(1)}А в пределах допустимого ${iDop}А (${details.tooltip.loadingPercent})`;
     } else {
       status = 'FAIL';
-      message = `ПЕРЕГРУЗКА: Ток ${currentA.toFixed(1)} А превышает допустимый ${iDop} А на ${((ratio - 1) * 100).toFixed(1)}%`;
+      message = `ПЕРЕГРУЗКА: Ток ${currentA.toFixed(1)}А превышает допустимый ${iDop}А на ${((ratio - 1) * 100).toFixed(1)}%`;
     }
 
-    // Создаём результат
+    // Добавляем предупреждение о расхождении данных
+    if (details.discrepancyWarning) {
+      message += `\n${details.discrepancyWarning}`;
+    }
+
+    // Создаём результат с расширенными данными
     const result = await db.validationResult.create({
       data: {
         id: `VAL_SECTION_${cable.cableId}_${Date.now()}`,
@@ -322,7 +443,15 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
         message,
         value: currentA,
         limit: iDop,
-      },
+        // Сохраняем дополнительные данные в JSON формате
+        details: {
+          iDopSource,
+          iDopFromPUE,
+          loadingPercent: details.loadingPercent,
+          discrepancyWarning: details.discrepancyWarning,
+          tooltip: details.tooltip,
+        },
+      } as any,
     });
 
     results.push({
@@ -336,7 +465,9 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
       actualValue: currentA,
       expectedValue: iDop,
       deviation: ratio > 1 ? (ratio - 1) * 100 : undefined,
-    });
+      // Добавляем детали для tooltip
+      details: details.tooltip,
+    } as ValidationResultData);
   }
 
   return results;
@@ -467,6 +598,8 @@ export async function getValidationIssues(): Promise<ValidationIssue[]> {
     recommendation: '',
     actualValue: r.value || undefined,
     expectedValue: r.limit || undefined,
+    // Добавляем детали для tooltip
+    details: (r as any).details,
   }));
 }
 
@@ -493,8 +626,23 @@ export async function getValidationStats(): Promise<{
   };
 }
 
+/**
+ * Экспорт таблицы ПУЭ для использования в UI
+ */
+export function getPueCurrentTable(): Record<string, number> {
+  return { ...PUE_CURRENT_TABLE };
+}
+
+/**
+ * Экспорт функции получения тока по ПУЭ
+ */
+export { getIDopFromPUE, getVoltageByCores };
+
 export default {
   runValidation,
   getValidationIssues,
   getValidationStats,
+  getPueCurrentTable,
+  getIDopFromPUE,
+  getVoltageByCores,
 };

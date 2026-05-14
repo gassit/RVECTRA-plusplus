@@ -218,6 +218,16 @@ export interface GraphCombo {
 // ВАЛИДАЦИЯ
 // ============================================================================
 
+// Детали для tooltip валидации кабеля
+export interface ValidationTooltipDetails {
+  /** Допустимый ток по ПУЭ */
+  iDopPUE: string;
+  /** Загрузка кабеля в процентах */
+  loadingPercent: string;
+  /** Предупреждение о расхождении данных */
+  warning?: string;
+}
+
 // Результат валидации
 export interface ValidationResultData {
   id: string;
@@ -232,6 +242,8 @@ export interface ValidationResultData {
   deviation?: number;
   message: string;
   recommendation?: string;
+  /** Детали для tooltip (для SECTION_001) */
+  details?: ValidationTooltipDetails;
 }
 
 // Проблема валидации
@@ -245,6 +257,8 @@ export interface ValidationIssue {
   recommendation: string;
   actualValue?: number;
   expectedValue?: number;
+  /** Детали для tooltip (для SECTION_001) */
+  details?: ValidationTooltipDetails;
 }
 
 // Правило валидации

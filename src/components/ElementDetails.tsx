@@ -3,8 +3,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { X, Zap, Gauge, Settings, AlertTriangle, Activity, Cable } from 'lucide-react';
-import type { GraphNode, GraphEdge } from '@/types';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { X, Zap, Gauge, Settings, AlertTriangle, Activity, Cable, Info } from 'lucide-react';
+import type { GraphNode, GraphEdge, ValidationTooltipDetails } from '@/types';
 
 interface ElementDetailsProps {
   node?: GraphNode | null;
@@ -319,20 +320,59 @@ export default function ElementDetails({ node, edge, onClose }: ElementDetailsPr
             </div>
             <div className="space-y-1.5">
               {node.validationResults.slice(0, 3).map((result, idx) => (
-                <div
-                  key={idx}
-                  className={`p-2 rounded text-xs ${
-                    result.status === 'CRITICAL' 
-                      ? 'bg-red-900/30 text-red-400'
-                      : result.status === 'FAIL'
-                      ? 'bg-orange-900/30 text-orange-400'
-                      : result.status === 'WARN'
-                      ? 'bg-yellow-900/30 text-yellow-400'
-                      : 'bg-green-900/30 text-green-400'
-                  }`}
-                >
-                  {result.message}
-                </div>
+                <TooltipProvider key={idx}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className={`p-2 rounded text-xs cursor-help flex items-start justify-between gap-2 ${
+                          result.status === 'CRITICAL'
+                            ? 'bg-red-900/30 text-red-400'
+                            : result.status === 'FAIL'
+                            ? 'bg-orange-900/30 text-orange-400'
+                            : result.status === 'WARN'
+                            ? 'bg-yellow-900/30 text-yellow-400'
+                            : 'bg-green-900/30 text-green-400'
+                        }`}
+                      >
+                        <span>{result.message}</span>
+                        {result.details && (
+                          <Info className="h-3.5 w-3.5 flex-shrink-0 opacity-60 mt-0.5" />
+                        )}
+                      </div>
+                    </TooltipTrigger>
+                    {result.details && (
+                      <TooltipContent
+                        side="left"
+                        className="max-w-xs bg-slate-800 border-slate-700 text-slate-200"
+                      >
+                        <div className="space-y-2 text-xs">
+                          <div className="flex justify-between gap-4">
+                            <span className="text-slate-400">I_доп (по ПУЭ):</span>
+                            <span className="font-medium text-blue-400">{result.details.iDopPUE}</span>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-slate-400">Загрузка кабеля:</span>
+                            <span className={`font-medium ${
+                              parseFloat(result.details.loadingPercent) > 90
+                                ? 'text-red-400'
+                                : parseFloat(result.details.loadingPercent) > 70
+                                ? 'text-yellow-400'
+                                : 'text-green-400'
+                            }`}>
+                              {result.details.loadingPercent}
+                            </span>
+                          </div>
+                          {result.details.warning && (
+                            <div className="pt-1 border-t border-slate-700 text-yellow-400 flex items-start gap-1.5">
+                              <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                              <span>{result.details.warning}</span>
+                            </div>
+                          )}
+                        </div>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
               ))}
             </div>
           </div>

@@ -220,10 +220,14 @@ export interface GraphCombo {
 
 // Детали для tooltip валидации кабеля
 export interface ValidationTooltipDetails {
+  /** Номинальный ток выключателя */
+  iNom: string;
   /** Допустимый ток по ПУЭ */
   iDopPUE: string;
   /** Загрузка кабеля в процентах */
   loadingPercent: string;
+  /** Расчётный ток (для справки) */
+  iRasch?: string;
   /** Предупреждение о расхождении данных */
   warning?: string;
 }

@@ -143,8 +143,8 @@ type IDopSource = 'input' | 'cableReference' | 'PUE';
  * Расширенный результат валидации с деталями для tooltip
  */
 interface CableValidationDetails {
-  /** Расчётный ток (А) */
-  currentA: number;
+  /** Номинальный ток выключателя (А) */
+  iNom: number;
   /** Допустимый ток, использованный при проверке (А) */
   iDopUsed: number;
   /** Источник допустимого тока */
@@ -153,12 +153,16 @@ interface CableValidationDetails {
   iDopFromPUE: number | null;
   /** Загрузка кабеля (%) */
   loadingPercent: number;
+  /** Расчётный ток (А) - для справки */
+  iRasch: number | null;
   /** Предупреждение о расхождении данных */
   discrepancyWarning?: string;
   /** Данные для tooltip */
   tooltip: {
+    iNom: string;
     iDopPUE: string;
     loadingPercent: string;
+    iRasch?: string;
     warning?: string;
   };
 }
@@ -245,12 +249,13 @@ function interpolateIDop(section: number, material: string, cores: number): numb
  * Формирование деталей валидации для tooltip
  */
 function buildValidationDetails(
-  currentA: number,
+  iNom: number,
   iDopUsed: number,
   iDopSource: IDopSource,
-  iDopFromPUE: number | null
+  iDopFromPUE: number | null,
+  iRasch?: number | null
 ): CableValidationDetails {
-  const loadingPercent = (currentA / iDopUsed) * 100;
+  const loadingPercent = (iNom / iDopUsed) * 100;
   
   let discrepancyWarning: string | undefined;
   
@@ -260,7 +265,7 @@ function buildValidationDetails(
     const diffPercent = (diff / iDopFromPUE) * 100;
     
     if (diffPercent > 5) {
-      discrepancyWarning = `⚠️ Внимание: Допустимый ток из файла (${iDopUsed}А) отличается от ПУЭ (${iDopFromPUE}А) на ${diffPercent.toFixed(1)}%`;
+      discrepancyWarning = `⚠️ Допустимый ток из файла (${iDopUsed}А) отличается от ПУЭ (${iDopFromPUE}А) на ${diffPercent.toFixed(1)}%`;
     }
   }
   
@@ -270,28 +275,35 @@ function buildValidationDetails(
     const diffPercent = (diff / iDopFromPUE) * 100;
     
     if (diffPercent > 5) {
-      discrepancyWarning = `⚠️ Внимание: Допустимый ток из справочника БД (${iDopUsed}А) отличается от ПУЭ (${iDopFromPUE}А) на ${diffPercent.toFixed(1)}%`;
+      discrepancyWarning = `⚠️ Допустимый ток из справочника БД (${iDopUsed}А) отличается от ПУЭ (${iDopFromPUE}А) на ${diffPercent.toFixed(1)}%`;
     }
   }
   
   // Формируем tooltip
   const tooltip: CableValidationDetails['tooltip'] = {
+    iNom: `${iNom} А`,
     iDopPUE: iDopFromPUE !== null 
       ? `${iDopFromPUE} А` 
       : 'Нет данных',
     loadingPercent: `${loadingPercent.toFixed(1)}%`,
   };
   
+  // Добавляем расчётный ток для справки (если есть)
+  if (iRasch !== null && iRasch !== undefined) {
+    tooltip.iRasch = `${iRasch.toFixed(1)} А`;
+  }
+  
   if (discrepancyWarning) {
     tooltip.warning = discrepancyWarning;
   }
   
   return {
-    currentA,
+    iNom,
     iDopUsed,
     iDopSource,
     iDopFromPUE,
     loadingPercent,
+    iRasch: iRasch ?? null,
     discrepancyWarning,
     tooltip,
   };
@@ -302,7 +314,8 @@ function buildValidationDetails(
 // ============================================================================
 
 /**
- * Валидация сечения кабеля по току нагрузки
+ * Валидация сечения кабеля по номинальному току выключателя
+ * Проверка: I_ном (выключателя) ≤ I_доп (кабеля)
  */
 async function validateCableSection(): Promise<ValidationResultData[]> {
   const results: ValidationResultData[] = [];
@@ -314,8 +327,8 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
       data: {
         id: `RULE_SECTION_001_${Date.now()}`,
         name: 'SECTION_001',
-        description: 'Проверка сечения кабеля по допустимому току',
-        formula: 'I_расч ≤ I_доп',
+        description: 'Проверка сечения кабеля по номинальному току выключателя',
+        formula: 'I_ном ≤ I_доп',
         severity: 'high',
         enabled: true,
       },
@@ -337,45 +350,45 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
     // Пропускаем если нет сечения
     if (!cable.section || cable.section <= 0) continue;
 
-    // Получаем расчётный ток
-    // Приоритет: currentA из кабеля, иначе из нагрузки
-    let currentA = cable.currentA;
-
-    if (!currentA) {
-      // Пробуем получить ток из нагрузки (target элемент)
-      const targetElementId = conn.targetId;
-      
-      // Находим DeviceSlot для элемента
-      const deviceSlot = await db.deviceSlot.findFirst({
-        where: { elementId: targetElementId },
+    // === Получаем номинальный ток выключателя (I_ном) ===
+    // Выключатель защищающий кабель находится в source-элементе (в начале линии)
+    let iNom: number | null = null;
+    
+    // Ищем DeviceSlot в source-элементе
+    const sourceDeviceSlot = await db.deviceSlot.findFirst({
+      where: { elementId: conn.sourceId },
+    });
+    
+    if (sourceDeviceSlot) {
+      // Ищем Device (выключатель) в slot
+      const device = await db.device.findUnique({
+        where: { deviceId: sourceDeviceSlot.id },
       });
       
-      if (deviceSlot) {
-        // Находим Device для slot
-        const device = await db.device.findUnique({
-          where: { deviceId: deviceSlot.id },
-        });
-        
-        if (device) {
-          // Находим Load для device
-          const load = await db.load.findUnique({
-            where: { deviceId: device.deviceId },
-          });
-          
-          if (load && load.powerP) {
-            // I = P / (√3 × U × cosφ)
-            const voltage = 380; // В
-            const cosPhi = load.cosPhi || 0.92;
-            currentA = (load.powerP * 1000) / (Math.sqrt(3) * voltage * cosPhi);
-          }
-        }
+      if (device && device.type === 'BREAKER' && device.currentNom) {
+        iNom = device.currentNom;
+      }
+    }
+    
+    // Если не нашли через Device, пробуем прямой поиск Breaker
+    if (!iNom) {
+      const breaker = await db.breaker.findFirst({
+        where: {
+          OR: [
+            { elementId: conn.sourceId },
+          ],
+        },
+      });
+      
+      if (breaker && breaker.inRating) {
+        iNom = breaker.inRating;
       }
     }
 
-    // Если нет тока - пропускаем
-    if (!currentA || currentA <= 0) continue;
+    // Если нет выключателя - пропускаем
+    if (!iNom || iNom <= 0) continue;
 
-    // === Получаем допустимый ток с приоритетом источников ===
+    // === Получаем допустимый ток кабеля (I_доп) с приоритетом источников ===
     let iDop: number | null = null;
     let iDopSource: IDopSource = 'PUE';
     
@@ -409,22 +422,49 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
     // Если не нашли допустимый ток - пропускаем
     if (!iDop || iDop <= 0) continue;
 
-    // === Формируем детали для tooltip ===
-    const details = buildValidationDetails(currentA, iDop, iDopSource, iDopFromPUE);
+    // === Рассчитываем I_расч для справки ===
+    let iRasch: number | null = null;
+    
+    // Пробуем получить ток из нагрузки (target элемент)
+    const targetDeviceSlot = await db.deviceSlot.findFirst({
+      where: { elementId: conn.targetId },
+    });
+    
+    if (targetDeviceSlot) {
+      const targetDevice = await db.device.findUnique({
+        where: { deviceId: targetDeviceSlot.id },
+      });
+      
+      if (targetDevice) {
+        const load = await db.load.findUnique({
+          where: { deviceId: targetDevice.deviceId },
+        });
+        
+        if (load && load.powerP) {
+          // I = P / (√3 × U × cosφ)
+          const voltage = 380; // В
+          const cosPhi = load.cosPhi || 0.92;
+          iRasch = (load.powerP * 1000) / (Math.sqrt(3) * voltage * cosPhi);
+        }
+      }
+    }
 
-    // === Проверка ===
-    const ratio = currentA / iDop;
+    // === Формируем детали для tooltip ===
+    const details = buildValidationDetails(iNom, iDop, iDopSource, iDopFromPUE, iRasch);
+
+    // === Проверка: I_ном ≤ I_доп ===
+    const ratio = iNom / iDop;
     let status: 'PASS' | 'WARN' | 'FAIL';
     let message: string;
 
     if (ratio <= 1.0) {
       status = ratio > 0.9 ? 'WARN' : 'PASS';
       message = ratio > 0.9
-        ? `Ток ${currentA.toFixed(1)}А близок к допустимому ${iDop}А (${details.tooltip.loadingPercent})`
-        : `Ток ${currentA.toFixed(1)}А в пределах допустимого ${iDop}А (${details.tooltip.loadingPercent})`;
+        ? `I_ном=${iNom}А близок к I_доп=${iDop}А (${details.tooltip.loadingPercent})`
+        : `I_ном=${iNom}А ≤ I_доп=${iDop}А (${details.tooltip.loadingPercent})`;
     } else {
       status = 'FAIL';
-      message = `ПЕРЕГРУЗКА: Ток ${currentA.toFixed(1)}А превышает допустимый ${iDop}А на ${((ratio - 1) * 100).toFixed(1)}%`;
+      message = `НЕСООТВЕТСТВИЕ: I_ном=${iNom}А > I_доп=${iDop}А (превышение на ${((ratio - 1) * 100).toFixed(1)}%)`;
     }
 
     // Добавляем предупреждение о расхождении данных
@@ -441,13 +481,15 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
         connectionId: conn.id,
         status,
         message,
-        value: currentA,
+        value: iNom,
         limit: iDop,
         // Сохраняем дополнительные данные в JSON формате
         details: {
+          iNom,
           iDopSource,
           iDopFromPUE,
           loadingPercent: details.loadingPercent,
+          iRasch,
           discrepancyWarning: details.discrepancyWarning,
           tooltip: details.tooltip,
         },
@@ -462,7 +504,7 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
       elementId: conn.sourceId,
       connectionId: conn.id,
       message,
-      actualValue: currentA,
+      actualValue: iNom,
       expectedValue: iDop,
       deviation: ratio > 1 ? (ratio - 1) * 100 : undefined,
       // Добавляем детали для tooltip

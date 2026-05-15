@@ -481,6 +481,14 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
   let toKey = allKeys.find(k => k.toLowerCase().includes('до') || k.toLowerCase() === 'to');
   let avrKey = allKeys.find(k => k.toLowerCase().includes('авр') || k.toLowerCase() === 'avr');
   let locationKey = allKeys.find(k => k.toLowerCase().includes('расположение') || k.toLowerCase().includes('помещение') || k.toLowerCase() === 'location');
+  
+  // Additional keys for validation data
+  let currentNomKey = allKeys.find(k => k.toLowerCase().includes('номинальный ток') || k.toLowerCase().includes('iном') || k.toLowerCase() === 'in');
+  let sectionKey = allKeys.find(k => k.toLowerCase().includes('сечение') || k.toLowerCase().includes('section'));
+  let materialKey = allKeys.find(k => k.toLowerCase().includes('материал') || k.toLowerCase().includes('material'));
+  let iDopKey = allKeys.find(k => k.toLowerCase().includes('допустимый ток') || k.toLowerCase().includes('iдоп'));
+  let coresKey = allKeys.find(k => k.toLowerCase().includes('жил') || k.toLowerCase().includes('cores'));
+  let lengthKey = allKeys.find(k => k.toLowerCase().includes('длина') || k.toLowerCase().includes('length'));
 
   // Fallback на индексы если не нашли по имени
   if (!fromKey && allKeys.length > 2) fromKey = allKeys[2];
@@ -490,6 +498,17 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
   if (!locationKey && allKeys.length > 7) locationKey = allKeys[7];
 
   console.log(`Column mapping: from="${fromKey}", cable="${cableKey}", to="${toKey}", avr="${avrKey}", location="${locationKey}"`);
+  console.log(`Validation columns: currentNom="${currentNomKey}", section="${sectionKey}", material="${materialKey}", iDop="${iDopKey}"`);
+
+  // Store row data for each connection
+  const connectionDataMap = new Map<string, {
+    ratedCurrent?: number;
+    section?: number;
+    material?: string;
+    iDop?: number;
+    cores?: number;
+    length?: number;
+  }>();
 
   for (const row of rows) {
     const fromName = fromKey ? String(row[fromKey] || '') : '';
@@ -497,6 +516,14 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
     const toName = toKey ? String(row[toKey] || '') : '';
     const avrName = avrKey ? String(row[avrKey] || '') : '';
     const locationValue = locationKey ? String(row[locationKey] || '') : '';
+    
+    // Read validation data
+    const ratedCurrentValue = currentNomKey ? Number(row[currentNomKey]) || undefined : undefined;
+    const sectionValue = sectionKey ? Number(row[sectionKey]) || undefined : undefined;
+    const materialValue = materialKey ? String(row[materialKey] || '') : '';
+    const iDopValue = iDopKey ? Number(row[iDopKey]) || undefined : undefined;
+    const coresValue = coresKey ? Number(row[coresKey]) || undefined : undefined;
+    const lengthValue = lengthKey ? Number(row[lengthKey]) || undefined : undefined;
 
     if (!fromName && !toName) continue;
 
@@ -514,10 +541,21 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
       }
     }
 
-    // Собираем связи
+    // Собираем связи с данными кабеля
     if (fromName && toName) {
       const connType = connectionType.toLowerCase().includes('шина') ? 'BUSBAR' : 'CABLE';
+      const connKey = `${fromName}->${toName}`;
       pendingConnections.push({ fromName, toName, connType });
+      
+      // Store validation data for this connection
+      connectionDataMap.set(connKey, {
+        ratedCurrent: ratedCurrentValue,
+        section: sectionValue,
+        material: materialValue,
+        iDop: iDopValue,
+        cores: coresValue,
+        length: lengthValue,
+      });
     }
   }
 
@@ -584,8 +622,17 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
 
     elementIdMap.set(name, id);
 
-    await db.element.create({
-      data: {
+    // Use upsert to handle duplicates
+    await db.element.upsert({
+      where: { elementId: id },
+      update: {
+        name: name.slice(0, 100),
+        location,
+        voltageLevel: 0.4,
+        parentId: parentId || null,
+        updatedAt: new Date(),
+      },
+      create: {
         id,
         elementId: id,
         type,
@@ -605,9 +652,11 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
       const slotId = `slot_${id}`;
       const deviceId = generateDeviceId(deviceType);
       
-      // Create DeviceSlot first
-      await db.deviceSlot.create({
-        data: {
+      // Use upsert for DeviceSlot
+      await db.deviceSlot.upsert({
+        where: { slotId: slotId },
+        update: { slotType: deviceType },
+        create: {
           id: slotId,
           slotId: slotId,
           elementId: id,
@@ -615,9 +664,11 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
         },
       });
       
-      // Then create Device
-      await db.device.create({
-        data: {
+      // Use upsert for Device
+      await db.device.upsert({
+        where: { deviceId: deviceId },
+        update: { deviceType: deviceType, updatedAt: new Date() },
+        create: {
           id: deviceId,
           deviceId: deviceId,
           deviceType: deviceType,
@@ -637,14 +688,42 @@ async function importNetworkAll(rows: ExcelRow[]): Promise<{ elements: number; d
   for (const conn of pendingConnections) {
     const fromId = elementIdMap.get(conn.fromName);
     const toId = elementIdMap.get(conn.toName);
+    const connKey = `${conn.fromName}->${conn.toName}`;
+    const connData = connectionDataMap.get(connKey);
 
     if (fromId && toId) {
+      const connectionId = generateConnectionId(fromId, toId);
+      
+      // Create Cable record if this is a cable connection with data
+      let cableId: string | null = null;
+      if (conn.connType === 'CABLE' && connData && (connData.section || connData.length)) {
+        cableId = `cable_${connectionId}`;
+        try {
+          await db.cable.create({
+            data: {
+              id: cableId,
+              cableId: cableId,
+              section: connData.section || 2.5,
+              material: connData.material?.toLowerCase().includes('алюмин') ? 'aluminum' : 'copper',
+              cores: connData.cores || 5,
+              length: connData.length || 10,
+              iDop: connData.iDop || null,
+              updatedAt: new Date(),
+            },
+          });
+        } catch (e) {
+          // Cable already exists
+          cableId = null;
+        }
+      }
+      
       try {
         await db.connection.create({
           data: {
-            id: generateConnectionId(fromId, toId),
+            id: connectionId,
             sourceId: fromId,
             targetId: toId,
+            cableId: cableId,
           },
         });
         connections++;
@@ -695,6 +774,11 @@ async function clearDatabase(): Promise<void> {
   await db.aVR.deleteMany();
   await db.connection.deleteMany();
   await db.cable.deleteMany();
+  // Delete dependent records first
+  await db.breaker.deleteMany();
+  await db.load.deleteMany();
+  await db.meter.deleteMany();
+  await db.transformer.deleteMany();
   await db.device.deleteMany();
   await db.deviceSlot.deleteMany();
   await db.element.deleteMany();

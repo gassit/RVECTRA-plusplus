@@ -152,8 +152,10 @@ interface CableValidationDetails {
   iDopSource: IDopSource;
   /** Допустимый ток по ПУЭ (А) - для сравнения */
   iDopFromPUE: number | null;
-  /** Загрузка кабеля (%) */
-  loadingPercent: number;
+  /** Загрузка кабеля (%) - отношение I_расч / I_доп */
+  loadingPercent: number | null;
+  /** Коэффициент защиты (%) - отношение I_ном / I_доп */
+  protectionRatio: number;
   /** Расчётный ток (А) - для справки */
   iRasch: number | null;
   /** Предупреждение о расхождении данных */
@@ -163,6 +165,7 @@ interface CableValidationDetails {
     iNom: string;
     iDopPUE: string;
     loadingPercent: string;
+    protectionRatio: string;
     iRasch?: string;
     warning?: string;
   };
@@ -256,7 +259,13 @@ function buildValidationDetails(
   iDopFromPUE: number | null,
   iRasch?: number | null
 ): CableValidationDetails {
-  const loadingPercent = (iNom / iDopUsed) * 100;
+  // Коэффициент защиты: I_ном / I_доп (насколько выключатель нагружен относительно кабеля)
+  const protectionRatio = (iNom / iDopUsed) * 100;
+  
+  // Загрузка кабеля: I_расч / I_доп (фактическая загрузка кабеля током нагрузки)
+  const loadingPercent = iRasch && iRasch > 0 
+    ? (iRasch / iDopUsed) * 100 
+    : null;
   
   let discrepancyWarning: string | undefined;
   
@@ -286,11 +295,14 @@ function buildValidationDetails(
     iDopPUE: iDopFromPUE !== null 
       ? `${iDopFromPUE} А` 
       : 'Нет данных',
-    loadingPercent: `${loadingPercent.toFixed(1)}%`,
+    loadingPercent: loadingPercent !== null 
+      ? `${loadingPercent.toFixed(1)}%` 
+      : 'Н/Д',
+    protectionRatio: `${protectionRatio.toFixed(1)}%`,
   };
   
   // Добавляем расчётный ток для справки (если есть)
-  if (iRasch !== null && iRasch !== undefined) {
+  if (iRasch !== null && iRasch !== undefined && iRasch > 0) {
     tooltip.iRasch = `${iRasch.toFixed(1)} А`;
   }
   
@@ -304,6 +316,7 @@ function buildValidationDetails(
     iDopSource,
     iDopFromPUE,
     loadingPercent,
+    protectionRatio,
     iRasch: iRasch ?? null,
     discrepancyWarning,
     tooltip,
@@ -487,11 +500,16 @@ async function validateCableSection(): Promise<ValidationResultData[]> {
     if (ratio <= 1.0) {
       status = ratio > 0.9 ? 'WARN' : 'PASS';
       message = ratio > 0.9
-        ? `I_ном=${iNom}А близок к I_доп=${iDop}А (${details.tooltip.loadingPercent})`
-        : `I_ном=${iNom}А ≤ I_доп=${iDop}А (${details.tooltip.loadingPercent})`;
+        ? `I_ном=${iNom}А близок к I_доп=${iDop}А (${details.tooltip.protectionRatio})`
+        : `I_ном=${iNom}А ≤ I_доп=${iDop}А (${details.tooltip.protectionRatio})`;
     } else {
       status = 'FAIL';
       message = `НЕСООТВЕТСТВИЕ: I_ном=${iNom}А > I_доп=${iDop}А (превышение на ${((ratio - 1) * 100).toFixed(1)}%)`;
+    }
+
+    // Добавляем информацию о загрузке кабеля (если есть)
+    if (details.loadingPercent !== null) {
+      message += ` | Загрузка кабеля: ${details.tooltip.loadingPercent}`;
     }
 
     // Добавляем предупреждение о расхождении данных

@@ -238,15 +238,29 @@ export default function ElementDetails({ node, edge, onClose }: ElementDetailsPr
                             <div className="flex justify-between gap-4">
                               <span className="text-slate-400">Загрузка кабеля:</span>
                               <span className={`font-medium ${
-                                parseFloat(result.details.loadingPercent) > 90
+                                result.details.loadingPercent !== 'Н/Д' && parseFloat(result.details.loadingPercent) > 90
                                   ? 'text-red-400'
-                                  : parseFloat(result.details.loadingPercent) > 70
+                                  : result.details.loadingPercent !== 'Н/Д' && parseFloat(result.details.loadingPercent) > 70
                                   ? 'text-yellow-400'
                                   : 'text-green-400'
                               }`}>
                                 {result.details.loadingPercent}
                               </span>
                             </div>
+                            {'protectionRatio' in result.details && result.details.protectionRatio && (
+                              <div className="flex justify-between gap-4">
+                                <span className="text-slate-400">Коэфф. защиты:</span>
+                                <span className={`font-medium ${
+                                  parseFloat(result.details.protectionRatio) > 100
+                                    ? 'text-red-400'
+                                    : parseFloat(result.details.protectionRatio) > 90
+                                    ? 'text-yellow-400'
+                                    : 'text-green-400'
+                                }`}>
+                                  {result.details.protectionRatio}
+                                </span>
+                              </div>
+                            )}
                             {result.details.iRasch && (
                               <div className="pt-1 border-t border-slate-700">
                                 <div className="flex justify-between gap-4">
@@ -435,15 +449,29 @@ export default function ElementDetails({ node, edge, onClose }: ElementDetailsPr
                           <div className="flex justify-between gap-4">
                             <span className="text-slate-400">Загрузка кабеля:</span>
                             <span className={`font-medium ${
-                              parseFloat(result.details.loadingPercent) > 90
+                              result.details.loadingPercent !== 'Н/Д' && parseFloat(result.details.loadingPercent) > 90
                                 ? 'text-red-400'
-                                : parseFloat(result.details.loadingPercent) > 70
+                                : result.details.loadingPercent !== 'Н/Д' && parseFloat(result.details.loadingPercent) > 70
                                 ? 'text-yellow-400'
                                 : 'text-green-400'
                             }`}>
                               {result.details.loadingPercent}
                             </span>
                           </div>
+                          {'protectionRatio' in result.details && result.details.protectionRatio && (
+                            <div className="flex justify-between gap-4">
+                              <span className="text-slate-400">Коэфф. защиты:</span>
+                              <span className={`font-medium ${
+                                parseFloat(result.details.protectionRatio) > 100
+                                  ? 'text-red-400'
+                                  : parseFloat(result.details.protectionRatio) > 90
+                                  ? 'text-yellow-400'
+                                  : 'text-green-400'
+                              }`}>
+                                {result.details.protectionRatio}
+                              </span>
+                            </div>
+                          )}
                           {result.details.iRasch && (
                             <div className="pt-1 border-t border-slate-700">
                               <div className="flex justify-between gap-4">

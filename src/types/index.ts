@@ -226,8 +226,10 @@ export interface ValidationTooltipDetails {
   iNom: string;
   /** Допустимый ток по ПУЭ */
   iDopPUE: string;
-  /** Загрузка кабеля в процентах */
+  /** Загрузка кабеля в процентах (I_расч / I_доп) */
   loadingPercent: string;
+  /** Коэффициент защиты в процентах (I_ном / I_доп) */
+  protectionRatio?: string;
   /** Расчётный ток (для справки) */
   iRasch?: string;
   /** Предупреждение о расхождении данных */

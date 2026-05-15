@@ -1346,42 +1346,109 @@ export default function NetworkGraphG6({
               )}
               
               {/* Материал */}
-              {((pinnedEdge || hoveredEdge) as any)?.cable?.material && (
+              {(pinnedEdge || hoveredEdge)?.material && (
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Материал:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {((pinnedEdge || hoveredEdge) as any).cable.material === 'copper' ? 'Медь' : 'Алюминий'}
+                    {(pinnedEdge || hoveredEdge)?.material === 'Cu' ? 'Медь' : 'Алюминий'}
                   </span>
                 </div>
               )}
               
               {/* Допустимый ток */}
-              {((pinnedEdge || hoveredEdge) as any)?.cable?.iDop && (
+              {(pinnedEdge || hoveredEdge)?.currentCapacity && (
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Iдоп:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {((pinnedEdge || hoveredEdge) as any).cable.iDop} А
+                    {(pinnedEdge || hoveredEdge)?.currentCapacity} А
                   </span>
                 </div>
               )}
               
               {/* Потеря напряжения */}
-              {((pinnedEdge || hoveredEdge) as any)?.cable?.voltageDrop !== null && ((pinnedEdge || hoveredEdge) as any)?.cable?.voltageDrop !== undefined && (
+              {((pinnedEdge || hoveredEdge)?.voltageDrop !== null && (pinnedEdge || hoveredEdge)?.voltageDrop !== undefined) && (
                 <div className="flex justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-700">
                   <span className="text-slate-500 dark:text-slate-400">ΔU (потеря):</span>
                   <span className={`font-medium ${
-                    ((pinnedEdge || hoveredEdge) as any).cable.voltageDrop > 5 
+                    (pinnedEdge || hoveredEdge)!.voltageDrop! > 5 
                       ? 'text-red-600 dark:text-red-400' 
-                      : ((pinnedEdge || hoveredEdge) as any).cable.voltageDrop > 3 
+                      : (pinnedEdge || hoveredEdge)!.voltageDrop! > 3 
                         ? 'text-amber-600 dark:text-amber-400' 
                         : 'text-green-600 dark:text-green-400'
                   }`}>
-                    {((pinnedEdge || hoveredEdge) as any).cable.voltageDrop.toFixed(2)}%
-                    {((pinnedEdge || hoveredEdge) as any).cable.voltageDrop > 5 && ' ⚠️'}
+                    {(pinnedEdge || hoveredEdge)?.voltageDrop?.toFixed(2)}%
+                    {(pinnedEdge || hoveredEdge)!.voltageDrop! > 5 && ' ⚠️'}
                   </span>
                 </div>
               )}
             </div>
+            
+            {/* Результаты валидации кабеля */}
+            {((pinnedEdge || hoveredEdge)?.validationResults && (pinnedEdge || hoveredEdge)!.validationResults!.length > 0) && (
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Проверка сечения:</div>
+                {(pinnedEdge || hoveredEdge)!.validationResults!.map((result, idx) => (
+                  <div key={idx} className="mb-1">
+                    {/* Основное сообщение */}
+                    <div className={`text-xs px-2 py-1 rounded ${
+                      result.status === 'FAIL' 
+                        ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                        : result.status === 'WARN'
+                        ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300'
+                        : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+                    }`}>
+                      {result.status === 'FAIL' ? '❌ ' : result.status === 'WARN' ? '⚠️ ' : '✅ '}
+                      {result.message?.split('\n')[0]}
+                    </div>
+                    
+                    {/* Детали валидации */}
+                    {result.details && (
+                      <div className="mt-1 p-2 bg-slate-50 dark:bg-slate-800 rounded text-xs space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500 dark:text-slate-400">I_ном (выключателя):</span>
+                          <span className="font-medium text-cyan-600 dark:text-cyan-400">{result.details.iNom}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500 dark:text-slate-400">I_доп (по ПУЭ):</span>
+                          <span className="font-medium text-blue-600 dark:text-blue-400">{result.details.iDopPUE}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500 dark:text-slate-400">Загрузка кабеля:</span>
+                          <span className={`font-medium ${
+                            result.details.loadingPercent !== 'Н/Д' && parseFloat(result.details.loadingPercent) > 90
+                              ? 'text-red-600 dark:text-red-400'
+                              : result.details.loadingPercent !== 'Н/Д' && parseFloat(result.details.loadingPercent) > 70
+                              ? 'text-yellow-600 dark:text-yellow-400'
+                              : 'text-green-600 dark:text-green-400'
+                          }`}>
+                            {result.details.loadingPercent}
+                          </span>
+                        </div>
+                        {result.details.protectionRatio && (
+                          <div className="flex justify-between">
+                            <span className="text-slate-500 dark:text-slate-400">Коэфф. защиты:</span>
+                            <span className={`font-medium ${
+                              parseFloat(result.details.protectionRatio) > 100
+                                ? 'text-red-600 dark:text-red-400'
+                                : parseFloat(result.details.protectionRatio) > 90
+                                ? 'text-yellow-600 dark:text-yellow-400'
+                                : 'text-green-600 dark:text-green-400'
+                            }`}>
+                              {result.details.protectionRatio}
+                            </span>
+                          </div>
+                        )}
+                        {result.details.warning && (
+                          <div className="pt-1 mt-1 border-t border-slate-200 dark:border-slate-700 text-yellow-600 dark:text-yellow-400 text-xs">
+                            {result.details.warning}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             
             {/* Статусы */}
             <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">

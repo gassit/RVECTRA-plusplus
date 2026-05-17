@@ -1395,6 +1395,22 @@ export default function NetworkGraphG6({
                       </span>
                     </div>
                   )}
+                  
+                  {/* Коэффициент защиты: I_ном / I_доп */}
+                  {((pinnedEdge || hoveredEdge)?.iNom && ((pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity)) && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500 dark:text-slate-400">Коэфф. защиты (I_ном/I_доп):</span>
+                      <span className={`font-medium ${
+                        ((pinnedEdge || hoveredEdge)!.iNom! / ((pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity)!) > 1
+                          ? 'text-red-600 dark:text-red-400'
+                          : ((pinnedEdge || hoveredEdge)!.iNom! / ((pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity)!) > 0.9
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-green-600 dark:text-green-400'
+                      }`}>
+                        {(((pinnedEdge || hoveredEdge)!.iNom! / ((pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity)!) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
               

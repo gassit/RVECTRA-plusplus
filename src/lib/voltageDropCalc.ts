@@ -8,12 +8,16 @@
  * - LOAD: используется Pуст (powerP)
  * - Остальные элементы: используется ΣPрасч (sumPCalculated)
  *
- * Формула: ΔU = (P × L × ρ) / (U × S)
- * или точная: ΔU = (P×R + Q×X) / U² × 100%
+ * Формулы:
+ * - Трёхфазная сеть (U > 250 В): I = P / (√3 × U × cosφ), ΔU = √3 × I × R × cosφ
+ * - Однофазная сеть (U ≤ 250 В): I = P / (U × cosφ), ΔU = 2 × I × R × cosφ
  */
 
 import { prisma } from './prisma';
-import { calculateVoltageDropAuto } from './calculations/voltageDrop';
+import { 
+  calculateVoltageDropAuto, 
+  calculateLoadCurrent 
+} from './calculations/voltageDrop';
 
 export interface VoltageDropResult {
   connectionsUpdated: number;
@@ -131,6 +135,13 @@ export async function calculateVoltageDropAll(): Promise<VoltageDropResult> {
       : 'Cu' as const;
 
     // =========================================================================
+    // Рассчитываем ток нагрузки (А)
+    // =========================================================================
+    // Для трёхфазной сети (U > 250 В): I = P / (√3 × U × cosφ)
+    // Для однофазной сети (U ≤ 250 В): I = P / (U × cosφ)
+    const loadCurrent = calculateLoadCurrent(powerKw, voltageV, cosPhi);
+
+    // =========================================================================
     // Рассчитываем ΔU
     // =========================================================================
     const voltageDrop = calculateVoltageDropAuto({
@@ -149,12 +160,15 @@ export async function calculateVoltageDropAll(): Promise<VoltageDropResult> {
     const voltageDropBounded = Math.min(voltageDrop, 100);
 
     // =========================================================================
-    // Сохраняем результат
+    // Сохраняем результат (ток и потерю напряжения)
     // =========================================================================
     try {
       await prisma.cable.update({
         where: { id: cable.id },
-        data: { voltageDrop: voltageDropBounded },
+        data: { 
+          voltageDrop: voltageDropBounded,
+          currentA: loadCurrent,  // Сохраняем расчётный ток
+        },
       });
       connectionsUpdated++;
 

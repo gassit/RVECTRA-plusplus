@@ -24,6 +24,63 @@ export const REACTANCE_PER_KM = {
   aluminum: 0.09,
 } as const;
 
+/**
+ * Пороговое напряжение для определения типа сети (В)
+ * U ≤ 250 В — однофазная сеть (220 В)
+ * U > 250 В — трёхфазная сеть (380/400 В)
+ */
+const SINGLE_PHASE_THRESHOLD_V = 250;
+
+/**
+ * Определение типа сети по напряжению
+ * 
+ * @param voltageV - Напряжение (В)
+ * @returns true если однофазная сеть (220 В), false если трёхфазная (380/400 В)
+ */
+export function isSinglePhaseNetwork(voltageV: number): boolean {
+  return voltageV <= SINGLE_PHASE_THRESHOLD_V;
+}
+
+/**
+ * Расчёт тока нагрузки
+ * 
+ * Для трёхфазной сети (380/400 В): I = P / (√3 × U × cosφ)
+ * Для однофазной сети (220 В): I = P / (U × cosφ)
+ * 
+ * @param powerKw - Мощность (кВт)
+ * @param voltageV - Напряжение (В)
+ * @param cosPhi - Коэффициент мощности
+ * @returns Ток (А)
+ */
+export function calculateLoadCurrent(
+  powerKw: number,
+  voltageV: number,
+  cosPhi: number = 0.92
+): number {
+  const powerW = powerKw * 1000;
+  
+  if (isSinglePhaseNetwork(voltageV)) {
+    // Однофазная сеть: I = P / (U × cosφ)
+    return powerW / (voltageV * cosPhi);
+  } else {
+    // Трёхфазная сеть: I = P / (√3 × U × cosφ)
+    return powerW / (Math.sqrt(3) * voltageV * cosPhi);
+  }
+}
+
+/**
+ * Коэффициент для расчёта потери напряжения
+ * 
+ * Для трёхфазной сети: √3
+ * Для однофазной сети: 2 (туда-обратно по фазному и нулевому проводу)
+ * 
+ * @param voltageV - Напряжение (В)
+ * @returns Коэффициент
+ */
+export function getVoltageDropFactor(voltageV: number): number {
+  return isSinglePhaseNetwork(voltageV) ? 2 : Math.sqrt(3);
+}
+
 // ============================================================================
 // УПРОЩЁННЫЙ РАСЧЁТ (без справочника R₀/X₀)
 // ============================================================================
@@ -33,6 +90,9 @@ export const REACTANCE_PER_KM = {
  * 
  * Формула: ΔU = (Rлин * P) / (Uc * cosφ)
  * где Rлин = (ρ * L) / S
+ * 
+ * Для трёхфазной сети: I = P / (√3 × U × cosφ), ΔU = √3 × I × R × cosφ
+ * Для однофазной сети: I = P / (U × cosφ), ΔU = 2 × I × R × cosφ
  */
 export function calculateVoltageDropSimple(
   powerKw: number,
@@ -49,18 +109,19 @@ export function calculateVoltageDropSimple(
 
   const rho = RESISTIVITY[material] ?? RESISTIVITY.Cu;
   
-  // Для трёхфазной сети используем формулу:
-  // ΔU% = (P * L * ρ) / (U² * S * cosφ) * 100%
-  // где P в кВт, L в м, U в В, S в мм²
-  
   // Сопротивление линии (Ом)
   const rLine = (rho * lengthM) / sectionMm2;
   
-  // Ток (А)
-  const current = (powerKw * 1000) / (Math.sqrt(3) * voltageV * cosPhi);
+  // Ток (А) - зависит от типа сети
+  const current = calculateLoadCurrent(powerKw, voltageV, cosPhi);
+  
+  // Коэффициент для потери напряжения (зависит от типа сети)
+  const factor = getVoltageDropFactor(voltageV);
   
   // Потеря напряжения (В)
-  const deltaU_V = Math.sqrt(3) * current * rLine * cosPhi;
+  // Для трёхфазной: ΔU = √3 × I × R × cosφ
+  // Для однофазной: ΔU = 2 × I × R × cosφ
+  const deltaU_V = factor * current * rLine * cosPhi;
   
   // Потеря напряжения (%)
   const deltaU_Percent = (deltaU_V / voltageV) * 100;
@@ -110,9 +171,15 @@ export function calculateVoltageDropAuto(params: {
     const lengthKm = lengthM / 1000;
     const rOhm = r0OhmPerKm * lengthKm;
     const xOhm = (x0OhmPerKm ?? REACTANCE_PER_KM[material === 'Cu' ? 'copper' : 'aluminum']) * lengthKm;
-    const current = (powerKw * 1000) / (Math.sqrt(3) * voltageV * cosPhi);
+    
+    // Ток и коэффициент зависят от типа сети
+    const current = calculateLoadCurrent(powerKw, voltageV, cosPhi);
+    const factor = getVoltageDropFactor(voltageV);
     const sinPhi = Math.sqrt(1 - cosPhi * cosPhi);
-    const deltaU = (Math.sqrt(3) * current * (rOhm * cosPhi + xOhm * sinPhi) / voltageV) * 100;
+    
+    // ΔU% = k * I * (R*cosφ + X*sinφ) / U * 100%
+    // где k = √3 для трёхфазной, k = 2 для однофазной
+    const deltaU = (factor * current * (rOhm * cosPhi + xOhm * sinPhi) / voltageV) * 100;
     return deltaU;
   } else {
     // УПРОЩЁННЫЙ РАСЧЁТ (без справочника)
@@ -166,8 +233,13 @@ export function calculateVoltageDropByCurrent(
 ): number {
   const sinPhi = Math.sqrt(1 - cosPhi * cosPhi);
   
-  // ΔU% = √3 * I * (R*cosφ + X*sinφ) / U * 100%
-  const deltaU = (Math.sqrt(3) * current * (rOhm * cosPhi + xOhm * sinPhi) / uV) * 100;
+  // Коэффициент зависит от типа сети:
+  // Трёхфазная: √3
+  // Однофазная: 2
+  const factor = getVoltageDropFactor(uV);
+  
+  // ΔU% = k * I * (R*cosφ + X*sinφ) / U * 100%
+  const deltaU = (factor * current * (rOhm * cosPhi + xOhm * sinPhi) / uV) * 100;
   
   return deltaU;
 }
@@ -258,11 +330,15 @@ export function calculateMinWireSizeForVoltageDrop(
   // Удельное сопротивление (Ом·мм²/м)
   const rho = material === 'Cu' ? 0.0175 : 0.0294;
   
-  // Ток нагрузки
-  const current = (pKw * 1000) / (Math.sqrt(3) * uV * cosPhi);
+  // Ток нагрузки (зависит от типа сети)
+  const current = calculateLoadCurrent(pKw, uV, cosPhi);
   
-  // Минимальное сечение: S = (√3 * I * L * ρ * cosφ) / (ΔU% * U / 100)
-  const minSize = (Math.sqrt(3) * current * length * rho * cosPhi) / (maxDropPercent * uV / 100);
+  // Коэффициент для потери напряжения (зависит от типа сети)
+  const factor = getVoltageDropFactor(uV);
+  
+  // Минимальное сечение: S = (k * I * L * ρ * cosφ) / (ΔU% * U / 100)
+  // где k = √3 для трёхфазной, k = 2 для однофазной
+  const minSize = (factor * current * length * rho * cosPhi) / (maxDropPercent * uV / 100);
   
   // Округляем до ближайшего стандартного сечения
   const standardSizes = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240];
@@ -284,6 +360,11 @@ export function formatVoltageDrop(voltageDropPercent: number): string {
 }
 
 export default {
+  isSinglePhaseNetwork,
+  calculateLoadCurrent,
+  getVoltageDropFactor,
+  calculateVoltageDropSimple,
+  calculateVoltageDropAuto,
   calculateVoltageDrop,
   calculateVoltageDropByCurrent,
   calculateVoltageDropByLength,

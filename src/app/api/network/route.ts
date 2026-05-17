@@ -124,7 +124,11 @@ export async function GET() {
         wireType: cable?.material === 'copper' ? 'Cu' : cable?.material === 'aluminum' ? 'Al' : undefined,
         wireSize: cable?.section || undefined,
         cores: cable?.cores || undefined,
+        material: cable?.material === 'copper' ? 'Cu' : cable?.material === 'aluminum' ? 'Al' : undefined,
         currentCapacity: cable?.iDop || undefined,
+        iDop: cable?.iDop || undefined,
+        loadCurrent: cable?.currentA || undefined,  // Расчётный ток (I_расч)
+        voltageDrop: cable?.voltageDrop || undefined,  // Потеря напряжения (%)
         status: (conn.operationalStatus === 'ON' ? 'ON' : conn.operationalStatus === 'OFF' ? 'OFF' : 'UNKNOWN') as GraphEdge['status'],
         lifeStatus: (conn.electricalStatus === 'LIVE' ? 'LIVE' : conn.electricalStatus === 'DEAD' ? 'DEAD' : 'UNKNOWN') as GraphEdge['lifeStatus'],
         // Добавляем результаты валидации для кабеля

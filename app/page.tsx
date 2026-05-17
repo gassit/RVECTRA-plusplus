@@ -467,9 +467,13 @@ export default function Home() {
       edges: (filteredData?.connections || networkData?.connections || []).map(c => ({
         id: c.id, source: c.sourceId, target: c.targetId, type: 'CABLE' as const,
         status: c.operationalStatus as any, lifeStatus: c.electricalStatus as any,
-        wireType: c.cable?.name?.split(' ')[0] || undefined,
+        wireType: c.cable?.material === 'copper' ? 'Cu' : c.cable?.material === 'aluminum' ? 'Al' : undefined,
         wireSize: c.cable?.section ?? undefined,
+        cores: c.cable?.cores ?? undefined,
         length: c.cable?.length ?? undefined,
+        currentCapacity: c.cable?.iDop ?? undefined,
+        voltageDrop: c.cable?.voltageDrop ?? undefined,
+        material: c.cable?.material === 'copper' ? 'Cu' : c.cable?.material === 'aluminum' ? 'Al' : undefined,
         cable: c.cable,
       })),
       // combos больше не нужны - ELK рисует cabinet как bounding boxes

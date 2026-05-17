@@ -392,14 +392,16 @@ export default function NetworkGraphG6({
             const status = d.data?.status;
             return status === 'OFF' ? 0.4 : 1;
           },
-          // Подпись кабеля
+          // Подпись кабеля: [жилы]×[сечение][материал] [длина]м
           labelText: (d: any) => {
-            const wireType = d.data?.wireType;
+            const cores = d.data?.cores;
             const wireSize = d.data?.wireSize;
-            if (wireType && wireSize) {
-              const length = d.data?.length;
-              const text = `${wireType} ${wireSize}мм²`;
-              return length ? `${text} ${length}м` : text;
+            const material = d.data?.material;
+            const length = d.data?.length;
+            
+            if (cores || wireSize || material) {
+              const cableText = `${cores ? cores + '×' : ''}${wireSize || ''}${material || ''}`;
+              return length ? `${cableText} ${length}м` : cableText;
             }
             return '';
           },
@@ -1325,12 +1327,14 @@ export default function NetworkGraphG6({
             
             {/* Параметры кабеля */}
             <div className="space-y-1">
-              {/* Марка и сечение - показываем только если есть реальные данные */}
-              {((pinnedEdge || hoveredEdge)?.wireType || ((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0)) && (
+              {/* Марка кабеля: [жилы]×[сечение][материал] */}
+              {(((pinnedEdge || hoveredEdge)?.cores || ((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0) || (pinnedEdge || hoveredEdge)?.material)) && (
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Кабель:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {(pinnedEdge || hoveredEdge)?.wireType} {((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0) ? `${(pinnedEdge || hoveredEdge)?.wireSize}мм²` : ''}
+                    {(pinnedEdge || hoveredEdge)?.cores ? `${(pinnedEdge || hoveredEdge)?.cores}×` : ''}
+                    {((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0) ? `${(pinnedEdge || hoveredEdge)?.wireSize}` : ''}
+                    {(pinnedEdge || hoveredEdge)?.material || ''}
                   </span>
                 </div>
               )}
@@ -1341,16 +1345,6 @@ export default function NetworkGraphG6({
                   <span className="text-slate-500 dark:text-slate-400">Длина:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
                     {(pinnedEdge || hoveredEdge)?.length} м
-                  </span>
-                </div>
-              )}
-              
-              {/* Материал */}
-              {(pinnedEdge || hoveredEdge)?.material && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500 dark:text-slate-400">Материал:</span>
-                  <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {(pinnedEdge || hoveredEdge)?.material === 'Cu' ? 'Медь' : 'Алюминий'}
                   </span>
                 </div>
               )}

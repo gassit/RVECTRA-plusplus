@@ -1349,13 +1349,52 @@ export default function NetworkGraphG6({
                 </div>
               )}
               
-              {/* Допустимый ток */}
-              {(pinnedEdge || hoveredEdge)?.currentCapacity && (
+              {/* Уровень напряжения */}
+              {(pinnedEdge || hoveredEdge)?.voltageLevel && (
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-500 dark:text-slate-400">Iдоп:</span>
+                  <span className="text-slate-500 dark:text-slate-400">U:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
-                    {(pinnedEdge || hoveredEdge)?.currentCapacity} А
+                    {(pinnedEdge || hoveredEdge)!.voltageLevel! < 10 
+                      ? `${(pinnedEdge || hoveredEdge)!.voltageLevel! * 1000} В` 
+                      : `${(pinnedEdge || hoveredEdge)?.voltageLevel} кВ`}
                   </span>
+                </div>
+              )}
+              
+              {/* Токи: I_ном, I_доп, Загрузка */}
+              {((pinnedEdge || hoveredEdge)?.iNom || (pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity) && (
+                <div className="pt-1 border-t border-slate-100 dark:border-slate-700 space-y-1">
+                  {/* I_ном (номинальный ток выключателя) */}
+                  {(pinnedEdge || hoveredEdge)?.iNom && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500 dark:text-slate-400">I_ном (выкл.):</span>
+                      <span className="font-medium text-cyan-600 dark:text-cyan-400">{(pinnedEdge || hoveredEdge)?.iNom} А</span>
+                    </div>
+                  )}
+                  
+                  {/* I_доп (допустимый ток кабеля) */}
+                  {((pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity) && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500 dark:text-slate-400">I_доп (ПУЭ):</span>
+                      <span className="font-medium text-blue-600 dark:text-blue-400">{(pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity} А</span>
+                    </div>
+                  )}
+                  
+                  {/* Загрузка кабеля: I_расч / I_доп */}
+                  {((pinnedEdge || hoveredEdge)?.loadCurrent && ((pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity)) && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500 dark:text-slate-400">Загрузка:</span>
+                      <span className={`font-medium ${
+                        ((pinnedEdge || hoveredEdge)!.loadCurrent! / ((pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity)!) > 0.9
+                          ? 'text-red-600 dark:text-red-400'
+                          : ((pinnedEdge || hoveredEdge)!.loadCurrent! / ((pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity)!) > 0.7
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-green-600 dark:text-green-400'
+                      }`}>
+                        {(((pinnedEdge || hoveredEdge)!.loadCurrent! / ((pinnedEdge || hoveredEdge)?.iDop || (pinnedEdge || hoveredEdge)?.currentCapacity)!) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
               

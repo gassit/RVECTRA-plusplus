@@ -191,10 +191,14 @@ export interface GraphEdge {
   // Статус соединения
   status?: ElementStatus;
   lifeStatus?: ElementLifeStatus;
+  // Электрические параметры
+  voltageLevel?: number;       // Уровень напряжения (кВ)
+  iNom?: number;               // Номинальный ток выключателя (А)
+  iDop?: number;               // Допустимый ток кабеля (А)
+  loadCurrent?: number;        // Расчётный ток (А)
   // Расчётные параметры
   voltageDrop?: number;
   shortCircuitCurrent?: number;
-  loadCurrent?: number;
   // Результаты валидации кабеля
   validationResults?: ValidationResultData[];
 }

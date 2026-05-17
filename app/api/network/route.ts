@@ -128,12 +128,43 @@ export async function GET() {
       const sourceEl = elementMap.get(conn.sourceId);
       const targetEl = elementMap.get(conn.targetId);
       
+      // Получаем voltageLevel из source или target
+      const voltageLevel = sourceEl?.voltageLevel || targetEl?.voltageLevel || null;
+      
+      // Получаем I_ном (ratedCurrent) от Breaker в source элементе
+      let iNom: number | null = null;
+      if (sourceEl?.type.toUpperCase() === 'BREAKER') {
+        const deviceSlot = sourceEl.DeviceSlot?.[0];
+        const device = deviceSlot?.Device?.[0];
+        iNom = device?.Breaker?.ratedCurrent || null;
+      }
+      
+      // Если source не BREAKER, пробуем target
+      if (!iNom && targetEl?.type.toUpperCase() === 'BREAKER') {
+        const deviceSlot = targetEl.DeviceSlot?.[0];
+        const device = deviceSlot?.Device?.[0];
+        iNom = device?.Breaker?.ratedCurrent || null;
+      }
+      
+      // I_расч (расчётный ток) = P / (√3 × U × cosφ)
+      let loadCurrent: number | null = null;
+      const pCalculated = targetEl?.sumPCalculated || sourceEl?.sumPCalculated;
+      const u = voltageLevel && voltageLevel < 10 ? voltageLevel * 1000 : voltageLevel ? voltageLevel : 400;
+      if (pCalculated && pCalculated > 0 && u > 0) {
+        const cosPhi = 0.92; // по умолчанию
+        loadCurrent = (pCalculated * 1000) / (Math.sqrt(3) * u * cosPhi);
+      }
+      
       return {
         id: conn.id,
         sourceId: conn.sourceId,
         targetId: conn.targetId,
         electricalStatus: conn.electricalStatus,
         operationalStatus: conn.operationalStatus,
+        voltageLevel,
+        iNom,
+        iDop: cable?.iDop || null,
+        loadCurrent,
         cable: cable ? {
           id: cable.id,
           cableId: cable.cableId,

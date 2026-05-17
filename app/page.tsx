@@ -11,10 +11,12 @@ import type { ElectricalStatus, OperationalStatus, ElementType } from '@/types';
 interface CableData {
   id: string;
   name: string | null;
-  length: number;
-  section: number;
-  material: string;
+  length: number | null;
+  section: number | null;
+  cores: number | null;
+  material: string | null;
   iDop: number | null;
+  voltageDrop: number | null;
   r0: number | null;  // Активное сопротивление (Ом/км)
   x0: number | null;  // Реактивное сопротивление (Ом/км)
 }
@@ -60,6 +62,10 @@ interface NetworkData {
     targetId: string;
     electricalStatus: ElectricalStatus;
     operationalStatus: OperationalStatus;
+    voltageLevel?: number | null;
+    iNom?: number | null;
+    iDop?: number | null;
+    loadCurrent?: number | null;
     cable: CableData | null;
     source: { elementId: string; name: string; type: string };
     target: { elementId: string; name: string; type: string };
@@ -473,7 +479,12 @@ export default function Home() {
         length: c.cable?.length ?? undefined,
         currentCapacity: c.cable?.iDop ?? undefined,
         voltageDrop: c.cable?.voltageDrop ?? undefined,
-        material: c.cable?.material === 'copper' ? 'Cu' : c.cable?.material === 'aluminum' ? 'Al' : undefined,
+        material: (c.cable?.material === 'copper' ? 'Cu' : c.cable?.material === 'aluminum' ? 'Al' : undefined) as any,
+        // Дополнительные данные для tooltip
+        voltageLevel: c.voltageLevel ?? undefined,
+        iNom: c.iNom ?? undefined,
+        iDop: c.iDop ?? undefined,
+        loadCurrent: c.loadCurrent ?? undefined,
         cable: c.cable,
       })),
       // combos больше не нужны - ELK рисует cabinet как bounding boxes

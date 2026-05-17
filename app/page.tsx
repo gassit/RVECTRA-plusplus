@@ -386,17 +386,17 @@ export default function Home() {
 
   // Filter data
   const filteredData = useMemo(() => {
-    if (!networkData || !searchQuery.trim()) return networkData;
+    if (!networkData?.elements || !Array.isArray(networkData.elements) || !searchQuery.trim()) return networkData;
     const query = searchQuery.toLowerCase();
     const matchedIds = new Set(networkData.elements.filter(el => el.name.toLowerCase().includes(query)).map(el => el.id));
     return {
       elements: networkData.elements.filter(el => el.name.toLowerCase().includes(query)),
-      connections: networkData.connections.filter(conn => matchedIds.has(conn.sourceId) || matchedIds.has(conn.targetId)),
+      connections: networkData.connections?.filter(conn => matchedIds.has(conn.sourceId) || matchedIds.has(conn.targetId)) || [],
     };
   }, [networkData, searchQuery]);
 
   const statusStats = useMemo(() => {
-    if (!networkData) return { live: 0, dead: 0, off: 0 };
+    if (!networkData?.elements || !Array.isArray(networkData.elements)) return { live: 0, dead: 0, off: 0 };
     const el = networkData.elements;
     return {
       live: el.filter(e => e.operationalStatus === 'ON' && e.electricalStatus === 'LIVE').length,
@@ -410,14 +410,14 @@ export default function Home() {
 
   // Список cabinet-ов для выбора родительского элемента
   const cabinetsList = useMemo(() => {
-    if (!networkData) return [];
+    if (!networkData?.elements || !Array.isArray(networkData.elements)) return [];
     return networkData.elements
       .filter(e => e.type.toLowerCase() === 'cabinet')
       .map(e => ({ id: e.id, name: e.name }));
   }, [networkData]);
 
-  const connectionSourceName = networkData?.elements.find(e => e.id === connectionSource)?.name || '';
-  const connectionTargetName = networkData?.elements.find(e => e.id === connectionTarget)?.name || '';
+  const connectionSourceName = networkData?.elements?.find(e => e.id === connectionSource)?.name || '';
+  const connectionTargetName = networkData?.elements?.find(e => e.id === connectionTarget)?.name || '';
 
   const graphData = useMemo(() => {
     const allElements = filteredData?.elements || networkData?.elements || [];
@@ -534,9 +534,9 @@ export default function Home() {
             </div>
           </div>
           <div className="px-4 py-1 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700">
-            <span>{filteredData?.elements.length || 0} / {stats?.elements.total || 0} элементов</span>
+            <span>{filteredData?.elements?.length || 0} / {stats?.elements?.total || 0} элементов</span>
             <span className="text-gray-300 dark:text-gray-600">|</span>
-            <span>{filteredData?.connections.length || 0} связей</span>
+            <span>{filteredData?.connections?.length || 0} связей</span>
           </div>
         </header>
 

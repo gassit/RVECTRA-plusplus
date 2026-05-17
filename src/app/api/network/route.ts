@@ -12,6 +12,9 @@ export async function GET() {
       orderBy: { createdAt: 'asc' },
     });
 
+    // Создаём мапу элементов для быстрого доступа к voltageLevel
+    const elementMap = new Map(elements.map(el => [el.id, el]));
+
     // Получаем все связи с данными кабелей
     const connections = await db.connection.findMany({
       include: { Cable: true },
@@ -115,6 +118,12 @@ export async function GET() {
     const edges: GraphEdge[] = connections.map(conn => {
       const cable = conn.Cable;
       const edgeResults = resultsByConnection.get(conn.id) || [];
+      
+      // Получаем уровень напряжения из source элемента
+      const sourceElement = elementMap.get(conn.sourceId);
+      const targetElement = elementMap.get(conn.targetId);
+      const voltageLevel = sourceElement?.voltageLevel || targetElement?.voltageLevel || undefined;
+      
       return {
         id: conn.id,
         source: conn.sourceId,
@@ -129,6 +138,7 @@ export async function GET() {
         iDop: cable?.iDop || undefined,
         loadCurrent: cable?.currentA || undefined,  // Расчётный ток (I_расч)
         voltageDrop: cable?.voltageDrop || undefined,  // Потеря напряжения (%)
+        voltageLevel: voltageLevel,  // Уровень напряжения (кВ) из source элемента
         status: (conn.operationalStatus === 'ON' ? 'ON' : conn.operationalStatus === 'OFF' ? 'OFF' : 'UNKNOWN') as GraphEdge['status'],
         lifeStatus: (conn.electricalStatus === 'LIVE' ? 'LIVE' : conn.electricalStatus === 'DEAD' ? 'DEAD' : 'UNKNOWN') as GraphEdge['lifeStatus'],
         // Добавляем результаты валидации для кабеля

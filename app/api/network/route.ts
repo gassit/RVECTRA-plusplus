@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import type { GraphData, GraphNode, GraphEdge, ValidationResultData } from '@/types';
+import type { ValidationResultData } from '@/types';
 
 export async function GET() {
   try {
@@ -122,78 +122,47 @@ export async function GET() {
     // Создаем мапу элементов для быстрого поиска
     const elementMap = new Map(elements.map(e => [e.id, e]));
 
-    // Находим все cabinets для группировки (combo)
-    const cabinets = elements.filter(e => e.type.toLowerCase() === 'cabinet');
-
-    // Формируем узлы графа
-    const nodes: GraphNode[] = elements.map(el => {
-      const nodeResults = resultsByElement.get(el.id) || [];
-      const criticalCount = nodeResults.filter(r => r.status === 'FAIL' || r.status === 'CRITICAL').length;
-      
-      return {
-        id: el.id,
-        type: el.type as GraphNode['type'],
-        name: el.name,
-        parentId: el.parentId || undefined,
-        posX: el.posX || 0,
-        posY: el.posY || 0,
-        voltageLevel: el.voltageLevel || undefined,
-        status: (el.operationalStatus === 'ON' ? 'ON' : el.operationalStatus === 'OFF' ? 'OFF' : 'UNKNOWN') as GraphNode['status'],
-        lifeStatus: (el.electricalStatus === 'LIVE' ? 'LIVE' : el.electricalStatus === 'DEAD' ? 'DEAD' : 'UNKNOWN') as GraphNode['lifeStatus'],
-        hasIssues: criticalCount > 0,
-        criticalIssues: criticalCount,
-        sumPInstalled: el.sumPInstalled || undefined,
-        sumPCalculated: el.sumPCalculated || undefined,
-        devices: (el.DeviceSlot || []).map((ds: any) => {
-          const dev = ds.Device?.[0];
-          return dev ? {
-            id: dev.id,
-            type: dev.deviceType as any,
-            slotId: ds.slotId,
-          } : undefined;
-        }).filter(Boolean) as any,
-        validationResults: nodeResults,
-      };
-    });
-
-    // Формируем рёбра графа с результатами валидации
-    const edges: GraphEdge[] = connections.map(conn => {
+    // Формируем связи с данными кабеля
+    const connectionsData = connections.map(conn => {
       const cable = conn.Cable;
-      const edgeResults = resultsByConnection.get(conn.id) || [];
+      const sourceEl = elementMap.get(conn.sourceId);
+      const targetEl = elementMap.get(conn.targetId);
       
       return {
         id: conn.id,
-        source: conn.sourceId,
-        target: conn.targetId,
-        type: 'CABLE' as GraphEdge['type'],
-        length: cable?.length || undefined,
-        wireType: cable?.material === 'copper' ? 'Cu' : cable?.material === 'aluminum' ? 'Al' : undefined,
-        wireSize: cable?.section || undefined,
-        cores: cable?.cores || undefined,
-        currentCapacity: cable?.iDop || undefined,
-        status: (conn.operationalStatus === 'ON' ? 'ON' : conn.operationalStatus === 'OFF' ? 'OFF' : 'UNKNOWN') as GraphEdge['status'],
-        lifeStatus: (conn.electricalStatus === 'LIVE' ? 'LIVE' : conn.electricalStatus === 'DEAD' ? 'DEAD' : 'UNKNOWN') as GraphEdge['lifeStatus'],
-        validationResults: edgeResults,
+        sourceId: conn.sourceId,
+        targetId: conn.targetId,
+        electricalStatus: conn.electricalStatus,
+        operationalStatus: conn.operationalStatus,
+        cable: cable ? {
+          id: cable.id,
+          cableId: cable.cableId,
+          name: cable.name,
+          length: cable.length,
+          section: cable.section,
+          cores: cable.cores,
+          material: cable.material,
+          iDop: cable.iDop,
+          voltageDrop: cable.voltageDrop,
+        } : null,
+        source: sourceEl ? {
+          elementId: sourceEl.elementId,
+          name: sourceEl.name,
+          type: sourceEl.type,
+        } : { elementId: '', name: '', type: '' },
+        target: targetEl ? {
+          elementId: targetEl.elementId,
+          name: targetEl.name,
+          type: targetEl.type,
+        } : { elementId: '', name: '', type: '' },
       };
     });
 
-    // Формируем combos для G6 (cabinets как группы)
-    const combos = cabinets.map(cabinet => ({
-      id: cabinet.id,
-      label: cabinet.name,
-      data: {
-        type: 'cabinet',
-        name: cabinet.name,
-      },
-    }));
-
-    const graphData: GraphData = { nodes, edges };
-
-    console.log(`[Network API] ${nodes.length} nodes, ${edges.length} edges, ${validationResults.length} validation results`);
+    console.log(`[Network API] ${elements.length} elements, ${connections.length} connections, ${validationResults.length} validation results`);
     
     return NextResponse.json({ 
-      ...graphData,
-      combos,
+      elements,
+      connections: connectionsData,
     });
   } catch (error) {
     console.error('Error fetching network:', error);

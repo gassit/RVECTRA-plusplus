@@ -392,7 +392,7 @@ export default function NetworkGraphG6({
             const status = d.data?.status;
             return status === 'OFF' ? 0.4 : 1;
           },
-          // Подпись кабеля: [жилы]×[сечение][материал] [длина]м
+          // Подпись кабеля: [жилы]×[сечение] [материал] [длина]м
           labelText: (d: any) => {
             const cores = d.data?.cores;
             const wireSize = d.data?.wireSize;
@@ -400,7 +400,7 @@ export default function NetworkGraphG6({
             const length = d.data?.length;
             
             if (cores || wireSize || material) {
-              const cableText = `${cores ? cores + '×' : ''}${wireSize || ''}${material || ''}`;
+              const cableText = `${cores ? cores + '×' : ''}${wireSize || ''}${material ? ' ' + material : ''}`;
               return length ? `${cableText} ${length}м` : cableText;
             }
             return '';
@@ -1327,14 +1327,14 @@ export default function NetworkGraphG6({
             
             {/* Параметры кабеля */}
             <div className="space-y-1">
-              {/* Марка кабеля: [жилы]×[сечение][материал] */}
+              {/* Марка кабеля: [жилы]×[сечение] [материал] */}
               {(((pinnedEdge || hoveredEdge)?.cores || ((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0) || (pinnedEdge || hoveredEdge)?.material)) && (
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400">Кабель:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-medium">
                     {(pinnedEdge || hoveredEdge)?.cores ? `${(pinnedEdge || hoveredEdge)?.cores}×` : ''}
                     {((pinnedEdge || hoveredEdge)?.wireSize && (pinnedEdge || hoveredEdge)!.wireSize! > 0) ? `${(pinnedEdge || hoveredEdge)?.wireSize}` : ''}
-                    {(pinnedEdge || hoveredEdge)?.material || ''}
+                    {(pinnedEdge || hoveredEdge)?.material ? ` ${(pinnedEdge || hoveredEdge)?.material}` : ''}
                   </span>
                 </div>
               )}
